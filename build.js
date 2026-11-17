@@ -16,7 +16,10 @@ const res = esbuild.buildSync({
   loader: { ".jsx": "jsx" },
   write: false,
 });
-const dist = res.outputFiles[0].text.replace(/<\/script>/g, "<\\/script>");
+/* "</script", "</body", "</html" e "</head" dentro do código (a biblioteca de Excel tem "</body></html>" num texto)
+   viram "<\/…": para o JavaScript é a mesma coisa, mas assim nem o navegador nem o Live Server confundem esse
+   texto com o fim da página (o Live Server injeta o script dele antes do primeiro "</body>" que encontra). */
+const dist = res.outputFiles[0].text.replace(/<\/(script|body|html|head)/gi, "<\\/$1");
 
 const html =
 `<!doctype html>

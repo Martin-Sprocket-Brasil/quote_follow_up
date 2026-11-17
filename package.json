@@ -2,12 +2,20 @@
   "name": "quote-follow-up",
   "version": "1.0.0",
   "private": true,
-  "scripts": { "build": "node build.js" },
+  "scripts": {
+    "build": "node build.js",
+    "start": "node server.mjs"
+  },
   "dependencies": {
+    "compression": "1.8.2",
+    "express": "4.22.3",
+    "lucide-react": "0.383.0",
+    "mariadb": "3.5.5",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "lucide-react": "0.383.0",
     "xlsx": "0.18.5"
   },
-  "devDependencies": { "esbuild": "0.28.2" }
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
 }

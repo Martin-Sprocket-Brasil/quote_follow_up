@@ -34,7 +34,7 @@ import {
   quoteState,
   periodGroups,
   periodValid,
-  periodLabelOf,
+  periodLabelOf as corePeriodLabelOf,
   MON_SHORT,
   periodRange,
   FUP,
@@ -108,7 +108,10 @@ import {
   sellerFupReport,
   LATE_HOUR,
   mergeUsers,
+  normName,
 } from "./core.js";
+import { _t, whyTxt, LANG, setLang } from "./i18n.js";
+const periodLabelOf = (p) => _t(corePeriodLabelOf(p)); // "All periods" no idioma da tela
 
 import {
   Upload,
@@ -168,6 +171,7 @@ import {
   UserRound,
   Users,
   PieChart,
+  Gauge,
   KeyRound,
   ShieldCheck,
   LogOut,
@@ -176,6 +180,9 @@ import {
   SlidersHorizontal,
   UserPlus,
   Ban,
+  Globe,
+  Cloud,
+  CloudOff,
 } from "lucide-react";
 
 /* ---------- paleta (mesma do Customer portfolio do pulz) ---------- */
@@ -221,7 +228,7 @@ const dash = <span style={{ color: "#C7CFD6" }}>—</span>;
 const pill = (txt, fg, bg, extra) => (
   <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, color: fg, background: bg, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap", ...extra }}>{txt}</span>
 );
-const ST_PILL = { won: ["Won", "#1F8A5B", "#DDF3E8"], lost: ["Lost", X.redDk, X.redSoft], open: ["Open", X.amber, X.amberSoft], cancelled: ["Cancelled", "#64748B", "#EEF2F5"] };
+const ST_PILL = { won: [_t("Won"), "#1F8A5B", "#DDF3E8"], lost: [_t("Lost"), X.redDk, X.redSoft], open: [_t("Open"), X.amber, X.amberSoft], cancelled: [_t("Cancelled"), "#64748B", "#EEF2F5"] };
 
 /* ---------- mobile first ----------
    A tela é pensada primeiro para o celular (uma coluna, cartões no lugar das tabelas, abas embaixo) e
@@ -259,33 +266,36 @@ input:not([type="checkbox"]):not([type="radio"]), textarea, select { box-sizing:
 
 /* ---------- papéis ----------
    O Admin escolhe o papel de cada usuário (aba Data da gerência). Cada papel tem a sua tela:
-   • outside = vendedor externo (coluna Sales Person): Hoje e Minhas cotações, pensado para o celular;
-   • inside  = vendedor interno (coluna Quoted By): Carteira e Calendário com o plano do dia;
-   • manager = gerência: Análise, FUP por vendedor, meta diária, relatórios e usuários (todos os vendedores).
+   • outside = vendedor externo (coluna Sales Person) e inside = vendedor interno (coluna Quoted By):
+     por enquanto as mesmas telas — Today, Quotes e Calendar (cada um vê as cotações da própria coluna);
+   • manager = gerência: Overview, Quotes, Team (FUP por vendedor), Goal, Analysis e Data (todos os vendedores).
    Sem papel (usuário novo ou o antigo "seller"), a pessoa entra mas só vê o aviso para pedir o acesso. */
 const ROLES = {
-  outside: { label: "Outside sales", icon: MapPin, fg: X.violet, bg: X.violetSoft, col: "sp", colTxt: "Sales Person" },
-  inside: { label: "Inside sales", icon: Headphones, fg: X.tealDk, bg: X.tealSoft, col: "qb", colTxt: "Quoted By" },
-  manager: { label: "Management", icon: ShieldCheck, fg: "#2F6FDB", bg: "#E6EEFB", col: "", colTxt: "" },
+  outside: { label: _t("Outside sales"), icon: MapPin, fg: X.violet, bg: X.violetSoft, col: "sp", colTxt: "Sales Person" },
+  inside: { label: _t("Inside sales"), icon: Headphones, fg: X.tealDk, bg: X.tealSoft, col: "qb", colTxt: "Quoted By" },
+  manager: { label: _t("Management"), icon: ShieldCheck, fg: "#2F6FDB", bg: "#E6EEFB", col: "", colTxt: "" },
 };
 const ROLE_KEYS = ["outside", "inside", "manager"];
+// por enquanto o vendedor externo usa as mesmas telas do interno (com o Calendar)
+const SELLER_TABS = [
+  ["today", _t("Today"), CalendarCheck],
+  ["portfolio", _t("Quotes"), ListIcon],
+  ["calendar", _t("Calendar"), CalendarDays],
+];
 const ROLE_TABS = {
-  outside: [
-    ["today", "Today", CalendarCheck],
-    ["mine", "Quotes", ListIcon],
-  ],
-  inside: [
-    ["today", "Today", CalendarCheck],
-    ["portfolio", "Quotes", ListIcon],
-    ["calendar", "Calendar", CalendarDays],
-  ],
+  outside: SELLER_TABS,
+  inside: SELLER_TABS,
+  // gerência: visão geral primeiro; "Data" fica no menu do usuário no celular (a barra de baixo tem 5 lugares)
   manager: [
-    ["analysis", "Analysis", PieChart],
-    ["sellers", "Salespeople", Users],
-    ["goal", "Goal", Target],
-    ["data", "Data", Database],
+    ["overview", _t("Overview"), Gauge],
+    ["portfolio", _t("Quotes"), ListIcon],
+    ["sellers", _t("Team"), Users],
+    ["goal", _t("Goal"), Target],
+    ["analysis", _t("Analysis"), PieChart],
+    ["data", _t("Data"), Database],
   ],
 };
+const MOB_MENU_TABS = new Set(["data"]); // no celular, essas abas ficam no menu do usuário
 const TEMP_ICON = { HOT: Flame, WARM: Sun, COOL: Wind, COLD: Snowflake };
 
 const FupPill = ({ v, short }) => (FUP[v] ? pill(short ? v : `${v} · ${FUP[v].label}`, FUP[v].color, FUP[v].bg, { fontWeight: 700 }) : null);
@@ -461,7 +471,7 @@ function usePop(width = 200, maxH = 340) {
 const optS = { display: "flex", alignItems: "center", gap: 8, padding: "7px 9px", borderRadius: 7, cursor: "pointer", fontSize: 12.5, color: X.ink };
 
 /* Célula editável (FUP, % Win, Thermometer): mostra a pílula, clique abre as opções. */
-function PickCell({ value, options, onChange, render, placeholder = "Set", title, width = 210, describe }) {
+function PickCell({ value, options, onChange, render, placeholder = _t("Set"), title, width = 210, describe }) {
   const p = usePop(width);
   return (
     <>
@@ -500,8 +510,7 @@ function PickCell({ value, options, onChange, render, placeholder = "Set", title
               }}
               style={{ ...optS, color: X.sub, borderTop: `1px solid ${X.line}`, marginTop: 4, borderRadius: 0 }}
             >
-              <XIcon size={13} /> Clear
-            </div>
+              <XIcon size={13} />{" "}{_t("Clear")}</div>
           ) : null}
         </>,
       )}
@@ -512,19 +521,37 @@ const NONE = "__none__";
 // FUP: as letras A–D e, no fim, os fechamentos à mão (abrem o diálogo do motivo)
 const FUP_OPTS = [...FUP_PICK, "lost", "cancelled"];
 const fupOptRender = (v) => (CLOSE_LABEL[v] ? <span style={{ fontSize: 11.5, fontWeight: 700, color: CLOSE_COLOR[v][0], background: CLOSE_COLOR[v][1], padding: "2px 9px", borderRadius: 999 }}>{CLOSE_LABEL[v]}</span> : <FupPill v={v} />);
-const fupOptDescribe = (v) => (CLOSE_LABEL[v] ? `${CLOSE_REASONS[v].join(", ")}` : FUP[v].long.split("· ")[1]);
+const fupOptDescribe = (v) => (CLOSE_LABEL[v] ? `${CLOSE_REASONS[v].map(whyTxt).join(", ")}` : FUP[v].long.split("· ")[1]);
+/* Prioridade (0 a 100) = 70% do % Win + 30% do Thermometer (priorityOn do core.js, a mesma do Calendar).
+   Só das cotações abertas; -1 = fechada (sem prioridade). */
+const prioOf = (r) => (r.st && r.st !== "open" ? -1 : priorityOn({ win: r.win || 0, temp: r.temp || "" }).score);
+const PRIO_TIP = _t("Priority 0–100 = {0}% of the % Win + {1}% of the Thermometer (Hot 100 · Warm 67 · Cool 33 · Cold 0)", Math.round(PRIO_WIN * 100), Math.round(PRIO_TEMP * 100));
+function PrioBadge({ v, big }) {
+  if (v == null || v < 0) return null;
+  const [fg, bg] = v >= 60 ? [X.redDk, X.redSoft] : v >= 30 ? [X.amber, X.amberSoft] : ["#64748B", "#EEF2F5"];
+  return (
+    <span title={PRIO_TIP} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: big ? 12.5 : 11, fontWeight: 800, color: fg, background: bg, borderRadius: 999, padding: big ? "3px 10px" : "2px 8px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+      <span style={{ display: "inline-flex", gap: 1.5, alignItems: "flex-end" }}>
+        {[1, 2, 3].map((k) => (
+          <span key={k} style={{ width: 3, height: 3 + k * 2.5, borderRadius: 1, background: fg, opacity: v >= [0, 30, 60][k - 1] ? 1 : 0.25 }} />
+        ))}
+      </span>
+      {v}
+    </span>
+  );
+}
 /* Thermometer automático: pílula + balão com a conta (Hit Rate em valor e dias com cotação). */
 function ThermoCell({ t }) {
   if (!t) return dash;
   const pct = (t.hr * 100).toFixed(0) + "%";
   const down = t.temp !== t.base; // desceu um nível pela falta de atividade recente
   const tip =
-    `Automatic · customer hit rate ${pct} in the last ${THERMO_HR_MONTHS} months (${money(t.sold)} sold of ${money(t.quoted)} quoted since ${fmtDate(t.hrFrom)})` +
-    ` · minimum for Hot/Warm: ${Math.round((t.hrMin ?? THERMO_HR_MIN) * 100)}%${t.cls ? ` (${t.cls} customer)` : ""}` +
-    ` · quoted on ${t.days} day${t.days === 1 ? "" : "s"} in the last ${THERMO_WINDOW} business days (${fmtDate(t.from)} to ${fmtDate(t.ref)})` +
-    ` · ${t.recent} day${t.recent === 1 ? "" : "s"} in the last ${THERMO_RECENT_WINDOW} business days (since ${fmtDate(t.recentFrom)})` +
-    (down ? ` · was ${TEMP[t.base].label}, dropped one level: fewer than ${THERMO_RECENT_MIN} recent days` : "") +
-    (t.last ? ` · last quote ${fmtDate(t.last)}` : "");
+    _t("Automatic · customer hit rate {0} in the last {1} months ({2} sold of {3} quoted since {4})", pct, THERMO_HR_MONTHS, money(t.sold), money(t.quoted), fmtDate(t.hrFrom)) +
+    _t(" · minimum for Hot/Warm: {0}%{1}", Math.round((t.hrMin ?? THERMO_HR_MIN) * 100), t.cls ? _t(" ({0} customer)", t.cls) : "") +
+    _t(" · quoted on {0} {1} in the last {2} business days ({3} to {4})", t.days, t.days === 1 ? _t("day") : _t("days"), THERMO_WINDOW, fmtDate(t.from), fmtDate(t.ref)) +
+    _t(" · {0} {1} in the last {2} business days (since {3})", t.recent, t.recent === 1 ? _t("day") : _t("days"), THERMO_RECENT_WINDOW, fmtDate(t.recentFrom)) +
+    (down ? _t(" · was {0}, dropped one level: fewer than {1} recent days", TEMP[t.base].label, THERMO_RECENT_MIN) : "") +
+    (t.last ? _t(" · last quote {0}", fmtDate(t.last)) : "");
   return (
     <span title={tip} style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "help", whiteSpace: "nowrap" }}>
       <TempPill v={t.temp} />
@@ -554,7 +581,7 @@ function ColFilter({ label, options, selected, onChange, width = 240, iconOnly, 
           setQ("");
           p.toggle(e);
         }}
-        title={`Filter by ${label}`}
+        title={_t("Filter by {0}", label)}
         style={
           row
             ? { display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "13px 2px", cursor: "pointer", borderBottom: `1px solid ${X.line}` }
@@ -564,7 +591,7 @@ function ColFilter({ label, options, selected, onChange, width = 240, iconOnly, 
         {row ? (
           <>
             <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: X.ink }}>{label}</span>
-            <span style={{ fontSize: 13, color: on ? X.tealDk : X.sub, fontWeight: on ? 700 : 500 }}>{on ? `${selected.length} selected` : "All"}</span>
+            <span style={{ fontSize: 13, color: on ? X.tealDk : X.sub, fontWeight: on ? 700 : 500 }}>{on ? _t("{0} selected", selected.length) : _t("All")}</span>
             <ChevronRight size={16} color="#A0AEC0" />
           </>
         ) : (
@@ -580,7 +607,7 @@ function ColFilter({ label, options, selected, onChange, width = 240, iconOnly, 
           {options.length > 8 && (
             <div style={{ position: "relative", padding: "2px 2px 6px" }}>
               <Search size={13} style={{ position: "absolute", left: 10, top: 11, color: X.sub, pointerEvents: "none" }} />
-              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${label.toLowerCase()}…`} style={{ ...inp, height: 30, width: "100%", paddingLeft: 28, fontSize: 12 }} />
+              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={_t("Search {0}…", label.toLowerCase())} style={{ ...inp, height: 30, width: "100%", paddingLeft: 28, fontSize: 12 }} />
             </div>
           )}
           {list.map((o) => (
@@ -592,11 +619,10 @@ function ColFilter({ label, options, selected, onChange, width = 240, iconOnly, 
               <span style={{ marginLeft: "auto", fontSize: 11, color: X.sub, flexShrink: 0 }}>{o.n}</span>
             </label>
           ))}
-          {!list.length && <div style={{ ...optS, color: X.sub, cursor: "default" }}>Nothing found</div>}
+          {!list.length && <div style={{ ...optS, color: X.sub, cursor: "default" }}>{_t("Nothing found")}</div>}
           {on && (
             <div className="qp-opt" onClick={() => onChange([])} style={{ ...optS, color: X.sub, borderTop: `1px solid ${X.line}`, marginTop: 4, borderRadius: 0 }}>
-              <XIcon size={13} /> Clear filter
-            </div>
+              <XIcon size={13} />{" "}{_t("Clear filter")}</div>
           )}
         </>,
       )}
@@ -630,7 +656,7 @@ function Sheet({ open, title, onClose, children, footer }) {
         {mob && <div style={{ width: 40, height: 4, borderRadius: 9, background: "#D5DCE3", margin: "8px auto 0", flexShrink: 0 }} />}
         <div style={{ display: "flex", alignItems: "center", padding: "10px 16px 6px", flexShrink: 0 }}>
           <div style={{ fontSize: 17, fontWeight: 800, flex: 1 }}>{title}</div>
-          <button onClick={onClose} title="Close" style={{ ...btn, width: 36, height: 36, padding: 0, justifyContent: "center", borderRadius: 999, border: "none", background: X.head }}>
+          <button onClick={onClose} title={_t("Close")} style={{ ...btn, width: 36, height: 36, padding: 0, justifyContent: "center", borderRadius: 999, border: "none", background: X.head }}>
             <XIcon size={17} />
           </button>
         </div>
@@ -667,6 +693,84 @@ function Chips({ value, options, onChange }) {
       })}
     </div>
   );
+}
+/* várias escolhas de uma vez (FUP, % Win, Thermometer na folha de filtros) · options: [valor, rótulo, contagem] */
+function MultiChips({ value, options, onChange }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+      {options.map(([v, l, n]) => {
+        const on = value.includes(v);
+        return (
+          <button
+            key={v}
+            onClick={() => onChange(on ? value.filter((x) => x !== v) : [...value, v])}
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, border: `1.5px solid ${on ? X.teal : X.line}`, background: on ? X.tealSoft : "#fff", color: X.ink, borderRadius: 999, padding: "6px 12px 6px 8px", fontSize: 13, fontWeight: on ? 700 : 500, cursor: "pointer" }}
+          >
+            <span style={{ width: 16, height: 16, borderRadius: 5, border: `1.5px solid ${on ? X.teal : "#B8C2CC"}`, background: on ? X.teal : "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{on && <Check size={11} color="#fff" strokeWidth={3} />}</span>
+            {l}
+            {n != null && <span style={{ fontSize: 11.5, color: X.sub, fontWeight: 600 }}>{n}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+/* filtros rápidos (um toque): rolam de lado no celular · items: [chave, rótulo, contagem, cor] */
+function QuickChips({ items, value, onChange }) {
+  return (
+    <div className="qp-hscroll" style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, margin: "0 -2px", padding: "0 2px 2px" }}>
+      {items.map(([k, l, n, col]) => {
+        const on = value.includes(k);
+        return (
+          <button
+            key={k}
+            onClick={() => onChange(on ? value.filter((x) => x !== k) : [...value, k])}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, border: `1.5px solid ${on ? col : X.line}`, background: on ? col : "#fff", color: on ? "#fff" : X.ink, borderRadius: 999, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+          >
+            {!on && <span style={{ width: 7, height: 7, borderRadius: 9, background: col }} />}
+            {l}
+            <span style={{ fontSize: 11.5, fontWeight: 700, opacity: on ? 0.9 : 0.6 }}>{n.toLocaleString("pt-BR")}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+/* filtros ligados, sempre à vista: cada um sai no × · items: { k, label, onClear } */
+function ActiveChips({ items, onClearAll }) {
+  if (!items.length) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+      {items.map((x) => (
+        <span key={x.k} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#EEF2F5", color: X.ink, borderRadius: 999, padding: "3px 4px 3px 11px", fontSize: 12, fontWeight: 600, maxWidth: "100%" }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.label}</span>
+          <button onClick={x.onClear} title={_t("Remove this filter")} style={{ border: "none", background: "#fff", borderRadius: 999, width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: X.sub, flexShrink: 0 }}>
+            <XIcon size={12} />
+          </button>
+        </span>
+      ))}
+      {items.length > 1 && (
+        <button onClick={onClearAll} style={{ border: "none", background: "transparent", color: X.tealDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", padding: "4px 6px" }}>{_t("Clear all")}</button>
+      )}
+    </div>
+  );
+}
+/* estado que sobrevive à troca de aba (até fechar a aba do navegador) */
+function useSessionState(key, init) {
+  const [v, setV] = useState(() => {
+    try {
+      const x = sessionStorage.getItem(key);
+      return x != null ? JSON.parse(x) : init;
+    } catch {
+      return init;
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(key, JSON.stringify(v));
+    } catch {}
+  }, [key, v]);
+  return [v, setV];
 }
 /* botão redondo de ícone (topo do celular) */
 const iconBtn = (extra) => ({ ...btn, width: 40, height: 40, padding: 0, justifyContent: "center", borderRadius: 12, position: "relative", flexShrink: 0, ...extra });
@@ -718,46 +822,46 @@ const tdN = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", whi
    As anotações entram no histórico com data e hora e NÃO têm botão de editar nem de excluir. */
 /* Cada tipo de registro: ícone (círculo), título e etiqueta, no estilo do Activities / History do pulz. */
 const ACT_TAG = {
-  note: ["Note", X.tealDk, X.tealSoft],
-  follow: ["Follow-up", X.violet, X.violetSoft],
-  plan: ["Plan", X.amber, X.amberSoft],
-  report: ["Quote Report", "#2F6FDB", "#E6EEFB"],
-  import: ["Import", "#64748B", "#EEF2F5"],
+  note: [_t("Note"), X.tealDk, X.tealSoft],
+  follow: [_t("Follow-up"), X.violet, X.violetSoft],
+  plan: [_t("Plan"), X.amber, X.amberSoft],
+  report: [_t("Quote Report"), "#2F6FDB", "#E6EEFB"],
+  import: [_t("Import"), "#64748B", "#EEF2F5"],
 };
 const ACT_META = {
-  note: { icon: MessageSquare, title: "Note", tag: "note", color: X.tealDk, bg: X.tealSoft },
-  fup: { icon: CalendarDays, title: "FUP changed", tag: "follow", color: X.violet, bg: X.violetSoft },
-  win: { icon: Percent, title: "% Win changed", tag: "follow", color: X.violet, bg: X.violetSoft },
-  done: { icon: CheckCircle2, title: "Follow-up done", tag: "follow", color: X.violet, bg: X.violetSoft },
-  resched: { icon: CalendarDays, title: "Next follow-up changed", tag: "follow", color: X.violet, bg: X.violetSoft },
-  req: { icon: ClipboardList, title: "Customer requisition", tag: "follow", color: X.violet, bg: X.violetSoft },
-  plan: { icon: ListChecks, title: "Daily plan", tag: "plan", color: X.amber, bg: X.amberSoft },
-  close: { icon: XCircle, title: "Closed by hand", tag: "follow", color: X.redDk, bg: X.redSoft },
-  reopen: { icon: RotateCcw, title: "Reopened", tag: "follow", color: X.tealDk, bg: X.tealSoft },
-  why: { icon: XCircle, title: "Close reason", tag: "follow", color: "#64748B", bg: "#EEF2F5" },
-  status: { icon: FileSpreadsheet, title: "Status changed", tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
-  amount: { icon: FileSpreadsheet, title: "Quoted value changed", tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
-  order: { icon: FileSpreadsheet, title: "New order", tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
-  _seen: { icon: Database, title: "Entered the program", tag: "import", color: "#64748B", bg: "#EEF2F5" },
-  _created: { icon: FileSpreadsheet, title: "Quote created", tag: "report", color: "#64748B", bg: "#EEF2F5" },
+  note: { icon: MessageSquare, title: _t("Note"), tag: "note", color: X.tealDk, bg: X.tealSoft },
+  fup: { icon: CalendarDays, title: _t("FUP changed"), tag: "follow", color: X.violet, bg: X.violetSoft },
+  win: { icon: Percent, title: _t("% Win changed"), tag: "follow", color: X.violet, bg: X.violetSoft },
+  done: { icon: CheckCircle2, title: _t("Follow-up done"), tag: "follow", color: X.violet, bg: X.violetSoft },
+  resched: { icon: CalendarDays, title: _t("Next follow-up changed"), tag: "follow", color: X.violet, bg: X.violetSoft },
+  req: { icon: ClipboardList, title: _t("Customer requisition"), tag: "follow", color: X.violet, bg: X.violetSoft },
+  plan: { icon: ListChecks, title: _t("Daily plan"), tag: "plan", color: X.amber, bg: X.amberSoft },
+  close: { icon: XCircle, title: _t("Closed by hand"), tag: "follow", color: X.redDk, bg: X.redSoft },
+  reopen: { icon: RotateCcw, title: _t("Reopened"), tag: "follow", color: X.tealDk, bg: X.tealSoft },
+  why: { icon: XCircle, title: _t("Close reason"), tag: "follow", color: "#64748B", bg: "#EEF2F5" },
+  status: { icon: FileSpreadsheet, title: _t("Status changed"), tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
+  amount: { icon: FileSpreadsheet, title: _t("Quoted value changed"), tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
+  order: { icon: FileSpreadsheet, title: _t("New order"), tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
+  _seen: { icon: Database, title: _t("Entered the program"), tag: "import", color: "#64748B", bg: "#EEF2F5" },
+  _created: { icon: FileSpreadsheet, title: _t("Quote created"), tag: "report", color: "#64748B", bg: "#EEF2F5" },
 };
-const fupTxt = (v) => (FUP[v] ? `${v} · ${FUP[v].label}` : "not set");
+const fupTxt = (v) => (FUP[v] ? `${v} · ${FUP[v].label}` : _t("not set"));
 // grupos do filtro do histórico
 const HIST_FILTERS = [
-  ["all", "All"],
-  ["note", "Notes"],
-  ["follow", "Follow-up"],
-  ["report", "Quote Report"],
+  ["all", _t("All")],
+  ["note", _t("Notes")],
+  ["follow", _t("Follow-up")],
+  ["report", _t("Quote Report")],
 ];
 const histGroup = (a) => (a.k === "note" ? "note" : ["fup", "win", "done", "resched", "req", "plan", "close", "reopen", "why"].includes(a.k) ? "follow" : "report");
 // "Today", "Yesterday" ou o dia da semana com a data
 const dayLabel = (d) => {
   const t = todayISO();
-  if (d === t) return "Today";
-  if (d === addDays(t, -1)) return "Yesterday";
-  return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dowOf(d)]}, ${fmtDate(d)}`;
+  if (d === t) return _t("Today");
+  if (d === addDays(t, -1)) return _t("Yesterday");
+  return `${[_t("Sun"), _t("Mon"), _t("Tue"), _t("Wed"), _t("Thu"), _t("Fri"), _t("Sat")][dowOf(d)]}, ${fmtDate(d)}`;
 };
-const winTxt = (v) => (v ? `${v}%` : "not set");
+const winTxt = (v) => (v ? `${v}%` : _t("not set"));
 const arrow = <ArrowRight size={12} style={{ verticalAlign: -2, margin: "0 3px" }} />;
 // texto do registro (o título e a etiqueta vêm de ACT_META)
 function actText(a) {
@@ -775,11 +879,10 @@ function actText(a) {
             </>
           ) : null}
           {a.n ? (
-            <>
-              Next follow-up <b>{fmtDate(a.n)}</b>
+            <>{_t("Next follow-up")}{" "}<b>{fmtDate(a.n)}</b>
             </>
           ) : (
-            "Follow-up made"
+            _t("Follow-up made")
           )}
         </>
       );
@@ -794,38 +897,38 @@ function actText(a) {
     case "resched":
       return (
         <>
-          {a.o ? fmtDate(a.o) : "no date"} {arrow} <b>{fmtDate(a.n)}</b> · {fupTxt("E")}
+          {a.o ? fmtDate(a.o) : _t("no date")} {arrow} <b>{fmtDate(a.n)}</b> · {fupTxt("E")}
         </>
       );
     case "plan":
-      return a.n === "out" ? "Left out of the daily plan" : "Put back in the daily plan";
+      return a.n === "out" ? _t("Left out of the daily plan") : _t("Put back in the daily plan");
     case "close":
       return (
-        <>
-          Marked as <b>{CLOSE_LABEL[a.n] || a.n}</b>
-          {a.txt ? <> · reason <b>{a.txt}</b></> : null}
+        <>{_t("Marked as")}{" "}<b>{CLOSE_LABEL[a.n] || a.n}</b>
+          {a.txt ? <>{" "}{_t("· reason")}{" "}<b>{whyTxt(a.txt)}</b></> : null}
         </>
       );
     case "reopen":
-      return <>Back to <b>Open</b> (the close by hand was undone)</>;
+      return <>{_t("Back to")}{" "}<b>{_t("Open")}</b>{" "}{_t("(the close by hand was undone)")}</>;
     case "why":
       return a.o ? (
         <>
-          {a.o} {arrow} <b>{a.n || "removed"}</b>
+          {whyTxt(a.o)} {arrow} <b>{a.n ? whyTxt(a.n) : _t("removed")}</b>
         </>
       ) : (
-        <b>{a.n}</b>
+        <b>{whyTxt(a.n)}</b>
       );
     case "status":
-      return <>{a.o} {arrow} <b>{a.n}</b></>;
+      // gravado em inglês pelo core (Open, Won…); na tela, no idioma escolhido
+      return <>{_t(a.o)} {arrow} <b>{_t(a.n)}</b></>;
     case "amount":
       return <>{money(a.o)} {arrow} <b>{money(a.n)}</b></>;
     case "order":
       return <b>{a.n}</b>;
     case "_seen":
-      return "Imported from the Quote Report";
+      return _t("Imported from the Quote Report");
     case "_created":
-      return "Create Date in the Quote Report";
+      return _t("Create Date in the Quote Report");
     default:
       return a.txt || a.k;
   }
@@ -866,7 +969,7 @@ function StepHead({ n, title, sub, ok }) {
           background: ok ? X.greenSoft : "#FEF3C7",
         }}
       >
-        {ok ? "OK" : "Required"}
+        {ok ? "OK" : _t("Required")}
       </span>
     </div>
   );
@@ -893,7 +996,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
   const [hf, setHf] = useState("all"); // filtro do histórico: all | note | follow | report
   const [showDet, setShowDet] = useState(false); // celular: "Details" recolhido
   const [showHist, setShowHist] = useState(false); // celular: "History" recolhido
-  if (!q) return <div style={{ padding: 16, color: X.sub }}>Quote not found in the stored data.</div>;
+  if (!q) return <div style={{ padding: 16, color: X.sub }}>{_t("Quote not found in the stored data.")}</div>;
   // situação considerando o fechamento à mão (FUP → Cancelled / Lost)
   const st = quoteStateM(q, (m || {}).close);
   const byHand = st !== quoteState(q);
@@ -938,11 +1041,11 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
   const canDone = open && ndOk && !!txt.trim() && winOk;
   const canResched = open && ndOk && ndFix !== next;
   const quick = [
-    ["Tomorrow", addBusinessDays(today, 1)],
-    ["+2 days", addBusinessDays(today, 2)],
-    ["+1 week", toBusinessDay(addDays(today, 7))],
-    ["+2 weeks", toBusinessDay(addDays(today, 14))],
-    ["+1 month", toBusinessDay(addMonths(today, 1))],
+    [_t("Tomorrow"), addBusinessDays(today, 1)],
+    [_t("+2 days"), addBusinessDays(today, 2)],
+    [_t("+1 week"), toBusinessDay(addDays(today, 7))],
+    [_t("+2 weeks"), toBusinessDay(addDays(today, 14))],
+    [_t("+1 month"), toBusinessDay(addMonths(today, 1))],
   ];
   const done = () => {
     if (!canDone) return;
@@ -974,10 +1077,10 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
   const soldV = st === "won" ? ((q.so || []).some((id) => soMap[id]) ? (q.so || []).reduce((t, id) => t + ((soMap[id] && soMap[id].v) || 0), 0) : q.sa || q.a) : null;
   // vendedores: interno (Quoted By) e externo (Sales Person); a mesma pessoa nas duas colunas aparece uma vez
   const people = [];
-  if (clean(q.qb)) people.push({ name: sellerDisplay(q.qb), raw: q.qb, role: "Inside · Quoted By", fg: X.tealDk, bg: X.tealSoft });
+  if (clean(q.qb)) people.push({ name: sellerDisplay(q.qb), raw: q.qb, role: _t("Inside · Quoted By"), fg: X.tealDk, bg: X.tealSoft });
   if (clean(q.sp)) {
-    if (people.length && sellerSame(q.qb, q.sp)) people[0].role = "Inside and outside · Quoted By and Sales Person";
-    else people.push({ name: sellerDisplay(q.sp), raw: q.sp, role: "Outside · Sales Person", fg: X.violet, bg: X.violetSoft });
+    if (people.length && sellerSame(q.qb, q.sp)) people[0].role = _t("Inside and outside · Quoted By and Sales Person");
+    else people.push({ name: sellerDisplay(q.sp), raw: q.sp, role: _t("Outside · Sales Person"), fg: X.violet, bg: X.violetSoft });
   }
   /* ---------- painel da cotação: cabeçalho, faixa de dados, e embaixo o registro do follow-up (esquerda)
      ao lado do Activities / History (direita), cada lado com a própria rolagem ---------- */
@@ -1011,7 +1114,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
       onKeyDown={(e) => {
         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) open ? null : add();
       }}
-      placeholder={open ? "e.g. Talked to the buyer, he asked for a 5% discount. Call again after the meeting…" : "Write a note about this quote… (Ctrl+Enter saves)"}
+      placeholder={open ? _t("e.g. Talked to the buyer, he asked for a 5% discount. Call again after the meeting…") : _t("Write a note about this quote… (Ctrl+Enter saves)")}
       rows={4}
       style={{
         ...inp,
@@ -1030,17 +1133,17 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
   );
   const factsStrip = (
     <div style={{ display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fit, minmax(150px, 1fr))", background: "#fff", borderBottom: `1px solid ${X.line}`, flexShrink: 0 }}>
-      {fact("FUP", mm.fup ? <FupPill v={mm.fup} /> : muted("Not set"), null, { paddingLeft: 22 })}
+      {fact("FUP", mm.fup ? <FupPill v={mm.fup} /> : muted(_t("Not set")), null, { paddingLeft: 22 })}
       {fact(
-        "Next follow-up",
-        next ? <b style={{ color: nextLate ? X.redDk : X.ink }}>{fmtDate(next)}</b> : muted(st === "open" ? "—" : "closed"),
-        next ? <span style={{ color: nextLate ? X.redDk : nextIn === 0 ? X.amber : X.sub, fontWeight: nextLate ? 700 : 500 }}>{nextIn === 0 ? "today" : nextLate ? `${-nextIn} day${nextIn === -1 ? "" : "s"} late` : `in ${nextIn} day${nextIn === 1 ? "" : "s"}`}</span> : null,
+        _t("Next follow-up"),
+        next ? <b style={{ color: nextLate ? X.redDk : X.ink }}>{fmtDate(next)}</b> : muted(st === "open" ? "—" : _t("closed")),
+        next ? <span style={{ color: nextLate ? X.redDk : nextIn === 0 ? X.amber : X.sub, fontWeight: nextLate ? 700 : 500 }}>{nextIn === 0 ? _t("today") : nextLate ? _t("{0} {1} late", -nextIn, nextIn === -1 ? _t("day") : _t("days")) : _t("in {0} {1}", nextIn, nextIn === 1 ? _t("day") : _t("days"))}</span> : null,
         nextLate ? { background: "#FFF7F7" } : null,
       )}
-      {fact("% Win", mm.win ? <WinPill v={mm.win} /> : muted("Not set"))}
-      {fact("Thermometer", thermo ? <ThermoCell t={thermo} /> : muted("—"))}
+      {fact(_t("% Win"), mm.win ? <WinPill v={mm.win} /> : muted(_t("Not set")))}
+      {fact(_t("Thermometer"), thermo ? <ThermoCell t={thermo} /> : muted("—"))}
       {fact(
-        "Salespeople",
+        _t("Salespeople"),
         people.length ? (
           people.map((p, i) => (
             <span key={i} title={`${p.raw} · ${p.role}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
@@ -1055,17 +1158,17 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
         { gridColumn: "span 2" },
       )}
       {fact(
-        "Orders (SO)",
+        _t("Orders (SO)"),
         q.so && q.so.length ? (
           q.so.map((id) => (
-            <span key={id} title={soMap[id] ? `booked ${fmtDate(soMap[id].d)} · ${money(soMap[id].v)}` : "not in the Sales Report yet"} style={{ fontWeight: 700, fontSize: 12.5 }}>
+            <span key={id} title={soMap[id] ? _t("booked {0} · {1}", fmtDate(soMap[id].d), money(soMap[id].v)) : _t("not in the Sales Report yet")} style={{ fontWeight: 700, fontSize: 12.5 }}>
               {id}
             </span>
           ))
         ) : (
-          muted(st === "won" ? "no Sales Id" : "No order yet")
+          muted(st === "won" ? _t("no Sales Id") : _t("No order yet"))
         ),
-        q.so && q.so.length ? (q.so.some((id) => soMap[id]) ? <span style={{ color: X.green, fontWeight: 700 }}>booked {moneyShort(q.so.reduce((t, id) => t + ((soMap[id] && soMap[id].v) || 0), 0))}</span> : "not in the Sales Report yet") : null,
+        q.so && q.so.length ? (q.so.some((id) => soMap[id]) ? <span style={{ color: X.green, fontWeight: 700 }}>{_t("booked")}{" "}{moneyShort(q.so.reduce((t, id) => t + ((soMap[id] && soMap[id].v) || 0), 0))}</span> : _t("not in the Sales Report yet")) : null,
         { borderRight: "none" },
       )}
     </div>
@@ -1074,22 +1177,21 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
     <div style={{ ...(mob ? { padding: "12px 14px", borderTop: `1px solid ${X.line}` } : { ...panelCard, padding: "12px 16px" }), display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       <ClipboardList size={16} color={X.violet} />
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: X.ink }}>Customer requisition</div>
-        <div style={{ fontSize: 11, color: X.sub }}>who asked and what · goes to the FUP report</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: X.ink }}>{_t("Customer requisition")}</div>
+        <div style={{ fontSize: 11, color: X.sub }}>{_t("who asked and what · goes to the FUP report")}</div>
       </div>
       <input
         value={req}
         onChange={(e) => setReq(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && req.trim() !== curReq && onReq(q.id, q.c, req.trim())}
-        placeholder="e.g. RODRIGO - POLIAS"
+        placeholder={_t("e.g. RODRIGO - POLIAS")}
         style={{ ...inp, height: 32, fontSize: 12.5, flex: "1 1 180px", minWidth: 0, borderRadius: 9 }}
       />
       {req.trim() !== curReq && (
         <>
           <button onClick={() => onReq(q.id, q.c, req.trim())} style={{ ...btn, height: 32, fontSize: 12, background: X.teal, color: "#fff", borderColor: X.teal }}>
-            <Check size={13} /> Save
-          </button>
-          <button onClick={() => setReq(curReq)} title="Undo" style={{ ...btn, height: 32, fontSize: 12, padding: "0 8px" }}>
+            <Check size={13} />{" "}{_t("Save")}</button>
+          <button onClick={() => setReq(curReq)} title={_t("Undo")} style={{ ...btn, height: 32, fontSize: 12, padding: "0 8px" }}>
             <XIcon size={13} />
           </button>
         </>
@@ -1104,7 +1206,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
         <div style={{ background: "#fff", padding: "10px 14px 12px", borderBottom: `1px solid ${X.line}`, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: X.sub }}>{q.id}</span>
-            {pill(s[0] + (byHand ? " · by hand" : ""), s[1], s[2], { fontSize: 11 })}
+            {pill(s[0] + (byHand ? _t(" · by hand") : ""), s[1], s[2], { fontSize: 11 })}
             {headRight ? <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>{headRight}</span> : null}
           </div>
           <div style={{ fontSize: 18, fontWeight: 800, color: X.ink, marginTop: 6, lineHeight: 1.25 }}>{q.c}</div>
@@ -1112,7 +1214,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
             <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.4, fontVariantNumeric: "tabular-nums", color: st === "won" ? X.green : st === "lost" ? X.redDk : X.ink }}>{money(st === "won" && soldV != null ? soldV : q.a)}</span>
             {next ? (
               <span style={{ fontSize: 12.5, fontWeight: 700, color: nextLate ? X.redDk : nextIn === 0 ? X.amber : X.sub }}>
-                {nextLate ? `follow-up ${-nextIn} day${nextIn === -1 ? "" : "s"} late` : nextIn === 0 ? "follow-up today" : `next follow-up ${fmtDay(next)}`}
+                {nextLate ? _t("follow-up {0} {1} late", -nextIn, nextIn === -1 ? _t("day") : _t("days")) : nextIn === 0 ? _t("follow-up today") : _t("next follow-up {0}", fmtDay(next))}
               </span>
             ) : null}
           </div>
@@ -1122,7 +1224,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: mob ? 7 : 10, flexWrap: "wrap" }}>
             <span style={{ fontSize: mob ? 19 : 22, fontWeight: 800, letterSpacing: -0.5, color: X.ink }}>{q.id}</span>
-            {pill(s[0] + (byHand ? " · by hand" : ""), s[1], s[2], { fontSize: 11.5, padding: "3px 10px" })}
+            {pill(s[0] + (byHand ? _t(" · by hand") : ""), s[1], s[2], { fontSize: 11.5, padding: "3px 10px" })}
             {lines.map((k) => (
               <span key={k} style={{ fontSize: 11, fontWeight: 800, color: LINE_COLOR[k][0], background: LINE_COLOR[k][1], padding: "3px 8px", borderRadius: 6 }}>
                 {k}
@@ -1135,15 +1237,15 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
           </div>
           <div style={{ fontSize: 12, color: X.sub, marginTop: 3 }}>
             {[q.conta, q.cls].filter(Boolean).join(" · ")}
-            {q.conta || q.cls ? " · " : ""}created {fmtDate(q.d)} · {age === 0 ? "today" : `${age} day${age === 1 ? "" : "s"} ago`}
+            {q.conta || q.cls ? " · " : ""}{_t("created")}{" "}{fmtDate(q.d)} · {age === 0 ? _t("today") : _t("{0} {1} ago", age, age === 1 ? _t("day") : _t("days"))}
           </div>
         </div>
         <div style={mob ? { width: "100%", display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" } : { textAlign: "right", flexShrink: 0 }}>
-          <div style={factLbl}>{st === "won" ? "Sold" : st === "lost" ? "Lost" : "Quoted"}</div>
+          <div style={factLbl}>{st === "won" ? _t("Sold") : st === "lost" ? _t("Lost") : _t("Quoted")}</div>
           <div style={{ fontSize: mob ? 21 : 26, fontWeight: 800, letterSpacing: -0.6, fontVariantNumeric: "tabular-nums", marginTop: 2, color: st === "won" ? X.green : st === "lost" ? X.redDk : X.ink }}>
             {money(st === "won" && soldV != null ? soldV : q.a)}
           </div>
-          {st === "won" && soldV != null && Math.abs(soldV - q.a) > 0.005 ? <div style={{ fontSize: 11.5, color: X.sub }}>quoted {money(q.a)}</div> : null}
+          {st === "won" && soldV != null && Math.abs(soldV - q.a) > 0.005 ? <div style={{ fontSize: 11.5, color: X.sub }}>{_t("quoted")}{" "}{money(q.a)}</div> : null}
         </div>
         {headRight && !mob ? <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, paddingLeft: 6 }}>{headRight}</div> : null}
       </div>
@@ -1160,10 +1262,10 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <XCircle size={17} color={CLOSE_COLOR[st][0]} />
                 <span style={{ fontSize: 14, fontWeight: 800, color: X.ink }}>{CLOSE_LABEL[st]}</span>
-                <span style={{ fontSize: 12, color: X.sub }}>{byHand ? "marked by hand · the Quote Report still says Open" : "in the Quote Report"}</span>
+                <span style={{ fontSize: 12, color: X.sub }}>{byHand ? _t("marked by hand · the Quote Report still says Open") : _t("in the Quote Report")}</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12.5, color: "#475569" }}>Reason:</span>
+                <span style={{ fontSize: 12.5, color: "#475569" }}>{_t("Reason:")}</span>
                 {CLOSE_REASONS[st].map((r) => {
                   const on = mm.why === r;
                   const [fg, bg] = CLOSE_COLOR[st];
@@ -1173,15 +1275,14 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                       onClick={() => !on && (onWhy ? onWhy(q.id, q.c, r) : onAskClose(q.id, q.c, st, byHand ? "close" : "why"))}
                       style={{ ...btn, height: 30, fontSize: 12.5, borderRadius: 999, fontWeight: on ? 700 : 500, background: on ? bg : "#fff", color: on ? fg : X.ink, borderColor: on ? fg : X.line, cursor: on ? "default" : "pointer" }}
                     >
-                      {on && <Check size={13} />} {r}
+                      {on && <Check size={13} />} {whyTxt(r)}
                     </button>
                   );
                 })}
-                {!mm.why && <span style={{ fontSize: 12, color: X.redDk, fontWeight: 600 }}>no reason yet</span>}
+                {!mm.why && <span style={{ fontSize: 12, color: X.redDk, fontWeight: 600 }}>{_t("no reason yet")}</span>}
                 {byHand && onReopen && (
-                  <button onClick={() => onReopen(q.id, q.c)} style={{ ...btn, height: 30, fontSize: 12, marginLeft: "auto" }} title="Undo the close by hand: the quote goes back to Open">
-                    <RotateCcw size={13} /> Reopen
-                  </button>
+                  <button onClick={() => onReopen(q.id, q.c)} style={{ ...btn, height: 30, fontSize: 12, marginLeft: "auto" }} title={_t("Undo the close by hand: the quote goes back to Open")}>
+                    <RotateCcw size={13} />{" "}{_t("Reopen")}</button>
                 )}
               </div>
             </div>
@@ -1192,11 +1293,11 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                 {open ? <CheckCircle2 size={17} /> : <StickyNote size={16} />}
               </span>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: X.ink }}>{open ? "Register a follow-up" : "Add a note"}</div>
-                {(!mob || !open) && <div style={{ fontSize: 12, color: X.sub }}>{open ? "Note, next date and % Win — the three are needed to mark Done" : `This quote is ${s[0].toLowerCase()}: only notes can be added`}</div>}
+                <div style={{ fontSize: 15, fontWeight: 800, color: X.ink }}>{open ? _t("Register a follow-up") : _t("Add a note")}</div>
+                {(!mob || !open) && <div style={{ fontSize: 12, color: X.sub }}>{open ? _t("Note, next date and % Win — the three are needed to mark Done") : _t("This quote is {0}: only notes can be added", s[0].toLowerCase())}</div>}
               </div>
               {open && (
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5 }} title={`${nDone} of 3 steps filled in`}>
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5 }} title={_t("{0} of 3 steps filled in", nDone)}>
                   {[hasNote, ndOk, winOk].map((ok, i) => (
                     <span key={i} style={{ width: 22, height: 6, borderRadius: 4, background: ok ? X.teal : "#E3E9EE" }} />
                   ))}
@@ -1206,19 +1307,18 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
             </div>
             {/* 1 · nota */}
             <div style={sect}>
-              {open ? step(1, hasNote, "What happened?", "note of this contact") : null}
+              {open ? step(1, hasNote, _t("What happened?"), _t("note of this contact")) : null}
               {noteBox}
               {!open && (
                 <button onClick={add} disabled={!hasNote} style={{ ...btn, alignSelf: "flex-end", height: 34, background: hasNote ? X.teal : "#fff", color: hasNote ? "#fff" : X.sub, borderColor: hasNote ? X.teal : X.line, cursor: hasNote ? "pointer" : "not-allowed" }}>
-                  <StickyNote size={14} /> Add note
-                </button>
+                  <StickyNote size={14} />{" "}{_t("Add note")}</button>
               )}
             </div>
             {open && (
               <>
                 {/* 2 · próxima data */}
                 <div style={sect}>
-                  {step(2, ndOk, "Next follow-up", next ? <>now {fmtDate(next)}{mm.fup ? ` · ${fupTxt(mm.fup)}` : ""}</> : "no date yet")}
+                  {step(2, ndOk, _t("Next follow-up"), next ? <>{_t("now")}{" "}{fmtDate(next)}{mm.fup ? ` · ${fupTxt(mm.fup)}` : ""}</> : _t("no date yet"))}
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <input
                       type="date"
@@ -1242,21 +1342,20 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                     })}
                   </div>
                   {nd && !ndOk ? (
-                    <div style={{ fontSize: 12, color: X.redDk, fontWeight: 600 }}>Choose a date after {fmtDate(today)}.</div>
+                    <div style={{ fontSize: 12, color: X.redDk, fontWeight: 600 }}>{_t("Choose a date after")}{" "}{fmtDate(today)}.</div>
                   ) : ndOk ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: 12, color: X.sub }}>
                       <ArrowRight size={13} color={X.violet} />
                       <b style={{ color: X.ink }}>
                         {dowName(ndFix)}, {fmtDate(ndFix)}
-                      </b>
-                      · in {daysBetween(today, ndFix)} day{daysBetween(today, ndFix) === 1 ? "" : "s"}
-                      {ndFix !== nd ? ` (${holidayOf(nd) && holidayOf(nd).block ? `${fmtDay(nd)} is a holiday: ${holidayOf(nd).name}` : "weekend"} → next business day)` : ""} · moves to <FupPill v="E" />
+                      </b>{_t("· in")}{" "}{daysBetween(today, ndFix)} {daysBetween(today, ndFix) === 1 ? _t("day") : _t("days")}
+                      {ndFix !== nd ? _t(" ({0} → next business day)", holidayOf(nd) && holidayOf(nd).block ? _t("{0} is a holiday: {1}", fmtDay(nd), holidayOf(nd).name) : _t("weekend")) : ""}{" "}{_t("· moves to")}{" "}<FupPill v="E" />
                     </div>
                   ) : null}
                 </div>
                 {/* 3 · % Win */}
                 <div style={sect}>
-                  {step(3, winOk, "% Win", curWin ? `is it still ${curWin}%? confirm or change` : "not set yet: choose the chance")}
+                  {step(3, winOk, _t("% Win"), curWin ? _t("is it still {0}%? confirm or change", curWin) : _t("not set yet: choose the chance"))}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
                     {WIN_VALS.map((v) => {
                       const on = wv === v;
@@ -1266,7 +1365,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                         <button
                           key={v}
                           onClick={() => setWv(v)}
-                          title={isCur ? `Keep ${v}%` : `Change to ${v}%`}
+                          title={isCur ? _t("Keep {0}%", v) : _t("Change to {0}%", v)}
                           style={{
                             ...btn,
                             height: 46,
@@ -1281,7 +1380,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                           }}
                         >
                           <span style={{ fontSize: 15, fontWeight: 800, lineHeight: 1.1 }}>{v}%</span>
-                          <span style={{ fontSize: 10, fontWeight: 700, color: on ? wm.color : X.sub, lineHeight: 1.1 }}>{isCur ? (on ? "kept" : "now") : on ? (curWin ? `was ${curWin}%` : "chosen") : " "}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: on ? wm.color : X.sub, lineHeight: 1.1 }}>{isCur ? (on ? _t("kept") : _t("now")) : on ? (curWin ? _t("was {0}%", curWin) : _t("chosen")) : " "}</span>
                         </button>
                       );
                     })}
@@ -1292,7 +1391,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                   <button
                     onClick={done}
                     disabled={!canDone}
-                    title={canDone ? "Saves the note, records the follow-up as done, updates the % Win and schedules the next one" : "Fill in the note, the next follow-up date and the % Win"}
+                    title={canDone ? _t("Saves the note, records the follow-up as done, updates the % Win and schedules the next one") : _t("Fill in the note, the next follow-up date and the % Win")}
                     style={{
                       ...btn,
                       width: "100%",
@@ -1309,25 +1408,22 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                     }}
                   >
                     <CheckCircle2 size={17} />
-                    {canDone ? `Mark Done · ${wv}% · next follow-up ${fmtDay(ndFix)}` : "Done · missing: " + [!hasNote && "note", !ndOk && "date", !winOk && "% Win"].filter(Boolean).join(", ")}
+                    {canDone ? _t("Mark Done · {0}% · next follow-up {1}", wv, fmtDay(ndFix)) : _t("Done · missing: ") + [!hasNote && _t("note"), !ndOk && _t("date"), !winOk && _t("% Win")].filter(Boolean).join(", ")}
                   </button>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <button onClick={add} disabled={!hasNote} style={subBtn(hasNote)} title="Save only the note (no Done)">
-                      <StickyNote size={14} /> Save only the note
-                    </button>
-                    <button onClick={resched} disabled={!canResched} style={subBtn(canResched)} title="Change the next follow-up date without marking Done (the quote moves to E · Ongoing; the note is optional)">
-                      <CalendarDays size={14} /> Only change the date
-                    </button>
+                    <button onClick={add} disabled={!hasNote} style={subBtn(hasNote)} title={_t("Save only the note (no Done)")}>
+                      <StickyNote size={14} />{" "}{_t("Save only the note")}</button>
+                    <button onClick={resched} disabled={!canResched} style={subBtn(canResched)} title={_t("Change the next follow-up date without marking Done (the quote moves to E · Ongoing; the note is optional)")}>
+                      <CalendarDays size={14} />{" "}{_t("Only change the date")}</button>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 11, color: X.sub, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      <Lock size={11} /> notes can't be edited or deleted
-                    </span>
+                      <Lock size={11} />{" "}{_t("notes can't be edited or deleted")}</span>
                     {onAskClose && (
                       <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: 11.5, color: X.sub }}>Closing it?</span>
+                        <span style={{ fontSize: 11.5, color: X.sub }}>{_t("Closing it?")}</span>
                         {["lost", "cancelled"].map((k) => (
-                          <button key={k} onClick={() => onAskClose(q.id, q.c, k)} style={{ ...btn, height: 28, fontSize: 11.5, padding: "0 10px", color: CLOSE_COLOR[k][0], borderColor: X.line }} title={`Mark as ${CLOSE_LABEL[k]} (with the reason)`}>
+                          <button key={k} onClick={() => onAskClose(q.id, q.c, k)} style={{ ...btn, height: 28, fontSize: 11.5, padding: "0 10px", color: CLOSE_COLOR[k][0], borderColor: X.line }} title={_t("Mark as {0} (with the reason)", CLOSE_LABEL[k])}>
                             <XCircle size={12} /> {CLOSE_LABEL[k]}
                           </button>
                         ))}
@@ -1344,8 +1440,8 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
             <div style={{ ...panelCard, overflow: "hidden" }}>
               <div onClick={() => setShowDet((v) => !v)} className="qp-card-btn" style={{ display: "flex", alignItems: "center", gap: 9, padding: "13px 14px", cursor: "pointer" }}>
                 <Info size={16} color={X.ink} />
-                <span style={{ fontWeight: 800, fontSize: 14.5 }}>Details</span>
-                <span style={{ fontSize: 12, color: X.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>FUP, % Win, salespeople, orders</span>
+                <span style={{ fontWeight: 800, fontSize: 14.5 }}>{_t("Details")}</span>
+                <span style={{ fontSize: 12, color: X.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{_t("FUP, % Win, salespeople, orders")}</span>
                 <ChevronDown size={17} color={X.sub} style={{ marginLeft: "auto", flexShrink: 0, transform: showDet ? "rotate(180deg)" : "none", transition: "transform .14s" }} />
               </div>
               {showDet && (
@@ -1358,7 +1454,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                       </span>
                     ))}
                     {[q.conta, q.cls].filter(Boolean).join(" · ")}
-                    {q.conta || q.cls ? " · " : ""}created {fmtDate(q.d)} · {age === 0 ? "today" : `${age} day${age === 1 ? "" : "s"} ago`}
+                    {q.conta || q.cls ? " · " : ""}{_t("created")}{" "}{fmtDate(q.d)} · {age === 0 ? _t("today") : _t("{0} {1} ago", age, age === 1 ? _t("day") : _t("days"))}
                   </div>
                   {reqBox}
                 </>
@@ -1375,7 +1471,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
             style={{ display: "flex", alignItems: "center", gap: 9, padding: mob ? "13px 14px" : "13px 16px", borderBottom: !mob || showHist ? `1px solid ${X.line}` : "none", flexWrap: "wrap", cursor: mob ? "pointer" : "default" }}
           >
             <Clock size={mob ? 16 : 17} color={X.ink} />
-            <span style={{ fontWeight: 800, fontSize: 14.5 }}>{mob ? "History" : "Activities / History"}</span>
+            <span style={{ fontWeight: 800, fontSize: 14.5 }}>{mob ? _t("History") : _t("Activities / History")}</span>
             {mob && <span style={{ fontSize: 12, fontWeight: 700, color: X.sub, background: X.head, borderRadius: 999, padding: "1px 8px" }}>{list.length}</span>}
             {mob && <ChevronDown size={17} color={X.sub} style={{ marginLeft: "auto", transform: showHist ? "rotate(180deg)" : "none", transition: "transform .14s" }} />}
             {(!mob || showHist) && (
@@ -1401,7 +1497,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
           </div>
           {(!mob || showHist) && (
           <div style={mob ? { padding: "4px 12px 10px" } : { flex: 1, minHeight: 0, overflow: "auto", padding: "4px 16px 10px" }}>
-            {!shownH.length && <div style={{ fontSize: 12.5, color: X.sub, padding: "16px 0" }}>Nothing of this type yet.</div>}
+            {!shownH.length && <div style={{ fontSize: 12.5, color: X.sub, padding: "16px 0" }}>{_t("Nothing of this type yet.")}</div>}
             {dayGroups.map(([day, items]) => (
               <div key={day}>
                 <div style={{ position: "sticky", top: 0, zIndex: 2, background: "#fff", padding: "10px 0 6px", display: "flex", alignItems: "center", gap: 8 }}>
@@ -1467,7 +1563,7 @@ function NoteBadge({ info, onClick }) {
   return (
     <span
       onClick={onClick}
-      title={`${info.n} note${info.n === 1 ? "" : "s"} · last ${fmtStamp(l.t)}${l.by ? " by " + l.by : ""}:\n${l.txt}`}
+      title={_t("{0} {1} · last {2}{3}:\n{4}", info.n, info.n === 1 ? _t("note") : _t("notes"), fmtStamp(l.t), l.by ? _t(" by ") + l.by : "", l.txt)}
       style={{ display: "inline-flex", alignItems: "center", gap: 3, marginLeft: 6, fontSize: 10.5, fontWeight: 700, color: X.tealDk, background: X.tealSoft, padding: "1px 6px", borderRadius: 999, cursor: onClick ? "pointer" : "help", verticalAlign: 1 }}
     >
       <MessageSquare size={11} /> {info.n}
@@ -1485,7 +1581,7 @@ function ClosePill({ kind, why, onClick, title }) {
       style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 700, color: fg, background: why ? bg : "#fff", border: why ? "1px solid transparent" : `1px dashed ${fg}`, padding: "2px 9px", borderRadius: 999, cursor: onClick ? "pointer" : "default", whiteSpace: "nowrap" }}
     >
       {CLOSE_LABEL[kind] || kind}
-      <span style={{ fontWeight: 500, opacity: 0.85 }}>· {why || "no reason"}</span>
+      <span style={{ fontWeight: 500, opacity: 0.85 }}>· {whyTxt(why) || _t("no reason")}</span>
     </span>
   );
 }
@@ -1508,19 +1604,17 @@ function CloseDialog({ ask, onConfirm, onReopen, onCancel }) {
             <XCircle size={18} />
           </span>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 15.5, fontWeight: 800, color: X.ink }}>{ask.mode === "why" ? `Why is it ${CLOSE_LABEL[ask.kind].toLowerCase()}?` : `Mark as ${CLOSE_LABEL[ask.kind]}`}</div>
+            <div style={{ fontSize: 15.5, fontWeight: 800, color: X.ink }}>{ask.mode === "why" ? _t("Why is it {0}?", CLOSE_LABEL[ask.kind].toLowerCase()) : _t("Mark as {0}", CLOSE_LABEL[ask.kind])}</div>
             <div style={{ fontSize: 12, color: X.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {ask.id} · {ask.c}
             </div>
           </div>
         </div>
         {ask.mode !== "why" && (
-          <div style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.5 }}>
-            The quote leaves the follow-up calendar and moves to <b>{CLOSE_LABEL[ask.kind]}</b> {ask.kind === "lost" ? "(its value goes to Lost)" : "(it leaves the totals, like the cancelled ones)"}, even before the Quote Report changes.
-          </div>
+          <div style={{ fontSize: 12.5, color: "#475569", lineHeight: 1.5 }}>{_t("The quote leaves the follow-up calendar and moves to")}{" "}<b>{CLOSE_LABEL[ask.kind]}</b> {ask.kind === "lost" ? _t("(its value goes to Lost)") : _t("(it leaves the totals, like the cancelled ones)")}{_t(", even before the Quote Report changes.")}</div>
         )}
         <div>
-          <div style={{ fontSize: 11, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>Reason · required</div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>{_t("Reason · required")}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {reasons.map((r) => {
               const on = why === r;
@@ -1533,7 +1627,7 @@ function CloseDialog({ ask, onConfirm, onReopen, onCancel }) {
                   <span style={{ width: 16, height: 16, borderRadius: 999, border: `2px solid ${on ? fg : "#CBD5E1"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     {on && <span style={{ width: 8, height: 8, borderRadius: 999, background: fg }} />}
                   </span>
-                  {r}
+                  {whyTxt(r)}
                 </button>
               );
             })}
@@ -1541,19 +1635,16 @@ function CloseDialog({ ask, onConfirm, onReopen, onCancel }) {
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {ask.manual && onReopen && (
-            <button onClick={onReopen} style={{ ...btn, height: 36, fontSize: 12.5 }} title="Undo the close by hand: the quote goes back to Open">
-              <RotateCcw size={14} /> Reopen
-            </button>
+            <button onClick={onReopen} style={{ ...btn, height: 36, fontSize: 12.5 }} title={_t("Undo the close by hand: the quote goes back to Open")}>
+              <RotateCcw size={14} />{" "}{_t("Reopen")}</button>
           )}
-          <button onClick={onCancel} style={{ ...btn, height: 36, marginLeft: "auto" }}>
-            Cancel
-          </button>
+          <button onClick={onCancel} style={{ ...btn, height: 36, marginLeft: "auto" }}>{_t("Cancel")}</button>
           <button
             onClick={() => why && onConfirm(why)}
             disabled={!why}
             style={{ ...btn, height: 36, fontWeight: 700, background: why ? fg : "#EEF1F4", borderColor: why ? fg : X.line, color: why ? "#fff" : "#8A97A3", cursor: why ? "pointer" : "not-allowed" }}
           >
-            <Check size={14} /> {ask.mode === "why" ? "Save reason" : `Mark as ${CLOSE_LABEL[ask.kind]}`}
+            <Check size={14} /> {ask.mode === "why" ? _t("Save reason") : _t("Mark as {0}", CLOSE_LABEL[ask.kind])}
           </button>
         </div>
       </div>
@@ -1602,18 +1693,18 @@ function QuoteDrawer({ q, m, sales, acts, thermo, onNote, onDone, onResched, onR
             <>
               {nav && nav.n > 1 && (
                 <>
-                  <button onClick={() => nav.go(-1)} disabled={nav.i <= 0} style={{ ...btn, padding: "0 9px", opacity: nav.i <= 0 ? 0.4 : 1 }} title="Previous quote of the table (Alt+↑)">
+                  <button onClick={() => nav.go(-1)} disabled={nav.i <= 0} style={{ ...btn, padding: "0 9px", opacity: nav.i <= 0 ? 0.4 : 1 }} title={_t("Previous quote of the table (Alt+↑)")}>
                     <ChevronLeft size={16} />
                   </button>
                   <span style={{ fontSize: 12, color: X.sub, whiteSpace: "nowrap", minWidth: mob ? 0 : 64, textAlign: "center" }}>
-                    {nav.i + 1}{mob ? "/" : " of "}{nav.n.toLocaleString("pt-BR")}
+                    {nav.i + 1}{mob ? "/" : _t(" of ")}{nav.n.toLocaleString("pt-BR")}
                   </span>
-                  <button onClick={() => nav.go(1)} disabled={nav.i >= nav.n - 1} style={{ ...btn, padding: "0 9px", opacity: nav.i >= nav.n - 1 ? 0.4 : 1 }} title="Next quote of the table (Alt+↓)">
+                  <button onClick={() => nav.go(1)} disabled={nav.i >= nav.n - 1} style={{ ...btn, padding: "0 9px", opacity: nav.i >= nav.n - 1 ? 0.4 : 1 }} title={_t("Next quote of the table (Alt+↓)")}>
                     <ChevronRight size={16} />
                   </button>
                 </>
               )}
-              <button onClick={onClose} style={{ ...btn, padding: "0 10px", marginLeft: 4 }} title="Close (Esc)">
+              <button onClick={onClose} style={{ ...btn, padding: "0 10px", marginLeft: 4 }} title={_t("Close (Esc)")}>
                 <XIcon size={16} />
               </button>
             </>
@@ -1630,36 +1721,49 @@ const FUP_RANK = { A: 4, B: 3, C: 2, D: 1 }; // A = mais urgente
 /* Colunas da carteira. Categorias filtram (Customer, FUP, % Win, Thermometer); data e valores
    ordenam (Date, Quoted, Open, Lost, Sold). QT não precisa de nenhum dos dois: a busca acha a cotação. */
 const PCOLS = [
-  { id: "id", label: "QT", tip: "Quote ID · use the search to find a quote", w: 150 },
-  { id: "c", label: "Customer", sort: true, filter: true, fw: 320, tip: "Customer · click the name to sort A–Z / Z–A · the funnel filters" },
-  { id: "d", label: "Date", sort: true, tip: "Quote date", w: 110 },
-  { id: "fup", label: "FUP", filter: true, manual: true, tip: "Follow-up deadline · A = next day · B = twice a week · C = 2 weeks · D = 1 month", w: 190 },
-  { id: "win", label: "% Win", filter: true, manual: true, tip: "Chance of closing this quote", w: 110 },
-  { id: "temp", label: "Thermometer", filter: true, tip: `Automatic, by customer · hit rate of the last ${THERMO_HR_MONTHS} months · minimum hit rate: ${THERMO_HR_MIN * 100}% for OEM customers, ${THERMO_HR_MIN_OTHER * 100}% for the other classifications · Hot = hit rate ≥ minimum and quotes on ${THERMO_DAYS_MIN}+ of the last ${THERMO_WINDOW} business days · Warm = ≥ minimum and fewer days · Cool = below the minimum and ${THERMO_DAYS_MIN}+ days · Cold = below the minimum and fewer days · fewer than ${THERMO_RECENT_MIN} quote days in the last ${THERMO_RECENT_WINDOW} business days drops one level (↓)`, w: 170 },
-  { id: "quoted", label: "Quoted", sort: true, right: true, w: 140 },
-  { id: "open", label: "Open", sort: true, right: true, w: 140 },
-  { id: "lostV", label: "Lost", sort: true, right: true, w: 140 },
-  { id: "sold", label: "Sold", sort: true, right: true, w: 150, tip: "Booked value of the order (Sales Report) · without it, the quote's Sales Amt" },
+  { id: "id", label: "QT", tip: _t("Quote ID · use the search to find a quote"), w: 150 },
+  { id: "c", label: _t("Customer"), sort: true, filter: true, fw: 320, tip: _t("Customer · click the name to sort A–Z / Z–A · the funnel filters") },
+  { id: "d", label: _t("Date"), sort: true, tip: _t("Quote date"), w: 110 },
+  { id: "fup", label: "FUP", filter: true, manual: true, tip: _t("Follow-up deadline · A = next day · B = twice a week · C = 2 weeks · D = 1 month"), w: 190 },
+  { id: "win", label: _t("% Win"), filter: true, manual: true, tip: _t("Chance of closing this quote"), w: 110 },
+  { id: "prio", label: _t("Priority"), sort: true, tip: PRIO_TIP, w: 104 },
+  { id: "temp", label: _t("Thermometer"), filter: true, tip: _t("Automatic, by customer · hit rate of the last {0} months · minimum hit rate: {1}% for OEM customers, {2}% for the other classifications · Hot = hit rate ≥ minimum and quotes on {3}+ of the last {4} business days · Warm = ≥ minimum and fewer days · Cool = below the minimum and {5}+ days · Cold = below the minimum and fewer days · fewer than {6} quote days in the last {7} business days drops one level (↓)", THERMO_HR_MONTHS, THERMO_HR_MIN * 100, THERMO_HR_MIN_OTHER * 100, THERMO_DAYS_MIN, THERMO_WINDOW, THERMO_DAYS_MIN, THERMO_RECENT_MIN, THERMO_RECENT_WINDOW), w: 170 },
+  { id: "quoted", label: _t("Quoted"), sort: true, right: true, w: 140 },
+  { id: "open", label: _t("Open"), sort: true, right: true, w: 140 },
+  { id: "lostV", label: _t("Lost"), sort: true, right: true, w: 140 },
+  { id: "sold", label: _t("Sold"), sort: true, right: true, w: 150, tip: _t("Booked value of the order (Sales Report) · without it, the quote's Sales Amt") },
 ];
 const sortVal = (r, id) =>
-  id === "id" || id === "c" || id === "d" ? r[id] || "" : id === "fup" ? FUP_RANK[r.fup] || 0 : id === "temp" ? (TEMP[r.temp] ? TEMP[r.temp].rank : 0) : r[id] || 0;
+  id === "id" || id === "c" || id === "d" ? r[id] || "" : id === "prio" ? r.prio : id === "fup" ? FUP_RANK[r.fup] || 0 : id === "temp" ? (TEMP[r.temp] ? TEMP[r.temp].rank : 0) : r[id] || 0;
 const fKey = (r, id) => (id === "c" ? r.c || NONE : id === "fup" ? r.fup || NONE : id === "win" ? (r.win ? String(r.win) : NONE) : id === "temp" ? r.temp || NONE : "");
 const STATUS_TABS = [
-  ["", "All"],
-  ["open", "Open"],
-  ["won", "Won"],
-  ["lost", "Lost"],
-  ["cancelled", "Cancelled"],
+  ["", _t("All")],
+  ["open", _t("Open")],
+  ["won", _t("Won")],
+  ["lost", _t("Lost")],
+  ["cancelled", _t("Cancelled")],
 ];
 const ROW_CAP = 400; // linhas desenhadas de uma vez; o resto vem no "Show all"
+// filtros rápidos da lista (um toque; dá para ligar vários: valem todos juntos)
+const QUICK = [
+  ["late", _t("Overdue"), X.redDk, (r, t) => r.st === "open" && !!r.next && r.next < t],
+  ["due", _t("Due today"), X.amber, (r, t) => r.st === "open" && r.next === t],
+  ["prio", _t("High priority"), X.violet, (r) => r.prio >= 60],
+  ["hot", _t("Hot or Warm"), "#C2410C", (r) => r.temp === "HOT" || r.temp === "WARM"],
+  ["nofup", _t("No FUP"), "#64748B", (r) => r.st === "open" && !r.fup],
+];
+const QUICK_FN = Object.fromEntries(QUICK.map((x) => [x[0], x[3]]));
 
 /* cards = cartões no lugar da tabela (celular e a tela do vendedor externo); mesma busca, abas e filtros */
-function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodLabel, thermo, qIndex, sales, acts, onNote, onDone, onResched, onReq, user, onUser, notesBy, openQ, onOpenQuote, cards, title, filtersExtra, filtersExtraN }) {
+function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodLabel, thermo, qIndex, sales, acts, onNote, onDone, onResched, onReq, user, onUser, notesBy, openQ, onOpenQuote, cards, title, filtersExtra, filtersExtraN, extraChips = [], onClearExtra }) {
   const [srch, setSrch] = useState("");
   const [sheet, setSheet] = useState(false); // cartões: folha de filtros
-  const [sort, setSort] = useState({ id: "c", dir: 1 }); // padrão: cliente A–Z (e a cotação mais nova primeiro)
-  const [flt, setFlt] = useState({});
-  const [stF, setStF] = useState(cards ? "open" : ""); // cartões: começa nas abertas (o que ainda dá para fechar)
+  // ordem e filtros continuam ao trocar de aba (até fechar a aba do navegador)
+  const sk = "qp_qt_" + (cards ? "c" : "t") + "_";
+  const [sort, setSort] = useSessionState(sk + "sort", { id: "prio", dir: -1 }); // padrão: a maior prioridade primeiro (empate: o maior valor em aberto)
+  const [flt, setFlt] = useSessionState(sk + "flt", {});
+  const [stF, setStF] = useSessionState(sk + "st", cards ? "open" : ""); // cartões: começa nas abertas (o que ainda dá para fechar)
+  const [quick, setQuick] = useSessionState(sk + "quick", []);
   const [all, setAll] = useState(false);
   const enriched = useMemo(
     () =>
@@ -1667,7 +1771,9 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
         const m = meta[r.id] || {};
         const t = thermo[r.nn] || null;
         const pend = r.st === "open" ? fupPending(m) : [];
-        return { ...r, fup: m.fup || "", win: m.win || 0, why: m.why || "", temp: t ? t.temp : "", next: pend[0] || "", next2: pend[1] || "" };
+        const x = { ...r, fup: m.fup || "", win: m.win || 0, why: m.why || "", temp: t ? t.temp : "", next: pend[0] || "", next2: pend[1] || "" };
+        x.prio = prioOf(x);
+        return x;
       }),
     [rows, cancelRows, meta, thermo],
   );
@@ -1681,16 +1787,38 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
     searched.forEach((r) => (m[r.st] = (m[r.st] || 0) + 1));
     return m;
   }, [searched]);
-  const shown = useMemo(() => {
+  const base = useMemo(() => {
     const act = Object.entries(flt).filter(([, v]) => v && v.length);
-    const f = searched.filter((r) => (stF ? r.st === stF : r.st !== "cancelled") && act.every(([id, v]) => v.includes(fKey(r, id))));
+    return searched.filter((r) => (stF ? r.st === stF : r.st !== "cancelled") && act.every(([id, v]) => v.includes(fKey(r, id))));
+  }, [searched, flt, stF]);
+  const quickOn = stF === "open" || stF === ""; // os rápidos são de cotação aberta
+  const quickItems = QUICK.map(([k, l, col, fn]) => [k, l, base.filter((r) => fn(r, today)).length, col]);
+  const shown = useMemo(() => {
+    const qs = quickOn ? quick.filter((k) => QUICK_FN[k]) : [];
+    const f = base.filter((r) => qs.every((k) => QUICK_FN[k](r, today)));
     return f.sort((a, b) => {
       const va = sortVal(a, sort.id),
         vb = sortVal(b, sort.id);
       const c = typeof va === "string" ? va.localeCompare(vb, "pt-BR") : va - vb;
-      return c * sort.dir || (a.d < b.d ? 1 : a.d > b.d ? -1 : 0) || a.id.localeCompare(b.id);
+      return c * sort.dir || (sort.id === "prio" ? (b.open || b.quoted || 0) - (a.open || a.quoted || 0) : 0) || (a.d < b.d ? 1 : a.d > b.d ? -1 : 0) || a.id.localeCompare(b.id);
     });
-  }, [searched, flt, sort, stF]);
+  }, [base, quick, quickOn, sort, today]);
+  // filtros ligados, em chips com ×
+  const optTxt = (id, v) => (v === NONE ? _t("not set") : id === "fup" ? v : id === "win" ? v + "%" : id === "temp" ? (TEMP[v] ? TEMP[v].label : v) : v);
+  const colChips = Object.entries(flt)
+    .filter(([, v]) => v && v.length)
+    .map(([id, v]) => ({
+      k: "col-" + id,
+      label: id === "c" ? (v.length === 1 ? v[0] : _t("{0} customers", v.length)) : `${id === "fup" ? "FUP" : id === "win" ? _t("% Win") : _t("Thermometer")}: ${v.map((x) => optTxt(id, x)).join(", ")}`,
+      onClear: () => setFlt((f) => ({ ...f, [id]: [] })),
+    }));
+  const chips = [...colChips, ...(stF === "cancelled" && cards ? [{ k: "cancelled", label: _t("Cancelled quotes"), onClear: () => setStF("open") }] : []), ...extraChips];
+  const clearAll = () => {
+    setFlt({});
+    setQuick([]);
+    if (stF === "cancelled") setStF(cards ? "open" : "");
+    if (onClearExtra) onClearExtra();
+  };
   const fltOpts = (id) => {
     const cnt = {};
     searched.forEach((r) => {
@@ -1710,7 +1838,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
     return [
       ...keys.map((k) => ({ v: k, n: cnt[k] || 0, text: id === "fup" ? `${k} ${FUP[k].label}` : id === "win" ? k + "%" : TEMP[k].label, node: id === "fup" ? <FupPill v={k} /> : id === "win" ? <WinPill v={+k} /> : <TempPill v={k} /> })),
       // o Thermometer é automático e sempre tem valor: sem a opção "Not set"
-      ...(id === "temp" ? [] : [{ v: NONE, n: cnt[NONE] || 0, node: <span style={{ color: X.sub }}>Not set</span> }]),
+      ...(id === "temp" ? [] : [{ v: NONE, n: cnt[NONE] || 0, node: <span style={{ color: X.sub }}>{_t("Not set")}</span> }]),
     ];
   };
   // 1º clique: cliente A–Z, nos outros o maior/mais recente primeiro; 2º clique inverte
@@ -1718,7 +1846,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
   const sum = (k) => shown.reduce((a, r) => a + (r[k] || 0), 0);
   const cnt = (st) => shown.filter((r) => r.st === st).length;
   const tot = { quoted: sum("quoted"), open: sum("open"), lostV: sum("lostV"), sold: sum("sold"), qt: shown.length, openN: cnt("open"), won: cnt("won"), lost: cnt("lost") };
-  const fltOn = Object.values(flt).some((v) => v && v.length) || !!stF;
+  const fltOn = Object.values(flt).some((v) => v && v.length) || !!stF || quick.length > 0;
   // cartões: menos de uma vez (no celular cada cartão é maior que uma linha da tabela)
   const vis = all ? shown : shown.slice(0, cards ? 60 : ROW_CAP);
 
@@ -1728,7 +1856,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
       Customer: r.c,
       Account: r.conta,
       Date: fmtDate(r.d),
-      Result: (ST_PILL[r.st] || ST_PILL.open)[0] + (r.manual ? " (by hand)" : ""),
+      Result: (ST_PILL[r.st] || ST_PILL.open)[0] + (r.manual ? _t(" (by hand)") : ""),
       "Close reason": r.why || "",
       FUP: r.fup ? `${r.fup} - ${FUP[r.fup].label}` : "",
       "Next FUP": r.next ? fmtDate(r.next) : "",
@@ -1762,32 +1890,33 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
      cliente, QT, data, valor e a situação (próximo follow-up, atrasado, ganho, perdido). Tocar abre a cotação. */
   if (cards) {
     const SORTS = [
-      ["c:1", "Customer A–Z"],
-      ["d:-1", "Newest"],
-      ["fup:-1", "Most urgent FUP"],
-      ["open:-1", "Biggest open"],
-      ["quoted:-1", "Biggest quoted"],
-      ["sold:-1", "Biggest sold"],
+      ["prio:-1", _t("Highest priority")],
+      ["c:1", _t("Customer A–Z")],
+      ["d:-1", _t("Newest")],
+      ["fup:-1", _t("Most urgent FUP")],
+      ["open:-1", _t("Biggest open")],
+      ["quoted:-1", _t("Biggest quoted")],
+      ["sold:-1", _t("Biggest sold")],
     ];
     const sortV = `${sort.id}:${sort.dir}`;
     const ids = () => shown.map((x) => x.id);
-    const nCol = Object.values(flt).filter((v) => v && v.length).length;
+    const nCol = colChips.length + (quickOn ? quick.length : 0) + (stF === "cancelled" ? 1 : 0);
     const nAll = nCol + (filtersExtraN || 0);
     const TABS = [
-      ["open", "Open"],
-      ["won", "Won"],
-      ["lost", "Lost"],
-      ["", "All"],
+      ["open", _t("Open")],
+      ["won", _t("Won")],
+      ["lost", _t("Lost")],
+      ["", _t("All")],
     ];
-    const sumTxt = stF === "open" ? `${moneyShort(tot.open)} open` : stF === "won" ? `${moneyShort(tot.sold)} sold` : stF === "lost" ? `${moneyShort(tot.lostV)} lost` : stF === "cancelled" ? `${moneyShort(tot.quoted)} cancelled` : `${moneyShort(tot.quoted)} quoted`;
+    const sumTxt = stF === "open" ? _t("{0} open", moneyShort(tot.open)) : stF === "won" ? _t("{0} sold", moneyShort(tot.sold)) : stF === "lost" ? _t("{0} lost", moneyShort(tot.lostV)) : stF === "cancelled" ? _t("{0} cancelled", moneyShort(tot.quoted)) : _t("{0} quoted", moneyShort(tot.quoted));
     const situ = (r) => {
-      if (r.st === "won") return ["Won", X.green];
-      if (r.st === "lost") return [r.why ? `Lost · ${r.why}` : "Lost", X.redDk];
-      if (r.st === "cancelled") return [r.why ? `Cancelled · ${r.why}` : "Cancelled", "#64748B"];
-      if (!r.fup) return ["No FUP", X.amber];
-      if (r.next && r.next < today) return [`Overdue · ${fmtDay(r.next)}`, X.redDk];
-      if (r.next === today) return ["Follow-up today", X.amber];
-      return [r.next ? `Next ${fmtDay(r.next)}` : FUP[r.fup].label, X.sub];
+      if (r.st === "won") return [_t("Won"), X.green];
+      if (r.st === "lost") return [r.why ? _t("Lost · {0}", whyTxt(r.why)) : _t("Lost"), X.redDk];
+      if (r.st === "cancelled") return [r.why ? _t("Cancelled · {0}", whyTxt(r.why)) : _t("Cancelled"), "#64748B"];
+      if (!r.fup) return [_t("No FUP"), X.amber];
+      if (r.next && r.next < today) return [_t("Overdue · {0}", fmtDay(r.next)), X.redDk];
+      if (r.next === today) return [_t("Follow-up today"), X.amber];
+      return [r.next ? _t("Next {0}", fmtDay(r.next)) : FUP[r.fup].label, X.sub];
     };
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1795,14 +1924,14 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
             <Search size={16} style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: X.sub, pointerEvents: "none" }} />
-            <input value={srch} onChange={(e) => setSrch(e.target.value)} placeholder="Search customer or QT…" style={{ ...inp, width: "100%", height: 44, paddingLeft: 38, paddingRight: srch ? 38 : 10, fontSize: 15, borderRadius: 12 }} />
+            <input value={srch} onChange={(e) => setSrch(e.target.value)} placeholder={_t("Search customer or QT…")} style={{ ...inp, width: "100%", height: 44, paddingLeft: 38, paddingRight: srch ? 38 : 10, fontSize: 15, borderRadius: 12 }} />
             {srch && (
-              <button onClick={() => setSrch("")} title="Clear" style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", color: X.sub, cursor: "pointer", padding: 6 }}>
+              <button onClick={() => setSrch("")} title={_t("Clear")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", color: X.sub, cursor: "pointer", padding: 6 }}>
                 <XIcon size={16} />
               </button>
             )}
           </div>
-          <button onClick={() => setSheet(true)} title="Filters, order and export" style={iconBtn({ width: 44, height: 44, ...(nAll ? { background: X.tealSoft, borderColor: "#9FD6C9", color: X.tealDk } : null) })}>
+          <button onClick={() => setSheet(true)} title={_t("Filters, order and export")} style={iconBtn({ width: 44, height: 44, ...(nAll ? { background: X.tealSoft, borderColor: "#9FD6C9", color: X.tealDk } : null) })}>
             <SlidersHorizontal size={18} />
             {dotBadge(nAll)}
           </button>
@@ -1823,14 +1952,15 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
             );
           })}
         </div>
+        {quickOn && <QuickChips items={quickItems} value={quick} onChange={setQuick} />}
+        <ActiveChips items={chips} onClearAll={clearAll} />
         <div style={{ fontSize: 12.5, color: X.sub, padding: "0 2px", display: "flex", gap: 6, alignItems: "center" }}>
           <span>
-            <b style={{ color: X.ink }}>{shown.length.toLocaleString("pt-BR")}</b> {shown.length === 1 ? "quote" : "quotes"} · {sumTxt}
+            <b style={{ color: X.ink }}>{shown.length.toLocaleString("pt-BR")}</b> {shown.length === 1 ? _t("quote") : _t("quotes")} · {sumTxt}
+            {periodLabel ? ` · ${periodLabel}` : ""}
           </span>
           {stF === "cancelled" && (
-            <button onClick={() => setStF("")} style={{ border: "none", background: "transparent", color: X.tealDk, fontWeight: 700, cursor: "pointer", fontSize: 12.5, marginLeft: "auto" }}>
-              back to All
-            </button>
+            <button onClick={() => setStF("")} style={{ border: "none", background: "transparent", color: X.tealDk, fontWeight: 700, cursor: "pointer", fontSize: 12.5, marginLeft: "auto" }}>{_t("back to All")}</button>
           )}
         </div>
         {/* cartões */}
@@ -1854,6 +1984,13 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
                     {r.id} · {fmtDay(r.d)}
                     <NoteBadge info={notesBy[r.id]} />
                   </div>
+                  {(r.temp || r.prio >= 0) && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
+                      <PrioBadge v={r.prio} />
+                      <TempPill v={r.temp} />
+                      {r.st === "open" && r.win > 0 && <WinPill v={r.win} />}
+                    </div>
+                  )}
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0, maxWidth: "48%" }}>
                   <div style={{ fontSize: 14, fontWeight: 800, color: r.st === "won" ? X.green : r.st === "lost" ? X.redDk : X.ink, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{money(v)}</div>
@@ -1863,38 +2000,28 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
             );
           })}
         </div>
-        {!shown.length && <div style={{ padding: "36px 14px", textAlign: "center", color: X.sub, fontSize: 13.5 }}>{rows.length ? "No quote found." : "No quote in this period."}</div>}
+        {!shown.length && <div style={{ padding: "36px 14px", textAlign: "center", color: X.sub, fontSize: 13.5 }}>{rows.length ? _t("No quote found.") : _t("No quote in this period.")}</div>}
         {shown.length > vis.length && (
-          <button onClick={() => setAll(true)} style={{ ...btn, height: 44, justifyContent: "center", borderRadius: 12 }}>
-            Show all {shown.length.toLocaleString("pt-BR")}
+          <button onClick={() => setAll(true)} style={{ ...btn, height: 44, justifyContent: "center", borderRadius: 12 }}>{_t("Show all")}{" "}{shown.length.toLocaleString("pt-BR")}
           </button>
         )}
 
         {/* folha: filtros, ordem e exportar */}
         <Sheet
           open={sheet}
-          title="Filters"
+          title={_t("Filters")}
           onClose={() => setSheet(false)}
           footer={
             <>
-              {(nCol > 0 || stF === "cancelled") && (
-                <button
-                  onClick={() => {
-                    setFlt({});
-                    if (stF === "cancelled") setStF("open");
-                  }}
-                  style={{ ...btn, height: 44, flex: 1, justifyContent: "center", borderRadius: 12 }}
-                >
-                  Clear
-                </button>
+              {nAll > 0 && (
+                <button onClick={clearAll} style={{ ...btn, height: 44, flex: 1, justifyContent: "center", borderRadius: 12 }}>{_t("Clear all")}</button>
               )}
-              <button onClick={() => setSheet(false)} style={{ ...btn, height: 44, flex: 2, justifyContent: "center", borderRadius: 12, background: X.teal, borderColor: X.teal, color: "#fff" }}>
-                Show {shown.length.toLocaleString("pt-BR")} {shown.length === 1 ? "quote" : "quotes"}
+              <button onClick={() => setSheet(false)} style={{ ...btn, height: 44, flex: 2, justifyContent: "center", borderRadius: 12, background: X.teal, borderColor: X.teal, color: "#fff" }}>{_t("Show")}{" "}{shown.length.toLocaleString("pt-BR")} {shown.length === 1 ? _t("quote") : _t("quotes")}
               </button>
             </>
           }
         >
-          <SheetField label="Order">
+          <SheetField label={_t("Order")}>
             <Chips
               value={sortV}
               options={SORTS}
@@ -1904,12 +2031,28 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
               }}
             />
           </SheetField>
-          <SheetField label="Show only">
+          {quickOn && (
+            <SheetField label={_t("Situation")}>
+              <MultiChips value={quick} options={quickItems.map(([k, l, n]) => [k, l, n])} onChange={setQuick} />
+            </SheetField>
+          )}
+          {filtersExtra}
+          {[
+            ["fup", "FUP"],
+            ["win", _t("% Win")],
+            ["temp", _t("Thermometer")],
+          ].map(([id, lab]) => (
+            <SheetField key={id} label={lab}>
+              <MultiChips
+                value={flt[id] || []}
+                options={fltOpts(id).map((o) => [o.v, o.v === NONE ? _t("Not set") : id === "fup" ? `${o.v} · ${FUP[o.v].label}` : id === "win" ? `${o.v}%` : TEMP[o.v].label, o.n])}
+                onChange={(v) => setFlt((f) => ({ ...f, [id]: v }))}
+              />
+            </SheetField>
+          ))}
+          <SheetField label={_t("Customer")}>
             <div>
-              {["c", "fup", "win", "temp"].map((id) => {
-                const c = PCOLS.find((x) => x.id === id);
-                return <ColFilter key={id} row label={c.label} width={c.fw || 260} options={fltOpts(id)} selected={flt[id] || []} onChange={(v) => setFlt((f) => ({ ...f, [id]: v }))} />;
-              })}
+              <ColFilter row label={_t("Customer")} width={320} options={fltOpts("c")} selected={flt.c || []} onChange={(v) => setFlt((f) => ({ ...f, c: v }))} />
               <div
                 onClick={() => {
                   setStF(stF === "cancelled" ? "" : "cancelled");
@@ -1917,16 +2060,14 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
                 }}
                 style={{ display: "flex", alignItems: "center", gap: 8, padding: "13px 2px", cursor: "pointer", borderBottom: `1px solid ${X.line}` }}
               >
-                <span style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>Cancelled quotes</span>
+                <span style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>{_t("Cancelled quotes")}</span>
                 <span style={{ fontSize: 13, color: stF === "cancelled" ? X.tealDk : X.sub, fontWeight: stF === "cancelled" ? 700 : 500 }}>{stF === "cancelled" ? "showing" : (stCount.cancelled || 0).toLocaleString("pt-BR")}</span>
                 <ChevronRight size={16} color="#A0AEC0" />
               </div>
             </div>
           </SheetField>
-          {filtersExtra}
           <button onClick={exportXlsx} style={{ ...btn, height: 44, justifyContent: "center", borderRadius: 12 }}>
-            <Download size={16} /> Download this list (Excel)
-          </button>
+            <Download size={16} />{" "}{_t("Download this list (Excel)")}</button>
         </Sheet>
       </div>
     );
@@ -1937,9 +2078,9 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
     <>
       <div style={{ ...card, overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 16px 12px", flexWrap: "wrap" }}>
-          <div style={h2}>Quote portfolio</div>
+          <div style={h2}>{_t("Quote portfolio")}</div>
           <span style={{ fontSize: 11, fontWeight: 600, color: X.tealDk, background: X.tealSoft, padding: "3px 10px", borderRadius: 999 }}>
-            {shown.length.toLocaleString("pt-BR")} {shown.length === 1 ? "quote" : "quotes"}
+            {shown.length.toLocaleString("pt-BR")} {shown.length === 1 ? _t("quote") : _t("quotes")}
           </span>
           <div style={{ display: "inline-flex", gap: 3, background: X.head, borderRadius: 9, padding: 3 }}>
             {STATUS_TABS.map(([k, l]) => (
@@ -1952,27 +2093,28 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
               </button>
             ))}
           </div>
-          <span style={{ fontSize: 11.5, color: X.sub }}>FUP and % Win are filled in per quote · Thermometer is automatic (customer hit rate) · the arrow shows the details, the Activities History and the notes</span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             {fltOn && (
               <button
                 onClick={() => {
-                  setFlt({});
+                  clearAll();
                   setStF("");
                 }}
                 style={{ ...btn, height: 32, fontSize: 12 }}
               >
-                <XIcon size={14} /> Clear filters
-              </button>
+                <XIcon size={14} />{" "}{_t("Clear filters")}</button>
             )}
             <div style={{ position: "relative" }}>
               <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: X.sub, pointerEvents: "none" }} />
-              <input value={srch} onChange={(e) => setSrch(e.target.value)} placeholder="Search quote, customer or account…" style={{ ...inp, width: 250, paddingLeft: 30 }} />
+              <input value={srch} onChange={(e) => setSrch(e.target.value)} placeholder={_t("Search quote, customer or account…")} style={{ ...inp, width: 250, paddingLeft: 30 }} />
             </div>
-            <button onClick={exportXlsx} style={btn} title="Download this table as an Excel file">
-              <Download size={15} /> Export
-            </button>
+            <button onClick={exportXlsx} style={btn} title={_t("Download this table as an Excel file")}>
+              <Download size={15} />{" "}{_t("Export")}</button>
           </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 16px 12px" }}>
+          {quickOn && <QuickChips items={quickItems} value={quick} onChange={setQuick} />}
+          <ActiveChips items={chips} onClearAll={clearAll} />
         </div>
         <div style={{ overflow: "auto", maxHeight: "min(680px, calc(120vh - 300px))" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
@@ -2004,7 +2146,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
                       {c.sort ? (
                         <span
                           onClick={() => clickSort(c)}
-                          title={`${c.tip ? c.tip + " · " : ""}click to sort${sOn ? " · click again to invert" : ""}`}
+                          title={_t("{0}click to sort{1}", c.tip ? c.tip + " · " : "", sOn ? _t(" · click again to invert") : "")}
                           style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" }}
                         >
                           {c.label}
@@ -2037,7 +2179,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
                 const name = r.c + (r.conta ? " · " + r.conta : "");
                 return (
                   <React.Fragment key={r.id}>
-                    <tr className="qp-row" onClick={toggle} style={{ cursor: "pointer" }} title="Click to open the quote: details, orders and Activities / History">
+                    <tr className="qp-row" onClick={toggle} style={{ cursor: "pointer" }} title={_t("Click to open the quote: details, orders and Activities / History")}>
                       <td style={{ ...tdx, paddingLeft: 14, whiteSpace: "nowrap", boxShadow: isOpen ? `inset 3px 0 0 ${X.teal}` : undefined }}>
                         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <span style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, display: "inline-flex", alignItems: "center", justifyContent: "center", background: isOpen ? X.tealSoft : "#EEF2F5" }}>
@@ -2063,7 +2205,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
                                 e.stopPropagation();
                                 onAskClose(r.id, r.c, r.st, r.manual ? "close" : "why");
                               }}
-                              title={r.manual ? "Closed by hand (the Quote Report still says Open) · click to change the reason or reopen" : `${CLOSE_LABEL[r.st]} in the Quote Report · click to choose the reason`}
+                              title={r.manual ? _t("Closed by hand (the Quote Report still says Open) · click to change the reason or reopen") : _t("{0} in the Quote Report · click to choose the reason", CLOSE_LABEL[r.st])}
                             />
                           ) : (
                             <PickCell
@@ -2072,21 +2214,24 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
                               render={fupOptRender}
                               describe={fupOptDescribe}
                               onChange={(v) => (CLOSE_LABEL[v] ? onAskClose(r.id, r.c, v) : onMeta(r.id, { fup: v }, r.c))}
-                              title={closed ? "This quote is closed: it does not appear in the follow-up calendar" : "Follow-up cadence · Lost / Cancelled closes the quote (with the reason)"}
+                              title={closed ? _t("This quote is closed: it does not appear in the follow-up calendar") : _t("Follow-up cadence · Lost / Cancelled closes the quote (with the reason)")}
                               width={300}
                             />
                           )}
                           {r.next && (
-                            <span title={overdue ? `Follow-up overdue since ${fmtDate(r.next)}` : `Next follow-up ${fmtDate(r.next)}`} style={{ fontSize: 11, color: overdue ? X.redDk : X.sub, fontWeight: overdue ? 700 : 500 }}>
-                              {overdue ? "overdue " : r.next === today ? "" : "next "}
-                              {r.next === today ? "today" : fmtDay(r.next)}
+                            <span title={overdue ? _t("Follow-up overdue since {0}", fmtDate(r.next)) : _t("Next follow-up {0}", fmtDate(r.next))} style={{ fontSize: 11, color: overdue ? X.redDk : X.sub, fontWeight: overdue ? 700 : 500 }}>
+                              {overdue ? _t("overdue ") : r.next === today ? "" : _t("next ")}
+                              {r.next === today ? _t("today") : fmtDay(r.next)}
                               {r.next2 ? ` & ${fmtDay(r.next2)}` : ""}
                             </span>
                           )}
                         </span>
                       </td>
                       <td style={tdx}>
-                        <PickCell value={r.win} options={WIN_VALS} render={(v) => <WinPill v={v} />} onChange={(v) => onMeta(r.id, { win: v || 0 }, r.c)} title="Chance of winning this quote" width={140} />
+                        <PickCell value={r.win} options={WIN_VALS} render={(v) => <WinPill v={v} />} onChange={(v) => onMeta(r.id, { win: v || 0 }, r.c)} title={_t("Chance of winning this quote")} width={140} />
+                      </td>
+                      <td style={tdx}>
+                        <PrioBadge v={r.prio} />
                       </td>
                       <td style={tdx}>
                         <ThermoCell t={thermo[r.nn]} />
@@ -2104,16 +2249,14 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
               {!shown.length && (
                 <tr>
                   <td colSpan={PCOLS.length} style={{ ...td, textAlign: "center", color: X.sub, padding: "28px 10px" }}>
-                    {rows.length ? "No quote matches the search or filters." : "No quote in this period and classification."}
+                    {rows.length ? _t("No quote matches the search or filters.") : _t("No quote in this period and classification.")}
                   </td>
                 </tr>
               )}
               {shown.length > vis.length && (
                 <tr>
                   <td colSpan={PCOLS.length} style={{ ...td, textAlign: "center", padding: 12 }}>
-                    <button onClick={() => setAll(true)} style={{ ...btn, height: 30, fontSize: 12, margin: "0 auto" }}>
-                      Show all {shown.length.toLocaleString("pt-BR")} quotes
-                    </button>
+                    <button onClick={() => setAll(true)} style={{ ...btn, height: 30, fontSize: 12, margin: "0 auto" }}>{_t("Show all")}{" "}{shown.length.toLocaleString("pt-BR")}{" "}{_t("quotes")}</button>
                   </td>
                 </tr>
               )}
@@ -2125,8 +2268,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
                     const ft = { position: "sticky", bottom: 0, zIndex: 1, background: "#F3F6F8", borderTop: `2px solid ${X.line}`, padding: "11px 8px", fontSize: 12.5, fontWeight: 700, color: X.ink, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
                     if (c.id === "id")
                       return (
-                        <td key={c.id} style={{ ...ft, paddingLeft: 44 }} colSpan={1}>
-                          Total · {shown.length.toLocaleString("pt-BR")} {shown.length === 1 ? "quote" : "quotes"}
+                        <td key={c.id} style={{ ...ft, paddingLeft: 44 }} colSpan={1}>{_t("Total ·")}{" "}{shown.length.toLocaleString("pt-BR")} {shown.length === 1 ? _t("quote") : _t("quotes")}
                         </td>
                       );
                     const col = { quoted: X.ink, open: X.amber, lostV: X.redDk, sold: X.green }[c.id];
@@ -2183,8 +2325,8 @@ function MoneyInput({ value, onCommit }) {
 }
 
 /* ===== Calendar: meta diária → agenda de follow-up → plano do dia escolhido ===== */
-const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const DOW_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const DOW = [_t("Mon"), _t("Tue"), _t("Wed"), _t("Thu"), _t("Fri"), _t("Sat"), _t("Sun")];
+const DOW_LONG = [_t("Monday"), _t("Tuesday"), _t("Wednesday"), _t("Thursday"), _t("Friday"), _t("Saturday"), _t("Sunday")];
 const dowName = (iso) => DOW_LONG[(dowOf(iso) + 6) % 7];
 const REASON = {
   overdue: [X.redDk, X.redSoft],
@@ -2205,15 +2347,14 @@ function DoneButton({ id, onOpenQuote, small }) {
         e.stopPropagation();
         onOpenQuote(id, true);
       }}
-      title="Mark Done in the Activities / History of the quote: write a note and choose the date of the next follow-up"
+      title={_t("Mark Done in the Activities / History of the quote: write a note and choose the date of the next follow-up")}
       style={
         small
           ? { ...btn, marginLeft: "auto", height: 22, padding: "0 7px", fontSize: 10.5, gap: 3, color: X.tealDk, borderColor: "#BFE3D9", borderRadius: 6 }
           : { ...btn, height: 28, padding: "0 10px", fontSize: 11.5, color: X.tealDk, borderColor: "#BFE3D9" }
       }
     >
-      <Check size={small ? 11 : 13} /> Done
-    </button>
+      <Check size={small ? 11 : 13} />{" "}{_t("Done")}</button>
   );
 }
 /* ===== Relatório de FUP (PDF) =====
@@ -2359,7 +2500,7 @@ const fupXlsSheet = (rows, { periodTxt, filtersTxt }) => {
   const total = rows.reduce((a, r) => a + (r.amount || 0), 0);
   const C = XS.cell;
   return {
-    title: "FUP report",
+    title: _t("FUP report"),
     cols: [13, 15, 38, 48, 48, 22, 12, 13, 10, 22],
     freeze: 3,
     filter: 3,
@@ -2368,7 +2509,7 @@ const fupXlsSheet = (rows, { periodTxt, filtersTxt }) => {
     heights: { 0: 22, 2: 30 },
     rows: [
       [{ v: "Follow-up report", st: XS.title }],
-      [{ v: `${periodTxt} · ${filtersTxt} · ${rows.length} follow-up${rows.length === 1 ? "" : "s"} · generated ${fmtStamp(nowStamp())}`, st: XS.sub }],
+      [{ v: `${periodTxt} · ${filtersTxt} · ${rows.length} ${rows.length === 1 ? _t("follow-up") : _t("follow-ups")} · generated ${fmtStamp(nowStamp())}`, st: XS.sub }],
       FUP_HEAD.map((h, i) => ({ v: h, st: XS.head(i === 4 ? "#FF4081" : i === 6 ? "#008000" : null) })),
       ...rows.map((r, k) => [
         { v: r.id, st: C(k, { b: true, h: "center" }) },
@@ -2390,7 +2531,7 @@ const fupMailHtml = (rows) =>
   mailTable(
     FUP_HEAD,
     rows.map((r) => [r.id, money(r.amount), r.c, noteTxt(r.old), noteTxt(r.nw), r.req, r.win ? r.win + "%" : "", r.next ? fmtDate(r.next) : "", spCode(r.qb) || sellerDisplay(r.qb), sellerDisplay(r.sp)]),
-    { headBg: { 4: "#FF4081", 6: "#008000" }, align: { 0: "center", 1: "right", 6: "center", 7: "center", 8: "center", 9: "center" }, foot: ["Total", money(rows.reduce((a, r) => a + (r.amount || 0), 0)), `${rows.length} follow-ups`, "", "", "", "", "", "", ""] },
+    { headBg: { 4: "#FF4081", 6: "#008000" }, align: { 0: "center", 1: "right", 6: "center", 7: "center", 8: "center", 9: "center" }, foot: [_t("Total"), money(rows.reduce((a, r) => a + (r.amount || 0), 0)), _t("{0} follow-ups", rows.length), "", "", "", "", "", "", ""] },
   );
 function fupReportHtml(rows, { title, periodTxt, filtersTxt, generated }) {
   const total = rows.reduce((a, r) => a + (r.amount || 0), 0);
@@ -2439,13 +2580,13 @@ function fupReportHtml(rows, { title, periodTxt, filtersTxt, generated }) {
 </style></head><body>
 <div class="bar"><button onclick="window.print()">Print / Save as PDF</button><span>In the print window, choose "Save as PDF" (or "Microsoft Print to PDF").</span></div>
 <h1>${esc(title)}</h1>
-<div class="sub"><b>${esc(periodTxt)}</b> · ${esc(filtersTxt)} · ${rows.length} follow-up${rows.length === 1 ? "" : "s"} · ${esc(money(total))} · generated ${esc(generated)}</div>
+<div class="sub"><b>${esc(periodTxt)}</b> · ${esc(filtersTxt)} · ${rows.length} ${rows.length === 1 ? _t("follow-up") : _t("follow-ups")} · ${esc(money(total))} · generated ${esc(generated)}</div>
 ${
   rows.length
     ? `<table><colgroup><col style="width:8%"><col style="width:8%"><col style="width:12%"><col style="width:17%"><col style="width:17%"><col style="width:10%"><col style="width:6%"><col style="width:8%"><col style="width:6%"><col style="width:8%"></colgroup>
 <thead><tr><th>Quotation</th><th>New net amount</th><th>Name</th><th>Comentário antigo</th><th class="new">Comentário novo</th><th>Requisição do cliente</th><th class="thermo">Termômetro</th><th>Follow-up date</th><th>Quoted by</th><th>Vendedor</th></tr></thead>
 <tbody>${body}</tbody>
-<tfoot><tr><td class="b">Total</td><td class="r">${esc(money(total))}</td><td colspan="8">${rows.length} follow-up${rows.length === 1 ? "" : "s"}</td></tr></tfoot></table>`
+<tfoot><tr><td class="b">Total</td><td class="r">${esc(money(total))}</td><td colspan="8">${rows.length} ${rows.length === 1 ? _t("follow-up") : _t("follow-ups")}</td></tr></tfoot></table>`
     : `<div class="empty">No follow-up marked Done in this period with the current filters.</div>`
 }
 </body></html>`;
@@ -2454,12 +2595,12 @@ function FupReportButton({ acts, quotes, meta, thermo, today, filtersTxt }) {
   const p = usePop(320);
   const mon = addDays(today, -((dowOf(today) + 6) % 7));
   const RANGES = [
-    ["today", "Today", today, today],
-    ["yesterday", "Previous business day", prevBusinessDay(today), prevBusinessDay(today)],
-    ["week", "This week", mon, addDays(mon, 6)],
-    ["lastweek", "Last week", addDays(mon, -7), addDays(mon, -1)],
-    ["month", "This month", today.slice(0, 8) + "01", lastDayOfMonth(today.slice(0, 7))],
-    ["custom", "Custom", "", ""],
+    ["today", _t("Today"), today, today],
+    ["yesterday", _t("Previous business day"), prevBusinessDay(today), prevBusinessDay(today)],
+    ["week", _t("This week"), mon, addDays(mon, 6)],
+    ["lastweek", _t("Last week"), addDays(mon, -7), addDays(mon, -1)],
+    ["month", _t("This month"), today.slice(0, 8) + "01", lastDayOfMonth(today.slice(0, 7))],
+    ["custom", _t("Custom"), "", ""],
   ];
   const [rk, setRk] = useState("today");
   const [cf, setCf] = useState(today);
@@ -2473,19 +2614,19 @@ function FupReportButton({ acts, quotes, meta, thermo, today, filtersTxt }) {
   const [copied, setCopied] = useState(false);
   const fileTag = from === to ? from : `${from} a ${to}`;
   const toExcel = () => {
-    xlsxSave(`FUP report ${fileTag}.xlsx`, [fupXlsSheet(rows, { periodTxt, filtersTxt })]);
+    xlsxSave(_t("FUP report {0}.xlsx", fileTag), [fupXlsSheet(rows, { periodTxt, filtersTxt })]);
   };
   const toMail = () => {
     if (copyRich(fupMailHtml(rows))) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } else window.alert("The browser did not allow copying. Use Download Excel instead.");
+    } else window.alert(_t("The browser did not allow copying. Use Download Excel instead."));
   };
   const open = () => {
-    const html = fupReportHtml(rows, { title: "Follow-up report", periodTxt, filtersTxt, generated: fmtStamp(nowStamp()) });
+    const html = fupReportHtml(rows, { title: _t("Follow-up report"), periodTxt, filtersTxt, generated: fmtStamp(nowStamp()) });
     const w = window.open("", "_blank");
     if (!w) {
-      window.alert("The browser blocked the report window. Allow pop-ups for this page and try again.");
+      window.alert(_t("The browser blocked the report window. Allow pop-ups for this page and try again."));
       return;
     }
     w.document.open();
@@ -2501,13 +2642,12 @@ function FupReportButton({ acts, quotes, meta, thermo, today, filtersTxt }) {
   };
   return (
     <>
-      <button ref={p.anchor} onClick={p.toggle} style={{ ...btn, height: 32, fontSize: 12, padding: "0 11px" }} title="Report (Excel, e-mail or PDF) of the follow-ups marked Done in a day, week or period (follows the filters on the screen)">
-        <FileSpreadsheet size={14} /> FUP report
-      </button>
+      <button ref={p.anchor} onClick={p.toggle} style={{ ...btn, height: 32, fontSize: 12, padding: "0 11px" }} title={_t("Report (Excel, e-mail or PDF) of the follow-ups marked Done in a day, week or period (follows the filters on the screen)")}>
+        <FileSpreadsheet size={14} />{" "}{_t("FUP report")}</button>
       {p.render(
         <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 9 }}>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>Follow-up report</div>
-          <div style={{ fontSize: 11.5, color: X.sub }}>Follow-ups marked Done in the period · {filtersTxt}</div>
+          <div style={{ fontSize: 13, fontWeight: 700 }}>{_t("Follow-up report")}</div>
+          <div style={{ fontSize: 11.5, color: X.sub }}>{_t("Follow-ups marked Done in the period ·")}{" "}{filtersTxt}</div>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             {RANGES.map(([k, l]) => {
               const on = rk === k;
@@ -2521,19 +2661,18 @@ function FupReportButton({ acts, quotes, meta, thermo, today, filtersTxt }) {
           {rk === "custom" && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <input type="date" value={cf} onChange={(e) => setCf(e.target.value)} style={{ ...inp, height: 30, fontSize: 12, flex: 1 }} />
-              <span style={{ color: X.sub }}>to</span>
+              <span style={{ color: X.sub }}>{_t("to")}</span>
               <input type="date" value={ct} onChange={(e) => setCt(e.target.value)} style={{ ...inp, height: 30, fontSize: 12, flex: 1 }} />
             </div>
           )}
-          <div style={{ fontSize: 12, color: ok ? X.ink : X.redDk }}>{ok ? <><b>{periodTxt}</b> · {rows.length} follow-up{rows.length === 1 ? "" : "s"} done</> : "Choose a valid period"}</div>
+          <div style={{ fontSize: 12, color: ok ? X.ink : X.redDk }}>{ok ? <><b>{periodTxt}</b> · {rows.length} {rows.length === 1 ? _t("follow-up") : _t("follow-ups")}{" "}{_t("done")}</> : _t("Choose a valid period")}</div>
           <button onClick={toExcel} disabled={!ok} style={{ ...btn, height: 34, justifyContent: "center", background: ok ? X.teal : "#C7D2D9", borderColor: ok ? X.teal : "#C7D2D9", color: "#fff", cursor: ok ? "pointer" : "not-allowed" }}>
-            <FileSpreadsheet size={14} /> Download Excel
-          </button>
+            <FileSpreadsheet size={14} />{" "}{_t("Download Excel")}</button>
           <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={toMail} disabled={!ok || !rows.length} style={{ ...btn, flex: 1, height: 32, fontSize: 12, justifyContent: "center" }} title="Copy the table with its colors: paste it straight into the e-mail (Ctrl+V)">
-              <Copy size={13} /> {copied ? "Copied!" : "Copy for e-mail"}
+            <button onClick={toMail} disabled={!ok || !rows.length} style={{ ...btn, flex: 1, height: 32, fontSize: 12, justifyContent: "center" }} title={_t("Copy the table with its colors: paste it straight into the e-mail (Ctrl+V)")}>
+              <Copy size={13} /> {copied ? _t("Copied!") : _t("Copy for e-mail")}
             </button>
-            <button onClick={open} disabled={!ok} style={{ ...btn, flex: 1, height: 32, fontSize: 12, justifyContent: "center" }} title="Open the report ready to print / save as PDF">
+            <button onClick={open} disabled={!ok} style={{ ...btn, flex: 1, height: 32, fontSize: 12, justifyContent: "center" }} title={_t("Open the report ready to print / save as PDF")}>
               <Printer size={13} /> PDF
             </button>
           </div>
@@ -2548,13 +2687,13 @@ function HolidayTag({ d, full }) {
   if (!h) return null;
   const fg = h.block ? X.redDk : "#B45309",
     bg = h.block ? X.redSoft : "#FEF3C7";
-  const kind = h.kind === "municipal" ? "municipal holiday" : h.kind === "state" ? "state holiday (SP)" : h.kind === "optional" ? "optional day off (ponto facultativo) · follow-ups allowed" : "national holiday";
+  const kind = h.kind === "municipal" ? _t("municipal holiday") : h.kind === "state" ? _t("state holiday (SP)") : h.kind === "optional" ? _t("optional day off (ponto facultativo) · follow-ups allowed") : _t("national holiday");
   return (
     <span
-      title={`${h.name} · ${kind}${h.block ? " · no follow-up on this day" : ""}`}
+      title={`${h.name} · ${kind}${h.block ? _t(" · no follow-up on this day") : ""}`}
       style={{ display: "block", fontSize: full ? 11 : 9.5, fontWeight: 700, color: fg, background: bg, borderRadius: 5, padding: full ? "2px 7px" : "1px 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, marginTop: full ? 4 : 0 }}
     >
-      {h.block ? "Holiday · " : ""}
+      {h.block ? _t("Holiday · ") : ""}
       {h.name}
     </span>
   );
@@ -2617,7 +2756,7 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [onClose, blocked]);
-  const base0 = useMemo(() => [...rows, ...cancelRows].map((r) => ({ ...r, why: normWhy(((meta || {})[r.id] || {}).why || ""), seller: groupOf(r.sp) || "(no salesperson)" })), [rows, cancelRows, meta, groupOf]);
+  const base0 = useMemo(() => [...rows, ...cancelRows].map((r) => ({ ...r, why: normWhy(((meta || {})[r.id] || {}).why || ""), seller: groupOf(r.sp) || _t("(no salesperson)") })), [rows, cancelRows, meta, groupOf]);
   const sellers = useMemo(() => {
     const m = {};
     base0.forEach((r) => (m[r.seller] = (m[r.seller] || 0) + 1));
@@ -2689,7 +2828,7 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
     const q = qIndex.get(r.id) || {};
     // valor dos itens do grupo; na ganha, proporcional ao Sold
     const f = r.quoted ? money1(r) / r.quoted : 0;
-    return q.pg && Object.keys(q.pg).length ? Object.entries(q.pg).map(([k, v]) => [k, v * f]) : [["(no Product Group)", money1(r)]];
+    return q.pg && Object.keys(q.pg).length ? Object.entries(q.pg).map(([k, v]) => [k, v * f]) : [[_t("(no Product Group)"), money1(r)]];
   });
   // cliente escolhido: todas as QTs perdidas / canceladas dele (filtro Lost / Cancelled), maiores primeiro
   const [lcF, setLcF] = useState("");
@@ -2715,11 +2854,10 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
     return (
       <div style={panel}>
         <div style={ttl}>
-          <span style={{ width: 10, height: 10, borderRadius: 3, background: ST_COL[kind][0] }} /> {CLOSE_LABEL[kind]} · reasons
-          <span style={{ ...muted, marginLeft: "auto" }}>{R.n.toLocaleString("pt-BR")} QTs</span>
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: ST_COL[kind][0] }} /> {CLOSE_LABEL[kind]}{" "}{_t("· reasons")}<span style={{ ...muted, marginLeft: "auto" }}>{R.n.toLocaleString("pt-BR")} QTs</span>
         </div>
         <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: mob ? "wrap" : "nowrap", justifyContent: "center" }}>
-          <Donut parts={CLOSE_REASONS[kind].map((k) => ({ k, v: R.m[k].x, color: REASON_COL[k] || "#94A3B8" }))} center={nR.toLocaleString("pt-BR")} sub="with reason" />
+          <Donut parts={CLOSE_REASONS[kind].map((k) => ({ k, v: R.m[k].x, color: REASON_COL[k] || "#94A3B8" }))} center={nR.toLocaleString("pt-BR")} sub={_t("with reason")} />
           <div style={{ flex: "1 1 200px", minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
             {CLOSE_REASONS[kind].map((k) => {
               const sh = pctOf(R.m[k].x, R.t);
@@ -2727,7 +2865,7 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
                 <div key={k}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
                     <span style={{ width: 9, height: 9, borderRadius: 3, background: REASON_COL[k] || "#94A3B8", flexShrink: 0 }} />
-                    <span style={{ fontWeight: 600 }}>{k}</span>
+                    <span style={{ fontWeight: 600 }}>{whyTxt(k)}</span>
                     <span style={{ ...muted, marginLeft: "auto" }}>{R.m[k].n}</span>
                     <b style={{ width: 40, textAlign: "right" }}>{pct0(sh)}</b>
                   </div>
@@ -2738,9 +2876,8 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
               );
             })}
             {R.none.length > 0 && (
-              <span onClick={() => onOpenQuote(R.none[0], false, R.none)} title="Open them to choose the reason" style={{ alignSelf: "flex-start", fontSize: 11.5, fontWeight: 600, color: X.redDk, background: X.redSoft, borderRadius: 999, padding: "2px 9px", cursor: "pointer" }}>
-                {R.none.length.toLocaleString("pt-BR")} without reason ›
-              </span>
+              <span onClick={() => onOpenQuote(R.none[0], false, R.none)} title={_t("Open them to choose the reason")} style={{ alignSelf: "flex-start", fontSize: 11.5, fontWeight: 600, color: X.redDk, background: X.redSoft, borderRadius: 999, padding: "2px 9px", cursor: "pointer" }}>
+                {R.none.length.toLocaleString("pt-BR")}{" "}{_t("without reason ›")}</span>
             )}
           </div>
         </div>
@@ -2761,18 +2898,18 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
             {ST_ORDER.map((k) => (
               <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                 <span style={{ width: 8, height: 8, borderRadius: 2, background: ST_COL[k][0] }} />
-                {STATE_LABEL[k]}
+                {_t(STATE_LABEL[k])}
               </span>
             ))}
           </span>
         </div>
-        {!list.length && <div style={muted}>Nothing lost or cancelled.</div>}
+        {!list.length && <div style={muted}>{_t("Nothing lost or cancelled.")}</div>}
         <div style={{ display: "flex", flexDirection: "column" }}>
           {list.map((o, i) => (
             <div
               key={o.k}
               onClick={onPick ? () => onPick(o.k) : undefined}
-              title={onPick ? "Show only this customer" : undefined}
+              title={onPick ? _t("Show only this customer") : undefined}
               className={onPick ? "qp-opt" : undefined}
               style={{ display: "grid", gridTemplateColumns: "22px minmax(0, 1fr) auto", alignItems: "center", columnGap: 12, padding: "8px 6px", borderRadius: 8, borderTop: i ? `1px solid #F0F3F6` : "none", cursor: onPick ? "pointer" : "default" }}
             >
@@ -2782,16 +2919,16 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: X.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={o.k}>
                     {o.k}
                   </span>
-                  {topWhy(o.why) && <span style={{ fontSize: 10.5, color: X.sub, whiteSpace: "nowrap" }}>· {topWhy(o.why)}</span>}
+                  {topWhy(o.why) && <span style={{ fontSize: 10.5, color: X.sub, whiteSpace: "nowrap" }}>· {whyTxt(topWhy(o.why))}</span>}
                 </span>
-                <span style={{ display: "flex", height: 7, borderRadius: 4, overflow: "hidden", background: X.track }} title={ST_ORDER.map((k) => `${STATE_LABEL[k]}: ${fmtX(o[k])}`).join(" · ")}>
+                <span style={{ display: "flex", height: 7, borderRadius: 4, overflow: "hidden", background: X.track }} title={ST_ORDER.map((k) => `${_t(STATE_LABEL[k])}: ${fmtX(o[k])}`).join(" · ")}>
                   {ST_ORDER.map((k) => (o[k] > 0 ? <span key={k} style={{ width: pctOf(o[k], max) * 100 + "%", background: ST_COL[k][0] }} /> : null))}
                 </span>
               </span>
               <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", lineHeight: 1.3 }}>
                 <b style={{ display: "block", fontSize: 13, color: ST_COL.lost[0] }}>{fmtX(o.lc)}</b>
                 <span style={{ fontSize: 10.5, color: X.sub }}>
-                  {pct0(pctOf(o.lc, o.t))} of {fmtX(o.t)}
+                  {pct0(pctOf(o.lc, o.t))}{" "}{_t("of")}{" "}{fmtX(o.t)}
                 </span>
               </span>
             </div>
@@ -2811,22 +2948,22 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
           </span>
           )}
           <div style={{ minWidth: 0 }}>
-            {!mob && <div style={{ fontSize: 16.5, fontWeight: 800, color: X.ink }}>Quote analysis</div>}
+            {!mob && <div style={{ fontSize: 16.5, fontWeight: 800, color: X.ink }}>{_t("Quote analysis")}</div>}
             <div style={{ ...muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: mob ? "normal" : "nowrap" }}>
               {periodTxt} · {sell || sellerTxt} · {filtersTxt}
             </div>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", ...(mob ? { width: "100%" } : null) }}>
-            <select value={sell} onChange={(e) => setSell(e.target.value)} style={{ ...inp, height: 34, maxWidth: mob ? "none" : 220, flex: mob ? "1 1 140px" : "none", minWidth: 0, fontWeight: sell ? 700 : 500, borderColor: sell ? "#9FD6C9" : X.line, background: sell ? X.tealSoft : "#fff" }} title="Salesperson (Sales Person)">
-              <option value="">All salespeople</option>
+            <select value={sell} onChange={(e) => setSell(e.target.value)} style={{ ...inp, height: 34, maxWidth: mob ? "none" : 220, flex: mob ? "1 1 140px" : "none", minWidth: 0, fontWeight: sell ? 700 : 500, borderColor: sell ? "#9FD6C9" : X.line, background: sell ? X.tealSoft : "#fff" }} title={_t("Salesperson (Sales Person)")}>
+              <option value="">{_t("All salespeople")}</option>
               {sellers.map(([c, n]) => (
                 <option key={c} value={c}>
                   {c} ({n})
                 </option>
               ))}
             </select>
-            <select value={cust} onChange={(e) => setCust(e.target.value)} style={{ ...inp, height: 34, maxWidth: mob ? "none" : 280, flex: mob ? "1 1 140px" : "none", minWidth: 0, fontWeight: cust ? 700 : 500, borderColor: cust ? "#9FD6C9" : X.line, background: cust ? X.tealSoft : "#fff" }} title="Customer">
-              <option value="">All customers</option>
+            <select value={cust} onChange={(e) => setCust(e.target.value)} style={{ ...inp, height: 34, maxWidth: mob ? "none" : 280, flex: mob ? "1 1 140px" : "none", minWidth: 0, fontWeight: cust ? 700 : 500, borderColor: cust ? "#9FD6C9" : X.line, background: cust ? X.tealSoft : "#fff" }} title={_t("Customer")}>
+              <option value="">{_t("All customers")}</option>
               {customers.map(([c, n]) => (
                 <option key={c} value={c}>
                   {c} ({n})
@@ -2836,13 +2973,13 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
             {seg(
               [
                 ["n", "QTs"],
-                ["v", "Value"],
+                ["v", _t("Value")],
               ],
               by,
               setBy,
             )}
             {!inline && (
-              <button onClick={onClose} style={{ ...btn, padding: "0 10px", height: 34 }} title="Close (Esc)">
+              <button onClick={onClose} style={{ ...btn, padding: "0 10px", height: 34 }} title={_t("Close (Esc)")}>
                 <XIcon size={16} />
               </button>
             )}
@@ -2858,10 +2995,10 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
                 const [fg, bg] = ST_COL[k];
                 return (
                   <div key={k} style={{ borderRadius: 12, background: bg, padding: "12px 14px", minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: fg }}>{STATE_LABEL[k]}</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: fg }}>{_t(STATE_LABEL[k])}</div>
                     <div style={{ fontSize: mob ? 24 : 30, fontWeight: 800, color: fg, letterSpacing: -0.8, lineHeight: 1.15 }}>{pct0(pctOf(o.x, tot))}</div>
                     <div style={{ fontSize: 12, color: X.ink, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {o.n.toLocaleString("pt-BR")} QTs · {moneyShort(o.v)}
+                      {o.n.toLocaleString("pt-BR")}{" "}{_t("QTs ·")}{" "}{moneyShort(o.v)}
                     </div>
                   </div>
                 );
@@ -2869,14 +3006,14 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
               <div style={{ borderRadius: 12, border: `2px solid ${ST_COL.won[1]}`, background: "#fff", padding: "10px 14px", display: "flex", alignItems: "center", gap: 12, minWidth: 0, ...(mob ? { gridColumn: "1 / -1" } : null) }}>
                 <Donut parts={[{ k: "Hit rate", v: hit || 0, color: ST_COL.won[0] }, { k: "rest", v: 1 - (hit || 0), color: "#EEF2F5" }]} size={64} stroke={9} center="" sub="" />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: X.tealDk }}>Hit rate</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: X.tealDk }}>{_t("Hit rate")}</div>
                   <div style={{ fontSize: 28, fontWeight: 800, color: ST_COL.won[0], letterSpacing: -0.8, lineHeight: 1.15 }}>{hit != null ? pct0(hit) : "—"}</div>
-                  <div style={{ fontSize: 11.5, color: X.sub }}>won ÷ quoted</div>
+                  <div style={{ fontSize: 11.5, color: X.sub }}>{_t("won ÷ quoted")}</div>
                 </div>
               </div>
             </div>
             <div style={{ display: "flex", height: 10, borderRadius: 6, overflow: "hidden", background: X.track }}>
-              {ST_ORDER.map((k) => (st[k].x > 0 ? <div key={k} title={`${STATE_LABEL[k]} ${pct0(pctOf(st[k].x, tot))}`} style={{ width: pctOf(st[k].x, tot) * 100 + "%", background: ST_COL[k][0] }} /> : null))}
+              {ST_ORDER.map((k) => (st[k].x > 0 ? <div key={k} title={`${_t(STATE_LABEL[k])} ${pct0(pctOf(st[k].x, tot))}`} style={{ width: pctOf(st[k].x, tot) * 100 + "%", background: ST_COL[k][0] }} /> : null))}
             </div>
           </div>
 
@@ -2891,44 +3028,41 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
             {cust ? (
               <div style={{ ...panel, gap: 10 }}>
                 <div style={{ ...ttl, flexWrap: "wrap", rowGap: 6 }}>
-                  <span style={{ minWidth: 0 }}>
-                    Lost & cancelled QTs
-                    <span style={{ display: "block", ...muted }}>
-                      {lostQts.length.toLocaleString("pt-BR")} QTs · {moneyShort(lostQts.reduce((t, r) => t + (r.quoted || 0), 0))}
+                  <span style={{ minWidth: 0 }}>{_t("Lost & cancelled QTs")}<span style={{ display: "block", ...muted }}>
+                      {lostQts.length.toLocaleString("pt-BR")}{" "}{_t("QTs ·")}{" "}{moneyShort(lostQts.reduce((t, r) => t + (r.quoted || 0), 0))}
                     </span>
                   </span>
                   <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
                     {seg(
                       [
-                        ["", `All ${lcAll.length}`],
-                        ["lost", `Lost ${lcAll.filter((r) => r.st === "lost").length}`],
-                        ["cancelled", `Cancelled ${lcAll.filter((r) => r.st === "cancelled").length}`],
+                        ["", _t("All {0}", lcAll.length)],
+                        ["lost", _t("Lost {0}", lcAll.filter((r) => r.st === "lost").length)],
+                        ["cancelled", _t("Cancelled {0}", lcAll.filter((r) => r.st === "cancelled").length)],
                       ],
                       lcF,
                       setLcF,
                     )}
-                    <button onClick={() => setCust("")} title="Back to all customers" style={{ ...btn, height: 28, padding: "0 8px", fontSize: 11.5 }}>
-                      <XIcon size={12} /> Customer
-                    </button>
+                    <button onClick={() => setCust("")} title={_t("Back to all customers")} style={{ ...btn, height: 28, padding: "0 8px", fontSize: 11.5 }}>
+                      <XIcon size={12} />{" "}{_t("Customer")}</button>
                   </span>
                 </div>
                 {!lostQts.length ? (
-                  <div style={muted}>Nothing lost or cancelled.</div>
+                  <div style={muted}>{_t("Nothing lost or cancelled.")}</div>
                 ) : (
                   <div style={{ maxHeight: 360, overflow: "auto", margin: "0 -6px" }}>
                     <div style={{ display: "grid", gridTemplateColumns: "112px 70px 84px minmax(0, 1fr) 96px", minWidth: 470, gap: 10, padding: "0 6px 6px", fontSize: 10.5, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.3, position: "sticky", top: 0, background: "#fff", zIndex: 1, borderBottom: `1px solid ${X.line}` }}>
-                      <span>Quotation</span>
-                      <span>Date</span>
-                      <span>Status</span>
-                      <span>Reason</span>
-                      <span style={{ textAlign: "right" }}>Quoted</span>
+                      <span>{_t("Quotation")}</span>
+                      <span>{_t("Date")}</span>
+                      <span>{_t("Status")}</span>
+                      <span>{_t("Reason")}</span>
+                      <span style={{ textAlign: "right" }}>{_t("Quoted")}</span>
                     </div>
                     {lostQts.map((r) => (
                       <div
                         key={r.id}
                         onClick={() => onOpenQuote(r.id, false, lostQts.map((x) => x.id))}
                         className="qp-opt"
-                        title="Open the quote"
+                        title={_t("Open the quote")}
                         style={{ display: "grid", gridTemplateColumns: "112px 70px 84px minmax(0, 1fr) 96px", minWidth: 470, alignItems: "center", gap: 10, fontSize: 12.5, cursor: "pointer", padding: "7px 6px", borderBottom: `1px solid #F0F3F6` }}
                       >
                         <span style={{ fontWeight: 700, fontSize: 12, color: X.tealDk, background: X.tealSoft, borderRadius: 6, padding: "2px 7px", justifySelf: "start" }}>{r.id}</span>
@@ -2937,10 +3071,10 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
                         {r.why ? (
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                             <span style={{ width: 8, height: 8, borderRadius: 2, background: REASON_COL[r.why] || "#94A3B8", flexShrink: 0 }} />
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{r.why}</span>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{whyTxt(r.why)}</span>
                           </span>
                         ) : (
-                          <span style={{ justifySelf: "start", fontSize: 11, fontWeight: 600, color: X.redDk, border: `1px dashed ${X.redDk}`, borderRadius: 999, padding: "1px 8px" }}>set reason ›</span>
+                          <span style={{ justifySelf: "start", fontSize: 11, fontWeight: 600, color: X.redDk, border: `1px dashed ${X.redDk}`, borderRadius: 999, padding: "1px 8px" }}>{_t("set reason ›")}</span>
                         )}
                         <span style={{ textAlign: "right" }}>
                           <b style={{ display: "block", fontVariantNumeric: "tabular-nums" }}>{moneyShort(r.quoted)}</b>
@@ -2954,9 +3088,9 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
                 )}
               </div>
             ) : (
-              topPanel("Top 10 customers · lost + cancelled", topCust, setCust)
+              topPanel(_t("Top 10 customers · lost + cancelled"), topCust, setCust)
             )}
-            {topPanel("Top 10 product groups · lost + cancelled", topPg)}
+            {topPanel(_t("Top 10 product groups · lost + cancelled"), topPg)}
           </div>
         </div>
       </div>
@@ -2977,12 +3111,12 @@ const periodRanges = (today) => {
   const mon = addDays(today, -((dowOf(today) + 6) % 7));
   const prev = prevBusinessDay(today);
   return [
-    ["today", "Today", today, today],
-    ["yesterday", "Previous business day", prev, prev],
-    ["week", "This week", mon, addDays(mon, 6)],
-    ["lastweek", "Last week", addDays(mon, -7), addDays(mon, -1)],
-    ["month", "This month", today.slice(0, 8) + "01", lastDayOfMonth(today.slice(0, 7))],
-    ["custom", "Custom", "", ""],
+    ["today", _t("Today"), today, today],
+    ["yesterday", _t("Previous business day"), prev, prev],
+    ["week", _t("This week"), mon, addDays(mon, 6)],
+    ["lastweek", _t("Last week"), addDays(mon, -7), addDays(mon, -1)],
+    ["month", _t("This month"), today.slice(0, 8) + "01", lastDayOfMonth(today.slice(0, 7))],
+    ["custom", _t("Custom"), "", ""],
   ];
 };
 const pctTxt = (x) => (x > 0 && x < 0.005 ? "<1%" : `${Math.round(x * 100)}%`);
@@ -3040,13 +3174,13 @@ function SellerReport({ quotes, periodRows, meta, acts, groupOf, today, filtersT
   }, [open, periodRows, qmap, groupOf]);
 
   const SR_HEAD = ["Responsável", "Qtd Cotações", "Qtd Atualizada", `Qtd Atualizada após ${LATE_HOUR}h`, "% Atualizada", "Qtd para atualizar", "% Faltou atualizar"];
-  const srRows = rep.map((x) => [x.name || "(no salesperson)", x.total, x.upd, x.late, x.pctUpd, x.pend, x.pctPend]);
-  const srTot = ["Total", tot.total, tot.upd, tot.late, tot.total ? tot.upd / tot.total : 0, tot.pend, tot.total ? tot.pend / tot.total : 0];
+  const srRows = rep.map((x) => [x.name || _t("(no salesperson)"), x.total, x.upd, x.late, x.pctUpd, x.pend, x.pctPend]);
+  const srTot = [_t("Total"), tot.total, tot.upd, tot.late, tot.total ? tot.upd / tot.total : 0, tot.pend, tot.total ? tot.pend / tot.total : 0];
   const [copied, setCopied] = useState(false);
   const toExcel = () => {
     const C = XS.cell;
     const main = {
-      title: "FUP by salesperson",
+      title: _t("FUP by salesperson"),
       cols: [30, 13, 15, 22, 13, 18, 18],
       freeze: 3,
       filter: 3,
@@ -3075,9 +3209,9 @@ function SellerReport({ quotes, periodRows, meta, acts, groupOf, today, filtersT
         .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "pend" ? -1 : 1))
         .forEach((it) => det.push({ x, it })),
     );
-    const stOf = (it) => (it.kind === "upd" ? (it.late ? ["Updated after " + LATE_HOUR + "h", "#B45309", "#FDF0D9"] : ["Updated", "#1F8A5B", "#DDF3E8"]) : it.overdue ? ["Overdue", "#C53030", "#FDE3E3"] : ["To update", "#C53030", "#FFF1F2"]);
+    const stOf = (it) => (it.kind === "upd" ? (it.late ? [_t("Updated after ") + LATE_HOUR + "h", "#B45309", "#FDF0D9"] : [_t("Updated"), "#1F8A5B", "#DDF3E8"]) : it.overdue ? [_t("Overdue"), "#C53030", "#FDE3E3"] : [_t("To update"), "#C53030", "#FFF1F2"]);
     const details = {
-      title: "Details",
+      title: _t("Details"),
       cols: [26, 13, 40, 14, 18, 17, 14, 8],
       freeze: 3,
       filter: 3,
@@ -3087,11 +3221,11 @@ function SellerReport({ quotes, periodRows, meta, acts, groupOf, today, filtersT
       rows: [
         [{ v: "FUP by salesperson · quotes", st: XS.title }],
         [{ v: `${periodTxt} · ${filtersTxt}`, st: XS.sub }],
-        ["Responsável", "Quotation", "Customer", "Amount", "Status", "Updated at", "Follow-up date", "% Win"].map((h) => ({ v: h, st: XS.head() })),
+        ["Responsável", _t("Quotation"), _t("Customer"), _t("Amount"), _t("Status"), _t("Updated at"), _t("Follow-up date"), _t("% Win")].map((h) => ({ v: h, st: XS.head() })),
         ...det.map(({ x, it }, k) => {
           const [t, fg, bg] = stOf(it);
           return [
-            { v: x.name || "(no salesperson)", st: C(k) },
+            { v: x.name || _t("(no salesperson)"), st: C(k) },
             { v: it.id, st: C(k, { b: true, h: "center" }) },
             { v: it.c, st: C(k) },
             { v: it.a || 0, st: C(k, { fmt: "money", h: "right" }) },
@@ -3103,7 +3237,7 @@ function SellerReport({ quotes, periodRows, meta, acts, groupOf, today, filtersT
         }),
       ],
     };
-    xlsxSave(`FUP by salesperson ${from === to ? from : `${from} a ${to}`}.xlsx`, [main, details]);
+    xlsxSave(_t("FUP by salesperson {0}.xlsx", from === to ? from : `${from} a ${to}`), [main, details]);
   };
   const toMail = () => {
     const p = (v) => pctTxt(v);
@@ -3115,13 +3249,13 @@ function SellerReport({ quotes, periodRows, meta, acts, groupOf, today, filtersT
     if (copyRich(`<div style="font-family:Segoe UI,Arial,sans-serif;font-size:12px;margin-bottom:6px"><b>FUP by salesperson · ${esc(periodTxt)}</b></div>` + html)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } else window.alert("The browser did not allow copying. Use Excel instead.");
+    } else window.alert(_t("The browser did not allow copying. Use Excel instead."));
   };
   const printPdf = () => {
     const rowsHtml = rep
       .map(
         (x) =>
-          `<tr><td>${esc(x.name || "(no salesperson)")}</td><td class="r">${x.total}</td><td class="r">${x.upd}</td><td class="r">${x.late}</td><td class="r b">${pctTxt(x.pctUpd)}</td><td class="r">${x.pend}</td><td class="r b">${pctTxt(x.pctPend)}</td></tr>`,
+          `<tr><td>${esc(x.name || _t("(no salesperson)"))}</td><td class="r">${x.total}</td><td class="r">${x.upd}</td><td class="r">${x.late}</td><td class="r b">${pctTxt(x.pctUpd)}</td><td class="r">${x.pend}</td><td class="r b">${pctTxt(x.pctPend)}</td></tr>`,
       )
       .join("");
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>FUP by salesperson</title><style>
@@ -3136,7 +3270,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
 <table><thead><tr><th>Responsável</th><th>Qtd Cotações</th><th>Qtd Atualizada</th><th>Qtd Atualizada após ${LATE_HOUR}h</th><th>% Atualizada</th><th>Qtd para atualizar</th><th>% Faltou atualizar</th></tr></thead>
 <tbody>${rowsHtml}</tbody><tfoot><tr><td>Total</td><td class="r">${tot.total}</td><td class="r">${tot.upd}</td><td class="r">${tot.late}</td><td class="r">${tot.total ? pctTxt(tot.upd / tot.total) : "—"}</td><td class="r">${tot.pend}</td><td class="r">${tot.total ? pctTxt(tot.pend / tot.total) : "—"}</td></tr></tfoot></table></body></html>`;
     const w = window.open("", "_blank");
-    if (!w) return window.alert("The browser blocked the report window. Allow pop-ups for this page and try again.");
+    if (!w) return window.alert(_t("The browser blocked the report window. Allow pop-ups for this page and try again."));
     w.document.open();
     w.document.write(html);
     w.document.close();
@@ -3169,7 +3303,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
   const mobFups = (x) => (
     <div>
       {[...x.items].sort(fupSort).map((it) => {
-        const [txt, fg] = it.kind === "upd" ? [`Updated ${it.t.slice(11, 16)}${from !== to ? " · " + fmtDay(it.t.slice(0, 10)) : ""}`, it.late ? X.amber : X.green] : [it.overdue ? `Overdue · ${fmtDay(it.dl)}` : "To update", X.redDk];
+        const [txt, fg] = it.kind === "upd" ? [_t("Updated {0}{1}", it.t.slice(11, 16), from !== to ? " · " + fmtDay(it.t.slice(0, 10)) : ""), it.late ? X.amber : X.green] : [it.overdue ? _t("Overdue · {0}", fmtDay(it.dl)) : _t("To update"), X.redDk];
         return (
           <div
             key={it.id}
@@ -3197,12 +3331,12 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
         {/* linhas */}
         <div style={box}>
           <div style={head}>
-            <Layers size={18} color={X.ink} /> Lines <span style={headSub}>· {periodTxtMain}</span>
+            <Layers size={18} color={X.ink} />{" "}{_t("Lines")}{" "}<span style={headSub}>· {periodTxtMain}</span>
           </div>
           {detail && detail.lt > 0 ? (
             /* grade que ocupa a altura toda do quadro: as três linhas (PT, CP, MH) dividem o espaço igualmente */
             <div style={{ flex: 1, display: "grid", gridTemplateColumns: mob ? "60px 44px minmax(0, 1fr) minmax(0, 1.2fr)" : "104px 72px minmax(80px, 1fr) minmax(140px, 1.6fr)", gridTemplateRows: "auto repeat(3, minmax(52px, 1fr))", fontSize: 13 }}>
-              {["Product Line", "Quotes", "Value", "Share of line value"].map((h) => (
+              {[_t("Product Line"), _t("Quotes"), _t("Value"), _t("Share of line value")].map((h) => (
                 <div key={h} style={{ ...colH, display: "flex", alignItems: "flex-end" }}>
                   {h}
                 </div>
@@ -3229,27 +3363,26 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
               })}
             </div>
           ) : (
-            <div style={{ fontSize: 12, color: X.sub }}>No quotes in the period of the screen.</div>
+            <div style={{ fontSize: 12, color: X.sub }}>{_t("No quotes in the period of the screen.")}</div>
           )}
           {detail && (
             <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: X.sub }}>
-              <span style={{ width: 14, height: 6, borderRadius: 4, background: "#2F6FDB" }} /> Share of line value · {detail.n} quotes
-            </div>
+              <span style={{ width: 14, height: 6, borderRadius: 4, background: "#2F6FDB" }} />{" "}{_t("Share of line value ·")}{" "}{detail.n}{" "}{_t("quotes")}</div>
           )}
         </div>
         {/* Product Groups */}
         <div style={box}>
           <div style={head}>
-            <LayoutGrid size={18} color={X.ink} /> Product groups <span style={headSub}>· {periodTxtMain}</span>
+            <LayoutGrid size={18} color={X.ink} />{" "}{_t("Product groups")}{" "}<span style={headSub}>· {periodTxtMain}</span>
           </div>
           {detail && detail.pgs.length ? (
             <div style={{ maxHeight: 330, overflow: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                 <thead>
                   <tr>
-                    <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff" }}>Group</th>
+                    <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff" }}>{_t("Group")}</th>
                     <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff", width: 70 }}>QTD</th>
-                    <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff", width: 84 }}>Value</th>
+                    <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff", width: 84 }}>{_t("Value")}</th>
                     <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff", width: 64 }}>%</th>
                   </tr>
                 </thead>
@@ -3272,23 +3405,23 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
                   })}
                 </tbody>
               </table>
-              {detail.pgs.length > 20 && <div style={{ fontSize: 11, color: X.sub, paddingTop: 6 }}>+ {detail.pgs.length - 20} more groups</div>}
+              {detail.pgs.length > 20 && <div style={{ fontSize: 11, color: X.sub, paddingTop: 6 }}>+ {detail.pgs.length - 20}{" "}{_t("more groups")}</div>}
             </div>
           ) : (
-            <div style={{ fontSize: 12, color: X.sub }}>{detail && detail.n ? "The stored quotes have no Product Group yet: import the Quote Report again." : "No quotes in the period of the screen."}</div>
+            <div style={{ fontSize: 12, color: X.sub }}>{detail && detail.n ? _t("The stored quotes have no Product Group yet: import the Quote Report again.") : _t("No quotes in the period of the screen.")}</div>
           )}
-          {detail && detail.withPg > 0 && detail.withPg < detail.n && <div style={{ marginTop: "auto", fontSize: 11, color: X.sub }}>{detail.n - detail.withPg} quotes without Product Group (import the Quote Report again)</div>}
+          {detail && detail.withPg > 0 && detail.withPg < detail.n && <div style={{ marginTop: "auto", fontSize: 11, color: X.sub }}>{detail.n - detail.withPg}{" "}{_t("quotes without Product Group (import the Quote Report again)")}</div>}
         </div>
         {/* follow-ups do período */}
         <div style={box}>
           <div style={head}>
-            <ListIcon size={18} color={X.ink} /> Follow-ups <span style={headSub}>· {periodTxt}</span>
+            <ListIcon size={18} color={X.ink} />{" "}{_t("Follow-ups")}{" "}<span style={headSub}>· {periodTxt}</span>
           </div>
           <div style={{ maxHeight: 330, overflow: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr>
-                  {[["Quotation ID", 116], ["Customer", null], ["Status", 150], ["Amount", 90]].map(([h, w]) => (
+                  {[[_t("Quotation ID"), 116], [_t("Customer"), null], [_t("Status"), 150], [_t("Amount"), 90]].map(([h, w]) => (
                     <th key={h} style={{ ...colH, textAlign: h === "Amount" ? "right" : "left", width: w || undefined, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>{h}</th>
                   ))}
                 </tr>
@@ -3299,8 +3432,8 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
                   .map((it) => {
                     const [txt, fg, bg] =
                       it.kind === "upd"
-                        ? [`Updated ${it.t.slice(11, 16)}${from !== to ? " · " + fmtDay(it.t.slice(0, 10)) : ""}`, it.late ? X.amber : X.green, it.late ? X.amberSoft : X.greenSoft]
-                        : [it.overdue ? `Overdue · ${fmtDay(it.dl)}` : `To update · ${fmtDay(it.dl)}`, X.redDk, X.redSoft];
+                        ? [_t("Updated {0}{1}", it.t.slice(11, 16), from !== to ? " · " + fmtDay(it.t.slice(0, 10)) : ""), it.late ? X.amber : X.green, it.late ? X.amberSoft : X.greenSoft]
+                        : [it.overdue ? _t("Overdue · {0}", fmtDay(it.dl)) : _t("To update · {0}", fmtDay(it.dl)), X.redDk, X.redSoft];
                     return (
                       <tr key={it.id} style={rowB}>
                         <td style={{ padding: "7px 0" }}>
@@ -3309,7 +3442,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
                               e.stopPropagation();
                               onOpenQuote(it.id);
                             }}
-                            title="Open the quote"
+                            title={_t("Open the quote")}
                             style={{ display: "inline-block", fontWeight: 700, fontSize: 12, color: X.tealDk, background: X.tealSoft, borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}
                           >
                             {it.id}
@@ -3344,14 +3477,14 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
                 </option>
               ))}
             </select>
-            <button onClick={() => setShare(true)} disabled={!ok} title="Excel, e-mail or PDF" style={iconBtn({ width: 44, height: 44 })}>
+            <button onClick={() => setShare(true)} disabled={!ok} title={_t("Excel, e-mail or PDF")} style={iconBtn({ width: 44, height: 44 })}>
               <Download size={18} />
             </button>
           </div>
           {rk === "custom" && (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <input type="date" value={cf} onChange={(e) => setCf(e.target.value)} style={{ ...inp, height: 40, flex: 1, minWidth: 0 }} />
-              <span style={{ color: X.sub }}>to</span>
+              <span style={{ color: X.sub }}>{_t("to")}</span>
               <input type="date" value={ct} onChange={(e) => setCt(e.target.value)} style={{ ...inp, height: 40, flex: 1, minWidth: 0 }} />
             </div>
           )}
@@ -3359,21 +3492,20 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
             <div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                 <span style={{ fontSize: 24, fontWeight: 800, color: X.tealDk }}>{tot.upd}</span>
-                <span style={{ fontSize: 13.5, color: X.sub, fontWeight: 600 }}>of {tot.total} updated</span>
-                <span style={{ marginLeft: "auto", fontSize: 12.5, fontWeight: 700, color: tot.pend ? X.redDk : X.green }}>{tot.pend ? `${tot.pend} to update` : "all updated"}</span>
+                <span style={{ fontSize: 13.5, color: X.sub, fontWeight: 600 }}>{_t("of")}{" "}{tot.total}{" "}{_t("updated")}</span>
+                <span style={{ marginLeft: "auto", fontSize: 12.5, fontWeight: 700, color: tot.pend ? X.redDk : X.green }}>{tot.pend ? _t("{0} to update", tot.pend) : _t("all updated")}</span>
               </div>
               <div style={{ height: 8, borderRadius: 9, background: X.head, overflow: "hidden", marginTop: 7 }}>
                 <div style={{ width: `${tot.total ? (tot.upd / tot.total) * 100 : 0}%`, height: "100%", background: X.teal, borderRadius: 9 }} />
               </div>
             </div>
           )}
-          {!ok && <div style={{ fontSize: 12.5, color: X.redDk }}>Choose a valid period</div>}
-          <Sheet open={share} title="Share the report" onClose={() => setShare(false)}>
+          {!ok && <div style={{ fontSize: 12.5, color: X.redDk }}>{_t("Choose a valid period")}</div>}
+          <Sheet open={share} title={_t("Share the report")} onClose={() => setShare(false)}>
             <button onClick={() => { toExcel(); setShare(false); }} style={{ ...btn, height: 48, justifyContent: "flex-start", borderRadius: 12, fontSize: 14 }}>
-              <FileSpreadsheet size={18} /> Download as Excel
-            </button>
+              <FileSpreadsheet size={18} />{" "}{_t("Download as Excel")}</button>
             <button onClick={toMail} disabled={!rep.length} style={{ ...btn, height: 48, justifyContent: "flex-start", borderRadius: 12, fontSize: 14 }}>
-              <Copy size={18} /> {copied ? "Copied! Paste it in the e-mail" : "Copy for e-mail"}
+              <Copy size={18} /> {copied ? _t("Copied! Paste it in the e-mail") : _t("Copy for e-mail")}
             </button>
             <button onClick={() => { printPdf(); setShare(false); }} style={{ ...btn, height: 48, justifyContent: "flex-start", borderRadius: 12, fontSize: 14 }}>
               <Printer size={18} /> PDF
@@ -3388,17 +3520,16 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
             <Users size={20} />
           </span>
           <div>
-            <div style={h2}>FUP by salesperson</div>
-            <div style={{ fontSize: 12, color: X.sub, marginTop: 2 }}>Follow-ups due and updated (Done) in the period · {filtersTxt}</div>
+            <div style={h2}>{_t("FUP by salesperson")}</div>
+            <div style={{ fontSize: 12, color: X.sub, marginTop: 2 }}>{_t("Follow-ups due and updated (Done) in the period ·")}{" "}{filtersTxt}</div>
           </div>
           <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <button onClick={toExcel} disabled={!ok} style={{ ...btn, height: 34, fontSize: 12.5, background: X.teal, borderColor: X.teal, color: "#fff" }} title="Download the table (and the quotes of each salesperson, in the Details sheet) as Excel">
-              <FileSpreadsheet size={15} /> Excel
+            <button onClick={toExcel} disabled={!ok} style={{ ...btn, height: 34, fontSize: 12.5, background: X.teal, borderColor: X.teal, color: "#fff" }} title={_t("Download the table (and the quotes of each salesperson, in the Details sheet) as Excel")}>
+              <FileSpreadsheet size={15} />{" "}{_t("Excel")}</button>
+            <button onClick={toMail} disabled={!ok || !rep.length} style={{ ...btn, height: 34, fontSize: 12.5 }} title={_t("Copy the table with its colors: paste it straight into the e-mail (Ctrl+V)")}>
+              <Copy size={15} /> {copied ? _t("Copied!") : _t("Copy for e-mail")}
             </button>
-            <button onClick={toMail} disabled={!ok || !rep.length} style={{ ...btn, height: 34, fontSize: 12.5 }} title="Copy the table with its colors: paste it straight into the e-mail (Ctrl+V)">
-              <Copy size={15} /> {copied ? "Copied!" : "Copy for e-mail"}
-            </button>
-            <button onClick={printPdf} disabled={!ok} style={{ ...btn, height: 34, fontSize: 12.5 }} title="Open the table ready to print / save as PDF">
+            <button onClick={printPdf} disabled={!ok} style={{ ...btn, height: 34, fontSize: 12.5 }} title={_t("Open the table ready to print / save as PDF")}>
               <Printer size={15} /> PDF
             </button>
           </div>
@@ -3415,25 +3546,25 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
           {rk === "custom" && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <input type="date" value={cf} onChange={(e) => setCf(e.target.value)} style={{ ...inp, height: 30, fontSize: 12 }} />
-              <span style={{ color: X.sub }}>to</span>
+              <span style={{ color: X.sub }}>{_t("to")}</span>
               <input type="date" value={ct} onChange={(e) => setCt(e.target.value)} style={{ ...inp, height: 30, fontSize: 12 }} />
             </span>
           )}
-          <span style={{ marginLeft: 6, fontSize: 12.5, color: ok ? X.ink : X.redDk }}>{ok ? <b>{periodTxt}</b> : "Choose a valid period"}</span>
+          <span style={{ marginLeft: 6, fontSize: 12.5, color: ok ? X.ink : X.redDk }}>{ok ? <b>{periodTxt}</b> : _t("Choose a valid period")}</span>
         </div>
       </div>
       )}
       {mob ? (
         /* celular: um cartão por vendedor; tocar abre os detalhes embaixo */
         <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-          {!rep.length && <div style={{ textAlign: "center", color: X.sub, padding: 24, fontSize: 12.5 }}>No follow-up due or done in this period with the current filters.</div>}
+          {!rep.length && <div style={{ textAlign: "center", color: X.sub, padding: 24, fontSize: 12.5 }}>{_t("No follow-up due or done in this period with the current filters.")}</div>}
           {rep.map((x) => {
             const isOpen = open === x.name;
             return (
               <div key={x.name} style={{ border: `1px solid ${isOpen ? "#9FD6C9" : X.line}`, borderRadius: 12, background: isOpen ? "#F7FBFA" : "#fff", overflow: "hidden" }}>
                 <div className="qp-card-btn" onClick={() => setOpen(isOpen ? "" : x.name)} style={{ padding: "12px 13px", display: "flex", flexDirection: "column", gap: 7, cursor: "pointer" }}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
-                    <b style={{ fontSize: 14.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{x.name || "(no salesperson)"}</b>
+                    <b style={{ fontSize: 14.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{x.name || _t("(no salesperson)")}</b>
                     <span style={{ marginLeft: "auto", fontSize: 12.5, color: X.sub, whiteSpace: "nowrap" }}>
                       <b style={{ color: X.tealDk, fontSize: 15 }}>{x.upd}</b> / {x.total}
                     </span>
@@ -3442,8 +3573,8 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
                     <div style={{ width: `${x.total ? (x.upd / x.total) * 100 : 0}%`, height: "100%", background: X.teal, borderRadius: 9 }} />
                   </div>
                   <div style={{ display: "flex", gap: 10, fontSize: 12, fontWeight: 600 }}>
-                    <span style={{ color: x.pend ? X.redDk : X.green }}>{x.pend ? `${x.pend} to update` : "all updated"}</span>
-                    {x.late ? <span style={{ color: X.amber }}>{x.late} after {LATE_HOUR}h</span> : null}
+                    <span style={{ color: x.pend ? X.redDk : X.green }}>{x.pend ? _t("{0} to update", x.pend) : _t("all updated")}</span>
+                    {x.late ? <span style={{ color: X.amber }}>{x.late}{" "}{_t("after")}{" "}{LATE_HOUR}h</span> : null}
                     <ChevronDown size={15} color={X.sub} style={{ marginLeft: "auto", transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .14s" }} />
                   </div>
                 </div>
@@ -3459,20 +3590,18 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
             <tr>
               <th style={{ ...th, width: 34 }} />
               <th style={{ ...th, textAlign: "left" }}>Responsável</th>
-              <th style={th} title="Follow-ups of the period: updated + still to update">Qtd Cotações</th>
-              <th style={th} title="Quotes marked Done in the period">Qtd Atualizada</th>
-              <th style={th} title={`First Done of the period at ${LATE_HOUR}:00 or later`}>Qtd Atualizada após {LATE_HOUR}h</th>
+              <th style={th} title={_t("Follow-ups of the period: updated + still to update")}>Qtd Cotações</th>
+              <th style={th} title={_t("Quotes marked Done in the period")}>Qtd Atualizada</th>
+              <th style={th} title={_t("First Done of the period at {0}:00 or later", LATE_HOUR)}>Qtd Atualizada após {LATE_HOUR}h</th>
               <th style={th}>% Atualizada</th>
-              <th style={th} title="Open quotes with the follow-up due until the end of the period and no Done in it">Qtd para atualizar</th>
+              <th style={th} title={_t("Open quotes with the follow-up due until the end of the period and no Done in it")}>Qtd para atualizar</th>
               <th style={th}>% Faltou atualizar</th>
             </tr>
           </thead>
           <tbody>
             {!rep.length && (
               <tr>
-                <td colSpan={8} style={{ ...td, textAlign: "center", color: X.sub, padding: 30 }}>
-                  No follow-up due or done in this period with the current filters.
-                </td>
+                <td colSpan={8} style={{ ...td, textAlign: "center", color: X.sub, padding: 30 }}>{_t("No follow-up due or done in this period with the current filters.")}</td>
               </tr>
             )}
             {rep.map((x) => {
@@ -3483,7 +3612,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
                     <td style={{ ...td, textAlign: "center" }}>
                       <ChevronRight size={15} style={{ color: isOpen ? X.tealDk : X.sub, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .14s" }} />
                     </td>
-                    <td style={{ ...td, textAlign: "left", fontWeight: 700 }}>{x.name || "(no salesperson)"}</td>
+                    <td style={{ ...td, textAlign: "left", fontWeight: 700 }}>{x.name || _t("(no salesperson)")}</td>
                     <td style={{ ...td, fontWeight: 700 }}>{x.total}</td>
                     <td style={{ ...td, color: X.green, fontWeight: 600 }}>{x.upd}</td>
                     <td style={{ ...td, color: x.late ? X.amber : X.sub }}>{x.late}</td>
@@ -3510,7 +3639,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
             <tfoot>
               <tr>
                 <td style={{ ...td, background: X.head }} />
-                <td style={{ ...td, textAlign: "left", fontWeight: 800, background: X.head }}>Total · {rep.length} salespeople</td>
+                <td style={{ ...td, textAlign: "left", fontWeight: 800, background: X.head }}>{_t("Total ·")}{" "}{rep.length}{" "}{_t("salespeople")}</td>
                 <td style={{ ...td, fontWeight: 800, background: X.head }}>{tot.total}</td>
                 <td style={{ ...td, fontWeight: 800, background: X.head, color: X.green }}>{tot.upd}</td>
                 <td style={{ ...td, fontWeight: 800, background: X.head }}>{tot.late}</td>
@@ -3582,17 +3711,17 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {/* resumo da semana */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <WeekStat label="Goal of the week" value={wGoal ? moneyShort(wGoal) : "—"} sub={wGoal ? `${days.filter((d) => goalOf(d) > 0).length} business days` : "no daily goal"} title={money(wGoal)} />
+        <WeekStat label={_t("Goal of the week")} value={wGoal ? moneyShort(wGoal) : "—"} sub={wGoal ? _t("{0} business days", days.filter((d) => goalOf(d) > 0).length) : _t("no daily goal")} title={money(wGoal)} />
         <WeekStat
-          label="Booked in the week"
+          label={_t("Booked in the week")}
           value={!elapsed.length ? "—" : partial ? "—" : moneyShort(wBooked)}
-          sub={!elapsed.length ? "week still ahead" : partial ? "import the Sales Report again" : goalSoFar ? `${Math.round((wBooked / goalSoFar) * 100)}% of the goal until today · ${hit} of ${withG} days on target` : "Sales Report"}
+          sub={!elapsed.length ? _t("week still ahead") : partial ? _t("import the Sales Report again") : goalSoFar ? _t("{0}% of the goal until today · {1} of {2} days on target", Math.round((wBooked / goalSoFar) * 100), hit, withG) : _t("Sales Report")}
           ink={elapsed.length && !partial ? (wBooked >= goalSoFar ? X.green : X.redDk) : X.ink}
           title={money(wBooked)}
         />
-        <WeekStat label="With FUP from today" value={ahead.length ? moneyShort(fupAhead) : "—"} sub={ahead.length ? "value of the quotes with FUP on these days" : "week is over"} ink="#2F6FDB" title={money(fupAhead)} />
-        <WeekStat label="Follow-ups" value={nItems || "—"} sub={nOver ? `${nOver} overdue, brought to today` : ahead.length ? "planned from today" : "—"} ink={nOver ? X.redDk : X.ink} />
-        <WeekStat label="Done" value={nDone || "—"} sub="follow-ups marked Done this week" ink={X.tealDk} />
+        <WeekStat label={_t("With FUP from today")} value={ahead.length ? moneyShort(fupAhead) : "—"} sub={ahead.length ? _t("value of the quotes with FUP on these days") : _t("week is over")} ink="#2F6FDB" title={money(fupAhead)} />
+        <WeekStat label={_t("Follow-ups")} value={nItems || "—"} sub={nOver ? _t("{0} overdue, brought to today", nOver) : ahead.length ? _t("planned from today") : "—"} ink={nOver ? X.redDk : X.ink} />
+        <WeekStat label={_t("Done")} value={nDone || "—"} sub={_t("follow-ups marked Done this week")} ink={X.tealDk} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "repeat(5, minmax(0, 1fr))", gap: 8, alignItems: "stretch" }}>
@@ -3615,7 +3744,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
               key={d}
               className="qp-day"
               onClick={() => pick(d)}
-              title={isSel ? "Click again to close the plan of this day" : "Click to see the plan of this day"}
+              title={isSel ? _t("Click again to close the plan of this day") : _t("Click to see the plan of this day")}
               style={{
                 borderRadius: 10,
                 border: `1px solid ${isSel ? X.teal : isT ? "#9FD6C9" : X.line}`,
@@ -3633,15 +3762,15 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
               <div style={{ padding: "9px 11px 10px", background: isT ? "#EEF8F5" : isSel ? "#F4FBF9" : X.head, borderBottom: `1px solid ${X.line}` }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: isT ? X.tealDk : X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{dowName(d)}</span>
-                  {isT && tag("Today", "#fff", X.teal)}
+                  {isT && tag(_t("Today"), "#fff", X.teal)}
                   {evs.length > 0 && <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: X.sub }}>{evs.length} FUP</span>}
                 </div>
                 <div style={{ fontSize: 19, fontWeight: 700, color: past ? "#8A97A3" : X.ink, letterSpacing: -0.3, marginTop: 1 }}>{fmtDay(d)}</div>
                 <HolidayTag d={d} full />
                 {(goal > 0 || bv > 0) && (
-                  <div style={{ marginTop: 7 }} title={showBooked ? `Booked ${money(bv)}${goal ? ` of ${money(goal)}` : ""}` : `Quotes with FUP on this day: ${money(bv)}${goal ? ` · goal ${money(goal)}` : ""}`}>
+                  <div style={{ marginTop: 7 }} title={showBooked ? _t("Booked {0}{1}", money(bv), goal ? _t(" of {0}", money(goal)) : "") : _t("Quotes with FUP on this day: {0}{1}", money(bv), goal ? _t(" · goal {0}", money(goal)) : "")}>
                     <div style={{ display: "flex", alignItems: "baseline", gap: 4, fontSize: 11, fontVariantNumeric: "tabular-nums", flexWrap: "wrap" }}>
-                      <span style={{ fontWeight: 600, color: X.sub, whiteSpace: "nowrap" }}>{showBooked ? "Booked" : "With FUP"}</span>
+                      <span style={{ fontWeight: 600, color: X.sub, whiteSpace: "nowrap" }}>{showBooked ? _t("Booked") : _t("With FUP")}</span>
                       <span style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
                         <span style={{ fontWeight: 700, color: barCol }}>{moneyShort(bv)}</span>
                         {goal > 0 && <span style={{ color: X.sub }}> / {moneyShort(goal)}</span>}
@@ -3662,13 +3791,13 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
                   const f = FUP[e.fup];
                   const ov = e.kind === "overdue";
                   const why = ov
-                    ? tag(`Overdue · ${fmtDay(e.dl)}`, X.redDk, X.redSoft)
+                    ? tag(_t("Overdue · {0}", fmtDay(e.dl)), X.redDk, X.redSoft)
                     : e.kind === "again"
-                    ? tag("2nd follow-up", f.color, f.bg)
+                    ? tag(_t("2nd follow-up"), f.color, f.bg)
                     : e.fup === "B"
-                    ? tag(fupPending(e.meta || {}).length > 1 ? "1st follow-up" : "2nd follow-up", f.color, f.bg)
+                    ? tag(fupPending(e.meta || {}).length > 1 ? _t("1st follow-up") : _t("2nd follow-up"), f.color, f.bg)
                     : e.kind === "fill"
-                    ? tag("Pulled in", "#2F6FDB", "#E6EEFB")
+                    ? tag(_t("Pulled in"), "#2F6FDB", "#E6EEFB")
                     : f
                     ? tag(f.label, f.color, f.bg)
                     : null;
@@ -3679,7 +3808,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
                         ev.stopPropagation();
                         onOpenQuote(e.id);
                       }}
-                      title={`${e.id} · ${e.c} · ${money(e.v)} — click to open the record, the Activities History and the notes`}
+                      title={_t("{0} · {1} · {2} — click to open the record, the Activities History and the notes", e.id, e.c, money(e.v))}
                       style={{
                         border: `1px ${ov ? "dashed" : "solid"} ${ov ? X.redDk : X.line}`,
                         borderLeft: `3px solid ${ov ? X.redDk : f ? f.color : "#7DA2E8"}`,
@@ -3704,7 +3833,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
                       <div style={{ fontSize: 11.5, color: X.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.c}</div>
                       <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", marginTop: 1 }}>
                         {why}
-                        {e.win ? tag(`${e.win}%`, WIN_META[e.win] ? WIN_META[e.win].color : X.ink, WIN_META[e.win] ? WIN_META[e.win].bg : X.head) : tag("no % Win", "#8A97A3", X.head)}
+                        {e.win ? tag(`${e.win}%`, WIN_META[e.win] ? WIN_META[e.win].color : X.ink, WIN_META[e.win] ? WIN_META[e.win].bg : X.head) : tag(_t("no % Win"), "#8A97A3", X.head)}
                         {TEMP[e.temp] && tag(TEMP[e.temp].label, TEMP[e.temp].color, TEMP[e.temp].bg)}
                         {isT && e.fup && <DoneButton id={e.id} onOpenQuote={onOpenQuote} small />}
                       </div>
@@ -3712,12 +3841,12 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
                   );
                 })}
                 {!evs.length && !done.length && (
-                  <div style={{ margin: "auto 0", textAlign: "center", fontSize: 11.5, color: "#A0AEC0", padding: "18px 4px" }}>{past ? "No follow-up done" : "No follow-up"}</div>
+                  <div style={{ margin: "auto 0", textAlign: "center", fontSize: 11.5, color: "#A0AEC0", padding: "18px 4px" }}>{past ? _t("No follow-up done") : _t("No follow-up")}</div>
                 )}
                 {done.length > 0 && (
                   <div style={{ marginTop: evs.length ? 4 : 0, paddingTop: evs.length ? 7 : 0, borderTop: evs.length ? `1px dashed ${X.line}` : "none", display: "flex", flexDirection: "column", gap: 3 }}>
                     <div style={{ fontSize: 10.5, fontWeight: 700, color: X.tealDk, textTransform: "uppercase", letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 4 }}>
-                      <CheckCircle2 size={12} /> Done · {done.length}
+                      <CheckCircle2 size={12} />{" "}{_t("Done ·")}{" "}{done.length}
                     </div>
                     {done.map((x) => (
                       <div
@@ -3726,7 +3855,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
                           ev.stopPropagation();
                           onOpenQuote(x.id);
                         }}
-                        title={`${x.id} · ${x.c} — follow-up done on ${fmtDate(d)}`}
+                        title={_t("{0} · {1} — follow-up done on {2}", x.id, x.c, fmtDate(d))}
                         style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: X.sub, padding: "3px 6px", borderRadius: 6, background: "#F1F8F6", minWidth: 0 }}
                       >
                         <Check size={11} color={X.teal} style={{ flexShrink: 0 }} />
@@ -3760,7 +3889,12 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
     .filter((d) => d >= today)
     .sort();
   const first = keys[0] || today;
-  const listOf = (d) => ((byDay[d] && byDay[d].list) || []).filter((e) => e.kind !== "fill");
+  // a lista de cada dia vai da maior prioridade para a menor (empate: o maior valor); o atraso continua marcado em vermelho
+  const listOf = (d) =>
+    ((byDay[d] && byDay[d].list) || [])
+      .filter((e) => e.kind !== "fill")
+      .slice()
+      .sort((a, b) => (b.score || 0) - (a.score || 0) || (b.v || 0) - (a.v || 0));
   const todo = listOf(first);
   const nOver = todo.filter((e) => e.kind === "overdue").length;
   const todoV = todo.reduce((s, e) => s + (e.v || 0), 0);
@@ -3789,8 +3923,8 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
   const secT = { fontSize: 12, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4, padding: "6px 2px 0" };
   const why = (e) => {
     const f = FUP[e.fup];
-    if (e.kind === "overdue") return [`Overdue since ${fmtDay(e.dl)}`, X.redDk];
-    if (e.kind === "again" || (e.fup === "B" && fupPending(e.meta || {}).length <= 1)) return ["2nd follow-up of the week", f ? f.color : X.sub];
+    if (e.kind === "overdue") return [_t("Overdue since {0}", fmtDay(e.dl)), X.redDk];
+    if (e.kind === "again" || (e.fup === "B" && fupPending(e.meta || {}).length <= 1)) return [_t("2nd follow-up of the week"), f ? f.color : X.sub];
     return [f ? f.label : "", f ? f.color : X.sub];
   };
   const fold = (on, label, n, onClick) => (
@@ -3806,7 +3940,7 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
       <div style={{ ...card, padding: "14px 14px 12px" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
           <span style={{ fontSize: 28, fontWeight: 800, letterSpacing: -0.6, lineHeight: 1 }}>{todo.length}</span>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>to do {first === today ? "today" : "next"}</span>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{_t("to do")}{" "}{first === today ? _t("today") : _t("next (day)")}</span>
           <span style={{ marginLeft: "auto", fontSize: 12.5, color: X.sub, whiteSpace: "nowrap" }}>
             {dowName(first).slice(0, 3)}, {fmtDay(first)}
           </span>
@@ -3816,15 +3950,13 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
         </div>
         <div style={{ display: "flex", gap: 14, fontSize: 12.5, color: X.sub, flexWrap: "wrap" }}>
           <span>
-            <b style={{ color: X.tealDk }}>{doneToday.length}</b> done
-          </span>
+            <b style={{ color: X.tealDk }}>{doneToday.length}</b>{" "}{_t("done")}</span>
           {nOver > 0 && (
             <span>
-              <b style={{ color: X.redDk }}>{nOver}</b> overdue
-            </span>
+              <b style={{ color: X.redDk }}>{nOver}</b>{" "}{_t("overdue")}</span>
           )}
           {hol && <span>{hol.name}</span>}
-          {todo.length > 0 && <span style={{ marginLeft: "auto", fontWeight: 600 }}>{moneyShort(todoV)} in quotes</span>}
+          {todo.length > 0 && <span style={{ marginLeft: "auto", fontWeight: 600 }}>{moneyShort(todoV)}{" "}{_t("in quotes")}</span>}
         </div>
       </div>
 
@@ -3832,7 +3964,7 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
       {!todo.length ? (
         <div style={{ padding: "34px 14px", textAlign: "center", color: X.sub, fontSize: 14 }}>
           <CheckCircle2 size={34} color={X.teal} style={{ display: "block", margin: "0 auto 8px" }} />
-          <b style={{ color: X.ink }}>{doneToday.length ? "All done for today" : "Nothing due today"}</b>
+          <b style={{ color: X.ink }}>{doneToday.length ? _t("All done for today") : _t("Nothing due today")}</b>
         </div>
       ) : (
         todo.map((e) => {
@@ -3853,7 +3985,12 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
                   {e.id} · <b style={{ color: X.ink }}>{money(e.v)}</b>
                   <NoteBadge info={notesBy && notesBy[e.id]} />
                 </div>
-                {wTxt && <div style={{ fontSize: 11.5, fontWeight: 700, color: wCol, marginTop: 3 }}>{wTxt}</div>}
+                <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
+                  <PrioBadge v={e.score || 0} />
+                  <TempPill v={e.temp} />
+                  {e.win > 0 && <WinPill v={e.win} />}
+                  {wTxt && <span style={{ fontSize: 11.5, fontWeight: 700, color: wCol, whiteSpace: "nowrap" }}>{wTxt}</span>}
+                </div>
               </div>
               {e.fup && (
                 <button
@@ -3861,11 +3998,10 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
                     ev.stopPropagation();
                     onOpenQuote(e.id, true);
                   }}
-                  title="Register the follow-up: note, next date and % Win"
+                  title={_t("Register the follow-up: note, next date and % Win")}
                   style={{ ...btn, height: 42, padding: "0 14px", borderRadius: 12, background: X.teal, borderColor: X.teal, color: "#fff", fontWeight: 700, fontSize: 13.5, flexShrink: 0 }}
                 >
-                  <Check size={16} /> Done
-                </button>
+                  <Check size={16} />{" "}{_t("Done")}</button>
               )}
             </div>
           );
@@ -3876,7 +4012,7 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
         <div onClick={onGoMine} className="qp-card-btn" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", fontSize: 12.5, color: X.amber, cursor: onGoMine ? "pointer" : "default" }}>
           <AlertTriangle size={14} style={{ flexShrink: 0 }} />
           <span style={{ flex: 1 }}>
-            {noFup.toLocaleString("pt-BR")} open quote{noFup === 1 ? " has" : "s have"} no FUP and never show up here
+            {noFup.toLocaleString("pt-BR")} {noFup === 1 ? _t("open quote has no FUP and never shows up here") : _t("open quotes have no FUP and never show up here")}
           </span>
           {onGoMine && <ChevronRight size={15} />}
         </div>
@@ -3885,13 +4021,13 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
       {/* feitos hoje (recolhido) */}
       {doneToday.length > 0 && (
         <div style={{ borderTop: `1px solid ${X.line}` }}>
-          {fold(showDone, "Done today", doneToday.length, () => setShowDone((v) => !v))}
+          {fold(showDone, _t("Done today"), doneToday.length, () => setShowDone((v) => !v))}
           {showDone &&
             doneToday.map((x) => (
               <div key={x.id} className="qp-opt" onClick={() => onOpenQuote(x.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 4px", cursor: "pointer", fontSize: 13, minWidth: 0 }}>
                 <CheckCircle2 size={16} color={X.teal} style={{ flexShrink: 0 }} />
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{x.c || x.id}</span>
-                {x.next && <span style={{ fontSize: 12, color: X.sub, whiteSpace: "nowrap" }}>next {fmtDay(x.next)}</span>}
+                {x.next && <span style={{ fontSize: 12, color: X.sub, whiteSpace: "nowrap" }}>{_t("next")}{" "}{fmtDay(x.next)}</span>}
               </div>
             ))}
         </div>
@@ -3900,7 +4036,7 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
       {/* próximos dias (cada dia abre a sua lista) */}
       {ahead.some((x) => x.list.length) && (
         <div style={{ borderTop: `1px solid ${X.line}` }}>
-          <div style={secT}>Next days</div>
+          <div style={secT}>{_t("Next days")}</div>
           {ahead.map(({ d, list }) => {
             if (!list.length) return null;
             const on = openDay === d;
@@ -3917,6 +4053,7 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
                 {on &&
                   list.map((e) => (
                     <div key={e.id + e.kind} className="qp-opt" onClick={() => onOpenQuote(e.id, false, list.map((x) => x.id))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 4px", cursor: "pointer", fontSize: 13, minWidth: 0 }}>
+                      <PrioBadge v={e.score || 0} />
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{e.c}</span>
                       <b style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{moneyShort(e.v)}</b>
                     </div>
@@ -3926,6 +4063,232 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ===== Overview (gerência) =====
+   Uma tela só com o que a gerência olha todo dia: a meta do mês (vendido × meta e o ritmo), a carteira do período,
+   o que precisa de atenção (follow-ups atrasados, de hoje e cotações sem FUP — tocar abre a lista já filtrada),
+   a equipe hoje (quem atualizou os follow-ups) e as cotações abertas de maior prioridade. Os números saem das
+   mesmas contas das abas Quotes, Team e Goal. */
+function ManagerOverview({ rows, quotes, meta, thermo, acts, sales, cls, line, dailyGoal, dayGoals, today, groupOf, periodTxt, filtersTxt, onOpenQuote, onGo }) {
+  const mob = useMobile();
+  // meta do mês: soma da meta de cada dia útil (ou a digitada no dia), como no Calendar
+  const goalOf = (d) => (dayGoals[d] != null ? Math.max(0, dayGoals[d]) : isOffDay(d) ? 0 : dailyGoal || 0);
+  const ym = today.slice(0, 7),
+    mFrom = ym + "-01",
+    mTo = lastDayOfMonth(ym);
+  let monthGoal = 0,
+    dueSoFar = 0;
+  for (let d = mFrom; d <= mTo; d = addDays(d, 1)) {
+    const g = goalOf(d);
+    monthGoal += g;
+    if (d <= today) dueSoFar += g;
+  }
+  const bookedM = useMemo(() => bookedRange(mFrom, today, quotes, sales, cls, line), [mFrom, today, quotes, sales, cls, line]);
+  const bookedT = useMemo(() => bookedRange(today, today, quotes, sales, cls, line), [today, quotes, sales, cls, line]);
+  const goalT = goalOf(today);
+  const pctM = monthGoal ? Math.min(1, bookedM.v / monthGoal) : 0;
+  const pace = bookedM.v - dueSoFar; // > 0 = à frente do esperado até hoje
+  const monthName = MON_SHORT[+ym.slice(5) - 1] + "/" + ym.slice(0, 4);
+
+  // carteira do período e o que precisa de atenção (cotações abertas do período, com o FUP de cada uma)
+  const k = useMemo(() => {
+    const o = { open: { n: 0, v: 0 }, won: { n: 0, v: 0, q: 0 }, lost: { n: 0, v: 0 }, late: { n: 0, v: 0 }, due: { n: 0, v: 0 }, nofup: { n: 0, v: 0 } };
+    const top = [];
+    rows.forEach((r) => {
+      if (r.st === "won") {
+        o.won.n++;
+        o.won.v += r.sold || 0;
+        o.won.q += r.quoted || 0;
+      } else if (r.st === "lost") {
+        o.lost.n++;
+        o.lost.v += r.lostV || 0;
+      } else if (r.st === "open") {
+        o.open.n++;
+        o.open.v += r.open || 0;
+        const m = meta[r.id] || {};
+        const next = fupPending(m)[0] || "";
+        const add = (x) => {
+          x.n++;
+          x.v += r.open || 0;
+        };
+        if (!m.fup) add(o.nofup);
+        else if (next && next < today) add(o.late);
+        else if (next === today) add(o.due);
+        const t = thermo[r.nn];
+        const temp = t ? t.temp : "";
+        top.push({ ...r, win: m.win || 0, temp, prio: priorityOn({ win: m.win || 0, temp }).score, next, fup: m.fup || "" });
+      }
+    });
+    const quotedN = o.open.n + o.won.n + o.lost.n;
+    o.hit = quotedN ? o.won.n / quotedN : null;
+    o.top = top.sort((a, b) => b.prio - a.prio || b.open - a.open).slice(0, mob ? 6 : 8);
+    return o;
+  }, [rows, meta, thermo, today, mob]);
+
+  // equipe hoje: follow-ups do dia atualizados por vendedor (a mesma conta da aba Team)
+  const team = useMemo(() => sellerFupReport(quotes, meta, acts, today, today, groupOf), [quotes, meta, acts, today, groupOf]);
+  const teamTot = team.reduce((t, x) => ({ total: t.total + x.total, upd: t.upd + x.upd }), { total: 0, upd: 0 });
+  const teamRows = team
+    .map((x) => ({ ...x, over: x.items.filter((i) => i.overdue).length }))
+    .sort((a, b) => b.pend - a.pend || b.total - a.total)
+    .slice(0, mob ? 6 : 8);
+
+  const sec = { ...card, padding: mob ? "14px 14px" : "16px 18px", display: "flex", flexDirection: "column", gap: 12, minWidth: 0 };
+  const secTitle = (t, right) => (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>{t}</div>
+      {right && <div style={{ marginLeft: "auto", fontSize: 12.5, color: X.sub }}>{right}</div>}
+    </div>
+  );
+  const linkBtn = (label, onClick) => (
+    <button onClick={onClick} style={{ border: "none", background: "transparent", color: X.tealDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 2, padding: 0 }}>
+      {label} <ChevronRight size={14} />
+    </button>
+  );
+  const kpi = (label, value, caption, color) => (
+    <div style={{ background: X.head, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, color: X.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+      <div style={{ fontSize: 19, fontWeight: 800, color, letterSpacing: -0.4, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+      <div style={{ fontSize: 11.5, color: X.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{caption}</div>
+    </div>
+  );
+  const alert = (key, label, x, col, bg, hint) => (
+    <button
+      key={key}
+      onClick={() => onGo("portfolio", [key])}
+      className="qp-card-btn"
+      style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", border: `1px solid ${x.n ? bg : X.line}`, background: x.n ? bg : "#fff", borderRadius: 12, padding: "11px 12px", cursor: "pointer" }}
+    >
+      <span style={{ fontSize: 22, fontWeight: 800, color: x.n ? col : X.sub, minWidth: 34, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{x.n.toLocaleString("pt-BR")}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: X.ink }}>{label}</span>
+        <span style={{ display: "block", fontSize: 12, color: X.sub }}>{x.n ? _t("{0} open · {1}", moneyShort(x.v), hint) : hint}</span>
+      </span>
+      <ChevronRight size={16} color={X.sub} />
+    </button>
+  );
+
+  const goalCard = (
+    <div style={sec}>
+      {secTitle(_t("Goal · {0}", monthName), linkBtn(_t("Calendar"), () => onGo("goal")))}
+      {monthGoal > 0 ? (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.6, color: X.ink, fontVariantNumeric: "tabular-nums" }}>{moneyShort(bookedM.v)}</span>
+            <span style={{ fontSize: 13.5, color: X.sub }}>{_t("of")}{" "}{moneyShort(monthGoal)}</span>
+            <span style={{ marginLeft: "auto", fontSize: 15, fontWeight: 800, color: pctM >= 1 ? X.green : X.tealDk }}>{Math.round((bookedM.v / monthGoal) * 100)}%</span>
+          </div>
+          <div style={{ position: "relative", height: 10, borderRadius: 9, background: X.head, overflow: "hidden" }}>
+            <div style={{ width: `${pctM * 100}%`, height: "100%", background: X.teal, borderRadius: 9 }} />
+            {/* onde deveria estar hoje */}
+            <div title={_t("Where the month should be today")} style={{ position: "absolute", top: 0, bottom: 0, left: `${Math.min(100, (dueSoFar / monthGoal) * 100)}%`, width: 2, background: X.ink, opacity: 0.55 }} />
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12.5, color: X.sub }}>
+            <span style={{ fontWeight: 700, color: pace >= 0 ? X.green : X.redDk }}>{pace >= 0 ? _t("{0} ahead of the pace", moneyShort(pace)) : _t("{0} behind the pace", moneyShort(-pace))}</span>
+            <span>{_t("Today")}{" "}{moneyShort(bookedT.v)}
+              {goalT ? _t(" of {0}", moneyShort(goalT)) : ""}
+            </span>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 13, color: X.sub }}>
+          {moneyShort(bookedM.v)}{" "}{_t("booked this month · no goal set yet.")}{" "}{linkBtn(_t("Set the goal"), () => onGo("goal"))}
+        </div>
+      )}
+      {bookedM.src === "partial" && <div style={{ fontSize: 11.5, color: X.amber }}>{_t("The Sales Report does not cover the whole month yet.")}</div>}
+    </div>
+  );
+  const pipeCard = (
+    <div style={sec}>
+      {secTitle(_t("Portfolio"), periodTxt)}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+        {kpi(_t("Open"), moneyShort(k.open.v), _t("{0} quotes", k.open.n.toLocaleString("pt-BR")), X.amber)}
+        {kpi(_t("Won"), moneyShort(k.won.v), _t("{0} quotes", k.won.n.toLocaleString("pt-BR")), X.green)}
+        {kpi(_t("Hit rate"), k.hit == null ? "—" : `${Math.round(k.hit * 100)}%`, _t("won ÷ quoted (QTs)"), X.tealDk)}
+        {kpi(_t("Lost"), moneyShort(k.lost.v), _t("{0} quotes", k.lost.n.toLocaleString("pt-BR")), X.redDk)}
+      </div>
+      <div style={{ fontSize: 11.5, color: X.sub }}>{filtersTxt}</div>
+    </div>
+  );
+  const attnCard = (
+    <div style={sec}>
+      {secTitle(_t("Needs attention"), periodTxt)}
+      {alert("late", _t("Overdue follow-ups"), k.late, X.redDk, X.redSoft, _t("past the FUP date"))}
+      {alert("due", _t("Follow-ups for today"), k.due, X.amber, X.amberSoft, _t("due today"))}
+      {alert("nofup", _t("Open quotes without FUP"), k.nofup, "#475569", "#EEF2F5", _t("never show up in the plan"))}
+    </div>
+  );
+  const teamCard = (
+    <div style={sec}>
+      {secTitle(_t("Team today"), linkBtn(_t("Team"), () => onGo("sellers")))}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+        <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: -0.5 }}>{teamTot.upd}</span>
+        <span style={{ fontSize: 13.5, color: X.sub }}>{_t("of")}{" "}{teamTot.total}{" "}{_t("follow-ups updated today")}</span>
+      </div>
+      {teamRows.length ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {teamRows.map((x) => (
+            <div key={x.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13 }}>
+                <span style={{ fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || _t("(no salesperson)")}</span>
+                {x.over > 0 && <span style={{ fontSize: 11.5, fontWeight: 700, color: X.redDk, whiteSpace: "nowrap" }}>{x.over}{" "}{_t("overdue")}</span>}
+                <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                  {x.upd}
+                  <span style={{ color: X.sub, fontWeight: 600 }}>/{x.total}</span>
+                </span>
+              </div>
+              <div style={{ height: 6, borderRadius: 9, background: X.head, overflow: "hidden" }}>
+                <div style={{ width: `${x.total ? (x.upd / x.total) * 100 : 0}%`, height: "100%", background: x.upd >= x.total ? X.green : X.teal }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 13, color: X.sub }}>{_t("No follow-up due today.")}</div>
+      )}
+    </div>
+  );
+  const topCard = (
+    <div style={sec}>
+      {secTitle(_t("Highest priority open quotes"), linkBtn(_t("All quotes"), () => onGo("portfolio", [])))}
+      {k.top.length ? (
+        k.top.map((r) => (
+          <div key={r.id} className="qp-card-btn" onClick={() => onOpenQuote(r.id, false, k.top.map((x) => x.id))} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", minWidth: 0, padding: "2px 0" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.c}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4, flexWrap: "wrap", fontSize: 11.5, color: X.sub }}>
+                <PrioBadge v={r.prio} />
+                <TempPill v={r.temp} />
+                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{groupOf(r.sp) || r.id}</span>
+              </div>
+            </div>
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{moneyShort(r.open)}</div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: !r.fup ? X.amber : r.next && r.next < today ? X.redDk : X.sub, whiteSpace: "nowrap" }}>
+                {!r.fup ? _t("No FUP") : r.next && r.next < today ? _t("Overdue · {0}", fmtDay(r.next)) : r.next === today ? _t("Today") : r.next ? _t("Next {0}", fmtDay(r.next)) : FUP[r.fup].label}
+              </div>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div style={{ fontSize: 13, color: X.sub }}>{_t("No open quote in this period.")}</div>
+      )}
+    </div>
+  );
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "repeat(auto-fit, minmax(380px, 1fr))", gap: 12, alignItems: "start" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+        {goalCard}
+        {attnCard}
+        {pipeCard}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+        {topCard}
+        {teamCard}
+      </div>
     </div>
   );
 }
@@ -4021,16 +4384,16 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
 
   let msg, msgTone;
   if (!dailyGoal) {
-    msg = "Type the daily goal. Then click a day in the calendar to see which quotes to close that day.";
+    msg = _t("Type the daily goal. Then click a day in the calendar to see which quotes to close that day.");
     msgTone = "info";
   } else if (!goalToday) {
-    msg = `No goal today (${holidayOf(today) && holidayOf(today).block ? "holiday: " + holidayOf(today).name : "weekend"}). Click a day in the calendar to see its plan.`;
+    msg = _t("No goal today ({0}). Click a day in the calendar to see its plan.", holidayOf(today) && holidayOf(today).block ? _t("holiday: ") + holidayOf(today).name : _t("weekend"));
     msgTone = "info";
   } else if (missingToday <= 0) {
-    msg = `Today's goal reached: ${money(bookedToday.v)} booked (${money(bookedToday.v - goalToday)} above the goal).`;
+    msg = _t("Today's goal reached: {0} booked ({1} above the goal).", money(bookedToday.v), money(bookedToday.v - goalToday));
     msgTone = "ok";
   } else {
-    msg = `Today: ${money(bookedToday.v)} booked of ${money(goalToday)} — ${money(missingToday)} missing. Click today in the calendar to see which quotes to close.`;
+    msg = _t("Today: {0} booked of {1} — {2} missing. Click today in the calendar to see which quotes to close.", money(bookedToday.v), money(goalToday), money(missingToday));
     msgTone = "warn";
   }
   const tone = { info: [X.sub, X.head, Info], ok: [X.green, X.greenSoft, CheckCircle2], warn: [X.amber, X.amberSoft, Crosshair] }[msgTone];
@@ -4042,19 +4405,18 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
         /* celular: a meta numa barra (vendido hoje × meta), o resto fica no computador */
         <div style={{ ...card, padding: "14px 14px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's goal</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>{_t("Today's goal")}</span>
             {withGoal.length > 0 && (
               <span style={{ marginLeft: "auto", fontSize: 12, color: X.sub }}>
-                <b style={{ color: X.amber }}>{hitDays}</b> of {withGoal.length} days on target
-              </span>
+                <b style={{ color: X.amber }}>{hitDays}</b>{" "}{_t("of")}{" "}{withGoal.length}{" "}{_t("days on target")}</span>
             )}
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
             <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: X.green, fontVariantNumeric: "tabular-nums" }}>{partial ? "—" : moneyShort(bookedToday.v)}</span>
-            <span style={{ fontSize: 14, color: X.sub, fontWeight: 600 }}>of {goalToday ? moneyShort(goalToday) : "no goal"}</span>
+            <span style={{ fontSize: 14, color: X.sub, fontWeight: 600 }}>{goalToday ? _t("of {0}", moneyShort(goalToday)) : _t("· no goal")}</span>
             {goalEdit && (
               <button onClick={() => setEditGoal((v) => !v)} style={{ marginLeft: "auto", border: "none", background: "transparent", color: X.tealDk, fontWeight: 700, fontSize: 13, cursor: "pointer", padding: "4px 0" }}>
-                {editGoal ? "Close" : "Change goal"}
+                {editGoal ? _t("Close") : _t("Change goal")}
               </button>
             )}
           </div>
@@ -4062,11 +4424,11 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
             <div style={{ width: `${goalToday ? Math.min(100, (bookedToday.v / goalToday) * 100) : 0}%`, height: "100%", background: X.green, borderRadius: 9 }} />
           </div>
           <div style={{ fontSize: 12.5, fontWeight: 600, color: !goalToday ? X.sub : missingToday ? X.redDk : X.green }}>
-            {!goalToday ? "No goal for today" : missingToday ? `${moneyShort(missingToday)} missing today · tap today in the calendar` : "Goal reached today"}
+            {!goalToday ? _t("No goal for today") : missingToday ? _t("{0} missing today · tap today in the calendar", moneyShort(missingToday)) : _t("Goal reached today")}
           </div>
           {editGoal && goalEdit && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>Goal per business day</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{_t("Goal per business day")}</div>
               <MoneyInput value={dailyGoal} onCommit={(n) => setDailyGoal(n)} />
             </div>
           )}
@@ -4078,42 +4440,42 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
             <Target size={20} />
           </span>
           <div>
-            <div style={h2}>Daily goal</div>
+            <div style={h2}>{_t("Daily goal")}</div>
             <div style={{ fontSize: 12, color: X.sub, marginTop: 2 }}>
               {partial
-                ? "Import the Sales Report again to get the booked value of each day"
+                ? _t("Import the Sales Report again to get the booked value of each day")
                 : bookedToday.src === "sales"
-                ? `Valid for every business day · booked comes from the Sales Report${cls && sales && sales.hasClass ? ` (${cls} only)` : ""}`
+                ? _t("Valid for every business day · booked comes from the Sales Report{0}", cls && sales && sales.hasClass ? _t(" ({0} only)", cls) : "")
                 : bookedToday.src === "quotes"
-                ? "Valid for every business day · no Sales Report yet: booked = quotes won"
-                : "Valid for every business day · import the reports to compare it with what is booked"}
+                ? _t("Valid for every business day · no Sales Report yet: booked = quotes won")
+                : _t("Valid for every business day · import the reports to compare it with what is booked")}
             </div>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : "minmax(220px, 1.1fr) repeat(auto-fit, minmax(170px, 1fr))", gap: mob ? 8 : 12, alignItems: "stretch" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, justifyContent: "center", ...(mob ? { gridColumn: "1 / -1" } : null) }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>Goal per business day</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{_t("Goal per business day")}</div>
             {goalEdit ? (
               <MoneyInput value={dailyGoal} onCommit={(n) => setDailyGoal(n)} />
             ) : (
-              <div title="Set by the management" style={{ display: "flex", alignItems: "center", gap: 8, height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+              <div title={_t("Set by the management")} style={{ display: "flex", alignItems: "center", gap: 8, height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
                 {dailyGoal ? money(dailyGoal) : "—"}
                 <Lock size={14} color={X.sub} style={{ marginLeft: "auto" }} />
               </div>
             )}
           </div>
-          <Tile icon={Wallet} label="Booked today" value={partial ? "—" : moneyShort(bookedToday.v)} caption={goalToday ? `${((bookedToday.v / goalToday) * 100).toFixed(0)}% of today's goal` : "no goal today"} color={X.green} tint={X.greenSoft} ink={X.green} title={money(bookedToday.v)} />
-          <Tile icon={Crosshair} label="Missing today" value={goalToday ? moneyShort(missingToday) : "—"} caption={goalToday ? (missingToday ? "to close in quotes" : "goal reached") : "no goal today"} color={missingToday ? X.redDk : X.green} tint={X.redSoft} ink={X.redDk} title={money(missingToday)} />
+          <Tile icon={Wallet} label={_t("Booked today")} value={partial ? "—" : moneyShort(bookedToday.v)} caption={goalToday ? _t("{0}% of today's goal", ((bookedToday.v / goalToday) * 100).toFixed(0)) : _t("no goal today")} color={X.green} tint={X.greenSoft} ink={X.green} title={money(bookedToday.v)} />
+          <Tile icon={Crosshair} label={_t("Missing today")} value={goalToday ? moneyShort(missingToday) : "—"} caption={goalToday ? (missingToday ? _t("to close in quotes") : _t("goal reached")) : _t("no goal today")} color={missingToday ? X.redDk : X.green} tint={X.redSoft} ink={X.redDk} title={money(missingToday)} />
           <Tile
             icon={CalendarCheck}
-            label={`Days on target · ${MONTHS_EN[+ym.slice(5) - 1]}`}
-            value={withGoal.length ? `${hitDays} of ${withGoal.length}` : "—"}
-            caption={withGoal.length ? "business days until yesterday" : "no past day with a goal"}
+            label={_t("Days on target · {0}", MONTHS_EN[+ym.slice(5) - 1])}
+            value={withGoal.length ? _t("{0} of {1}", hitDays, withGoal.length) : "—"}
+            caption={withGoal.length ? _t("business days until yesterday") : _t("no past day with a goal")}
             color={X.amber}
             tint={X.amberSoft}
             ink={X.amber}
           />
-          <Tile icon={TrendingUp} label="Expected (open × % Win)" value={moneyShort(weighted)} caption={`${cands.length} open quotes · ${noFup} without FUP`} tint="#E6EEFB" ink="#2F6FDB" title={money(weighted)} />
+          <Tile icon={TrendingUp} label={_t("Expected (open × % Win)")} value={moneyShort(weighted)} caption={_t("{0} open quotes · {1} without FUP", cands.length, noFup)} tint="#E6EEFB" ink="#2F6FDB" title={money(weighted)} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderRadius: 9, background: tone[1], color: tone[0], fontSize: 13, fontWeight: 600 }}>
           {React.createElement(tone[2], { size: 16, style: { flexShrink: 0 } })}
@@ -4124,19 +4486,34 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
 
       {/* ---------- agenda de follow-up ---------- */}
       <div style={{ ...card, minWidth: 0, padding: mob ? 10 : 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: mob ? 6 : 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: mob ? 8 : 10, flexWrap: "wrap" }}>
+          {/* mês / semana mostrados, com as setas (no celular: uma linha inteira só para isso) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, ...(mob ? { order: 0, width: "100%" } : { order: 1 }) }}>
+            <button onClick={() => go(-1)} style={{ ...btn, padding: 0, width: mob ? 40 : 32, height: mob ? 38 : 32, justifyContent: "center", flexShrink: 0 }} title={weekly ? _t("Previous week") : _t("Previous month")}>
+              <ChevronLeft size={16} />
+            </button>
+            <div style={{ ...h2, minWidth: 0, flex: mob ? 1 : "none", padding: mob ? 0 : "0 4px", fontSize: mob ? 16 : h2.fontSize, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {weekly ? `${fmtDay(gStart)} – ${fmtDay(gEnd)} ${gEnd.slice(0, 4)}` : monthLabel(ym)}
+            </div>
+            <button onClick={() => go(1)} style={{ ...btn, padding: 0, width: mob ? 40 : 32, height: mob ? 38 : 32, justifyContent: "center", flexShrink: 0 }} title={weekly ? _t("Next week") : _t("Next month")}>
+              <ChevronRight size={16} />
+            </button>
+            {!atToday && (
+              <button onClick={goToday} style={{ ...btn, height: mob ? 38 : 32, flexShrink: 0 }}>{_t("Today")}</button>
+            )}
+          </div>
           {/* mensal / semanal */}
-          <div style={{ display: "inline-flex", gap: 3, background: X.head, borderRadius: 9, padding: 3 }}>
+          <div style={{ display: "inline-flex", gap: 3, background: X.head, borderRadius: 9, padding: 3, flexShrink: 0, order: mob ? 1 : 0 }}>
             {[
-              ["month", "Month"],
-              ["week", "Week"],
+              ["month", _t("Month")],
+              ["week", _t("Week")],
             ].map(([k, l]) => {
               const on = (k === "week") === weekly;
               return (
                 <button
                   key={k}
                   onClick={() => setView(k)}
-                  title={k === "week" ? "One week, Monday to Friday" : "The whole month"}
+                  title={k === "week" ? _t("One week, Monday to Friday") : _t("The whole month")}
                   style={{ border: "none", borderRadius: 7, padding: "6px 12px", fontSize: 12, fontWeight: on ? 700 : 500, cursor: "pointer", background: on ? "#fff" : "transparent", color: on ? X.tealDk : X.sub, boxShadow: on ? "0 1px 2px rgba(16,24,40,.08)" : "none" }}
                 >
                   {l}
@@ -4144,27 +4521,14 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
               );
             })}
           </div>
-          <button onClick={() => go(-1)} style={{ ...btn, padding: "0 9px", height: 32 }} title={weekly ? "Previous week" : "Previous month"}>
-            <ChevronLeft size={16} />
-          </button>
-          <div style={{ ...h2, minWidth: mob ? 0 : weekly ? 200 : 150, flex: mob ? 1 : "none", fontSize: mob ? 15 : h2.fontSize, textAlign: "center", whiteSpace: "nowrap" }}>
-            {weekly ? `${fmtDay(gStart)} – ${fmtDay(gEnd)} ${gEnd.slice(0, 4)}` : monthLabel(ym)}
-          </div>
-          <button onClick={() => go(1)} style={{ ...btn, padding: "0 9px", height: 32 }} title={weekly ? "Next week" : "Next month"}>
-            <ChevronRight size={16} />
-          </button>
-          {!atToday && (
-            <button onClick={goToday} style={{ ...btn, height: 32 }}>
-              Today
-            </button>
-          )}
-          <span style={{ fontSize: 11, fontWeight: 600, color: X.tealDk, background: X.tealSoft, padding: "3px 10px", borderRadius: 999 }}>
-            {monthCount} planned in the {weekly ? "week" : "month"}
+          <span style={{ order: 2, fontSize: 11, fontWeight: 600, color: X.tealDk, background: X.tealSoft, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>
+            {/* celular: curto (o mês já está escrito logo acima) */}
+            {mob ? (monthCount === 1 ? _t("1 planned") : _t("{0} planned", monthCount)) : weekly ? _t("{0} planned in the week", monthCount) : _t("{0} planned in the month", monthCount)}
           </span>
-          {overdueN > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: X.redDk, background: X.redSoft, padding: "3px 10px", borderRadius: 999 }}>{overdueN} overdue</span>}
-          {!mob && <span style={{ fontSize: 12, color: X.sub }}>{weekly ? "Click a day to see its plan · click a quote to open it" : "Click a day to see its plan · past days: booked / goal · today on: planned / goal"}</span>}
+          {overdueN > 0 && <span style={{ order: 2, fontSize: 11, fontWeight: 700, color: X.redDk, background: X.redSoft, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>{overdueN === 1 ? _t("1 overdue") : _t("{0} overdue", overdueN)}</span>}
+          {!mob && <span style={{ order: 3, fontSize: 12, color: X.sub }}>{weekly ? _t("Click a day to see its plan · click a quote to open it") : _t("Click a day to see its plan · past days: booked / goal · today on: planned / goal")}</span>}
           {!mob && (
-            <span style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ order: 4, marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
               {FUP_KEYS.map((k) => (
                 <span key={k} title={FUP[k].long}>
                   <FupPill v={k} />
@@ -4177,7 +4541,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
           <WeekView days={days} plan={plan} today={today} sel={sel} pick={pick} goalOf={goalOf} dayBooked={dayBooked} partial={partial} meta={meta} cands={cands} notesBy={notesBy} onOpenQuote={onOpenQuote} onDone={onDone} />
         ) : (
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${weekly ? 5 : 7}, minmax(0, 1fr))`, gap: weekly ? 8 : 4 }}>
-          {(weekly ? DOW.slice(0, 5) : ["Sun", ...DOW.slice(0, 6)]).map((d, i) => (
+          {(weekly ? DOW.slice(0, 5) : [_t("Sun"), ...DOW.slice(0, 6)]).map((d, i) => (
             <div key={d} style={{ fontSize: 10.5, fontWeight: 700, color: !weekly && (i === 0 || i === 6) ? "#A0AEC0" : X.sub, textTransform: "uppercase", letterSpacing: 0.3, padding: "0 4px 2px" }}>
               {d}
             </div>
@@ -4195,7 +4559,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
                 key={d}
                 className="qp-day"
                 onClick={() => pick(d)}
-                title={isSel ? "Click again to close the plan of this day" : "Click to see the plan of this day"}
+                title={isSel ? _t("Click again to close the plan of this day") : _t("Click to see the plan of this day")}
                 style={{
                   minHeight: weekly ? 300 : mob ? 50 : 100,
                   borderRadius: 8,
@@ -4245,7 +4609,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
                   <div
                     key={e.id}
                     title={`${e.id} · ${e.c} · ${money(e.v)}${e.fup ? ` · FUP ${e.fup}` : ""}${e.win ? ` · ${e.win}%` : ""} · ${
-                      e.kind === "overdue" ? `FUP overdue since ${fmtDate(e.dl)}` : e.kind === "deadline" ? "FUP deadline on this day" : e.kind === "again" ? "2nd follow-up of the cycle (B)" : `pulled in to reach the goal${e.dl ? ` (deadline ${fmtDate(e.dl)})` : ""}`
+                      e.kind === "overdue" ? _t("FUP overdue since {0}", fmtDate(e.dl)) : e.kind === "deadline" ? _t("FUP deadline on this day") : e.kind === "again" ? _t("2nd follow-up of the cycle (B)") : _t("pulled in to reach the goal{0}", e.dl ? _t(" (deadline {0})", fmtDate(e.dl)) : "")
                     }`}
                     style={{
                       display: "flex",
@@ -4269,21 +4633,20 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.id}</span>
                   </div>
                 ))}
-                {!weekly && !mob && evs.length > 4 && <div style={{ fontSize: 10.5, color: X.sub, fontWeight: 600, paddingLeft: 3 }}>+{evs.length - 4} more</div>}
+                {!weekly && !mob && evs.length > 4 && <div style={{ fontSize: 10.5, color: X.sub, fontWeight: 600, paddingLeft: 3 }}>+{evs.length - 4}{" "}{_t("more")}</div>}
                 <div style={{ marginTop: "auto", display: mob ? "none" : "flex", flexDirection: "column", gap: 1, paddingLeft: 3, fontSize: 10.5, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
                   {inM && dayBooked[d] != null && (goalOf(d) > 0 || dayBooked[d] > 0) && (!pd || dayBooked[d] > 0) && (
                     <span
-                      title={`Booked ${money(dayBooked[d])}${goalOf(d) ? ` of ${money(goalOf(d))}` : ""}`}
+                      title={_t("Booked {0}{1}", money(dayBooked[d]), goalOf(d) ? _t(" of {0}", money(goalOf(d))) : "")}
                       style={{ color: !goalOf(d) ? X.sub : dayBooked[d] >= goalOf(d) ? X.green : d === today ? X.amber : X.redDk }}
                     >
-                      {pd ? "booked " : ""}
+                      {pd ? _t("booked ") : ""}
                       {moneyShort(dayBooked[d])}
                       {goalOf(d) > 0 && <span style={{ fontWeight: 500, color: X.sub }}> / {moneyShort(goalOf(d))}</span>}
                     </span>
                   )}
                   {inM && pd && (pd.goal > 0 || pd.planned > 0) && (
-                    <span title={`Planned ${money(pd.planned)} for ${money(pd.need)} missing on this day`} style={{ color: pd.planned >= pd.need ? "#2F6FDB" : X.redDk }}>
-                      plan {moneyShort(pd.planned)}
+                    <span title={_t("Planned {0} for {1} missing on this day", money(pd.planned), money(pd.need))} style={{ color: pd.planned >= pd.need ? "#2F6FDB" : X.redDk }}>{_t("plan")}{" "}{moneyShort(pd.planned)}
                       {pd.need > 0 && <span style={{ fontWeight: 500, color: X.sub }}> / {moneyShort(pd.need)}</span>}
                     </span>
                   )}
@@ -4338,15 +4701,15 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
    Dia que já passou mostra só o vendido x meta: o plano começa hoje. */
 const reasonsOf = (x, day) => {
   const out = [];
-  if (x.kind === "overdue") out.push({ k: "overdue", t: `FUP overdue since ${fmtDay(x.dl)}` });
-  else if (x.kind === "deadline") out.push({ k: "due", t: x.fup === "B" && fupPending(x.meta || {}).length > 1 ? "1st follow-up (B)" : x.fup === "B" ? "2nd follow-up (B)" : "FUP deadline on this day" });
-  else if (x.kind === "again") out.push({ k: "due", t: "2nd follow-up (B)" });
-  else if (x.kind === "fill") out.push({ k: "fill", t: x.dl ? `pulled in · deadline ${fmtDay(x.dl)}` : "pulled in · no FUP" });
-  else if (x.kind === "other") out.push({ k: "other", t: x.off ? "left out" : x.plannedFor ? `planned for ${fmtDay(x.plannedFor)}` : !AUTO_FILL && !x.fup ? "no FUP" : "no day yet" });
-  if (x.win >= 75) out.push({ k: "likely", t: `${x.win}% win` });
-  if (x.temp === "HOT") out.push({ k: "hot", t: "Hot" });
-  if (x.age >= 90) out.push({ k: "aging", t: `${x.age} days old` });
-  if (!x.win) out.push({ k: "nowin", t: "no % Win" });
+  if (x.kind === "overdue") out.push({ k: "overdue", t: _t("FUP overdue since {0}", fmtDay(x.dl)) });
+  else if (x.kind === "deadline") out.push({ k: "due", t: x.fup === "B" && fupPending(x.meta || {}).length > 1 ? _t("1st follow-up (B)") : x.fup === "B" ? _t("2nd follow-up (B)") : _t("FUP deadline on this day") });
+  else if (x.kind === "again") out.push({ k: "due", t: _t("2nd follow-up (B)") });
+  else if (x.kind === "fill") out.push({ k: "fill", t: x.dl ? _t("pulled in · deadline {0}", fmtDay(x.dl)) : _t("pulled in · no FUP") });
+  else if (x.kind === "other") out.push({ k: "other", t: x.off ? _t("left out") : x.plannedFor ? _t("planned for {0}", fmtDay(x.plannedFor)) : !AUTO_FILL && !x.fup ? _t("no FUP") : _t("no day yet") });
+  if (x.win >= 75) out.push({ k: "likely", t: _t("{0}% win", x.win) });
+  if (x.temp === "HOT") out.push({ k: "hot", t: _t("Hot") });
+  if (x.age >= 90) out.push({ k: "aging", t: _t("{0} days old", x.age) });
+  if (!x.win) out.push({ k: "nowin", t: _t("no % Win") });
   return out;
 };
 function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, sales, cls, line, cands, plan, strategy, exclSet, onMeta, onDone, onToggleExcl, onOpenQuote, dayGoals, setDayGoals, excl, prefs, setPref, onClose, goalEdit = true }) {
@@ -4386,7 +4749,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
      data, prioridade e valor ordenam. Sem ordenação escolhida, vale a ordem do plano (#). */
   const [pf, setPf] = useState({});
   const [ps, setPs] = useState(null);
-  const WHY = { overdue: "FUP overdue", deadline: "FUP deadline on the day", again: "2nd follow-up (B)", fill: "Pulled in for the goal", other: "Other open quotes" };
+  const WHY = { overdue: _t("FUP overdue"), deadline: _t("FUP deadline on the day"), again: _t("2nd follow-up (B)"), fill: _t("Pulled in for the goal"), other: _t("Other open quotes") };
   const pKey = (r, id) => (id === "c" ? r.c : id === "fup" ? r.fup || NONE : id === "win" ? (r.win ? String(r.win) : NONE) : id === "temp" ? r.temp || NONE : id === "why" ? r.kind : "");
   const planNo = new Map(rows.map((r, i) => [r.id, i + 1]));
   const pfOn = Object.values(pf).some((v) => v && v.length) || !!ps;
@@ -4412,21 +4775,21 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
     const keys = id === "fup" ? FUP_KEYS : id === "win" ? WIN_VALS.map(String) : TEMP_KEYS;
     return [
       ...keys.map((k) => ({ v: k, n: cnt[k] || 0, text: k, node: id === "fup" ? <FupPill v={k} /> : id === "win" ? <WinPill v={+k} /> : <TempPill v={k} /> })),
-      ...(id === "temp" ? [] : [{ v: NONE, n: cnt[NONE] || 0, node: <span style={{ color: X.sub }}>Not set</span> }]),
+      ...(id === "temp" ? [] : [{ v: NONE, n: cnt[NONE] || 0, node: <span style={{ color: X.sub }}>{_t("Not set")}</span> }]),
     ];
   };
   const PH = [
     { id: "_chk", w: 34 },
-    { id: "_no", label: "#", w: 36, tip: "Order in the plan of the day" },
-    { id: "id", label: "Quote", tip: "Click a quote to open its record, Activities History and notes" },
-    { id: "c", label: "Customer", filter: true, fw: 320 },
-    { id: "d", label: "Date", sort: true },
+    { id: "_no", label: "#", w: 36, tip: _t("Order in the plan of the day") },
+    { id: "id", label: _t("Quote"), tip: _t("Click a quote to open its record, Activities History and notes") },
+    { id: "c", label: _t("Customer"), filter: true, fw: 320 },
+    { id: "d", label: _t("Date"), sort: true },
     { id: "fup", label: "FUP", filter: true, manual: true },
-    { id: "win", label: "% Win", filter: true, manual: true },
-    { id: "temp", label: "Thermometer", filter: true },
-    { id: "why", label: "Why", filter: true, fw: 260 },
-    { id: "score", label: "Priority", sort: true, tip: `0 to 100: ${Math.round(PRIO_WIN * 100)}% from the % Win + ${Math.round(PRIO_TEMP * 100)}% from the Thermometer (the FUP does not count)` },
-    { id: "v", label: "Value", sort: true, right: true },
+    { id: "win", label: _t("% Win"), filter: true, manual: true },
+    { id: "temp", label: _t("Thermometer"), filter: true },
+    { id: "why", label: _t("Why"), filter: true, fw: 260 },
+    { id: "score", label: _t("Priority"), sort: true, tip: _t("0 to 100: {0}% from the % Win + {1}% from the Thermometer (the FUP does not count)", Math.round(PRIO_WIN * 100), Math.round(PRIO_TEMP * 100)) },
+    { id: "v", label: _t("Value"), sort: true, right: true },
     { id: "_act", w: 80 },
   ];
   const nDue = list.filter((x) => x.kind !== "fill").length,
@@ -4434,27 +4797,27 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
 
   let msg, msgTone;
   if (past) {
-    msg = `Past day: ${money(bookedOn.v)} booked${target ? ` of ${money(target)} — ${bookedOn.v >= target ? "goal reached" : `${money(target - bookedOn.v)} short`}` : ""}. The plan starts today: click today or a day ahead.`;
+    msg = _t("Past day: {0} booked{1}. The plan starts today: click today or a day ahead.", money(bookedOn.v), target ? _t(" of {0} — {1}", money(target), bookedOn.v >= target ? _t("goal reached") : _t("{0} short", money(target - bookedOn.v))) : "");
     msgTone = !target ? "info" : bookedOn.v >= target ? "ok" : "warn";
   } else if (!pd) {
-    msg = "This day is outside the plan.";
+    msg = _t("This day is outside the plan.");
     msgTone = "info";
   } else if (!pd.need && !list.length) {
-    msg = target ? `Goal of the day already covered: ${money(bookedOn.v)} booked.` : "No goal and no FUP deadline on this day.";
+    msg = target ? _t("Goal of the day already covered: {0} booked.", money(bookedOn.v)) : _t("No goal and no FUP deadline on this day.");
     msgTone = target ? "ok" : "info";
   } else if (!pd.need) {
-    msg = `${target ? "Goal of the day already covered" : "No goal on this day"}: only the ${list.length} quote${list.length === 1 ? "" : "s"} with the FUP deadline on this day ${list.length === 1 ? "is" : "are"} planned.`;
+    msg = list.length === 1 ? _t("{0}: only the quote with the FUP deadline on this day is planned.", target ? _t("Goal of the day already covered") : _t("No goal on this day")) : _t("{0}: only the {1} quotes with the FUP deadline on this day are planned.", target ? _t("Goal of the day already covered") : _t("No goal on this day"), list.length);
     msgTone = "ok";
   } else if (pd.planned >= pd.need) {
-    msg = `${list.length} quote${list.length === 1 ? "" : "s"} planned (${money(pd.planned)}) for the ${money(pd.need)} of the day: ${nDue} with the FUP deadline here${nFill ? ` + ${nFill} pulled in by priority` : ""}. Weighted by % Win they are worth about ${money(pd.expected)}.`;
+    msg = _t("{0} {1} planned ({2}) for the {3} of the day: {4} with the FUP deadline here{5}. Weighted by % Win they are worth about {6}.", list.length, list.length === 1 ? _t("quote") : _t("quotes"), money(pd.planned), money(pd.need), nDue, nFill ? _t(" + {0} pulled in by priority", nFill) : "", money(pd.expected));
     msgTone = "ok";
   } else if (!AUTO_FILL) {
     msg = list.length
-      ? `${list.length} quote${list.length === 1 ? "" : "s"} with FUP on this day (${money(pd.planned)}) for the ${money(pd.need)} of the day: ${money(pd.need - pd.planned)} still missing. The button at the end of the list shows the other open quotes.`
-      : `No FUP on this day: ${money(pd.need)} missing for the goal. The button at the end of the list shows the other open quotes.`;
+      ? _t("{0} {1} with FUP on this day ({2}) for the {3} of the day: {4} still missing. The button at the end of the list shows the other open quotes.", list.length, list.length === 1 ? _t("quote") : _t("quotes"), money(pd.planned), money(pd.need), money(pd.need - pd.planned))
+      : _t("No FUP on this day: {0} missing for the goal. The button at the end of the list shows the other open quotes.", money(pd.need));
     msgTone = "warn";
   } else {
-    msg = `Only ${money(pd.planned)} planned for the ${money(pd.need)} of the day: there is no other open quote left for it. Try quotes of any age or another classification.`;
+    msg = _t("Only {0} planned for the {1} of the day: there is no other open quote left for it. Try quotes of any age or another classification.", money(pd.planned), money(pd.need));
     msgTone = "warn";
   }
   const tone = { info: [X.sub, X.head, Info], ok: [X.green, X.greenSoft, CheckCircle2], warn: [X.redDk, X.redSoft, AlertTriangle] }[msgTone];
@@ -4479,12 +4842,12 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
     const ws = XLSX.utils.json_to_sheet(data);
     ws["!cols"] = [{ wch: 5 }, { wch: 13 }, { wch: 44 }, { wch: 11 }, { wch: 10 }, { wch: 16 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 40 }, { wch: 9 }, { wch: 14 }];
     const head = XLSX.utils.aoa_to_sheet([
-      ["Day", fmtDate(day)],
-      ["Goal of the day", target],
-      ["Booked on the day", bookedOn.v],
-      ["Missing on the day", pd ? pd.need : 0],
-      ["Planned quotes", list.length],
-      ["Planned value", pd ? pd.planned : 0],
+      [_t("Day"), fmtDate(day)],
+      [_t("Goal of the day"), target],
+      [_t("Booked on the day"), bookedOn.v],
+      [_t("Missing on the day"), pd ? pd.need : 0],
+      [_t("Planned quotes"), list.length],
+      [_t("Planned value"), pd ? pd.planned : 0],
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, head, "Day");
@@ -4503,25 +4866,24 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
           </span>
           )}
           <div style={{ minWidth: 0 }}>
-            <div style={{ ...h2, ...(mob ? { fontSize: 16 } : null) }}>
-              Plan for {isToday ? "today, " : ""}
+            <div style={{ ...h2, ...(mob ? { fontSize: 16 } : null) }}>{_t("Plan for")}{" "}{isToday ? _t("today, ") : ""}
               {dowName(day)}, {fmtDate(day)}
             </div>
             <div style={{ fontSize: 12, color: X.sub, marginTop: 2, display: mob ? "none" : "block" }}>
-              {AUTO_FILL ? "FUP = deadline of each quote · days without enough quotes pull in others by priority until the daily goal" : "Quotes with the FUP on this day · the others stay out of the plan"}
-              {hol && hol.block ? ` · holiday: ${hol.name}` : we ? " · weekend" : hol ? ` · ${hol.name} (optional day off)` : ""}
+              {AUTO_FILL ? _t("FUP = deadline of each quote · days without enough quotes pull in others by priority until the daily goal") : _t("Quotes with the FUP on this day · the others stay out of the plan")}
+              {hol && hol.block ? _t(" · holiday: {0}", hol.name) : we ? _t(" · weekend") : hol ? _t(" · {0} (optional day off)", hol.name) : ""}
             </div>
           </div>
-          <button onClick={onClose} style={{ ...btn, marginLeft: "auto", padding: "0 10px" }} title="Close the plan">
+          <button onClick={onClose} style={{ ...btn, marginLeft: "auto", padding: "0 10px" }} title={_t("Close the plan")}>
             <XIcon size={16} />
           </button>
         </div>
         {/* celular: sem os quadros; a frase de baixo já diz o que falta no dia */}
         <div style={{ display: mob ? "none" : "grid", gridTemplateColumns: "minmax(220px, 1.1fr) repeat(auto-fit, minmax(160px, 1fr))", gap: 12, alignItems: "stretch" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, justifyContent: "center" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>Goal of the day</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{_t("Goal of the day")}</div>
             {!goalEdit ? (
-              <div title="Set by the management" style={{ display: "flex", alignItems: "center", gap: 8, height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+              <div title={_t("Set by the management")} style={{ display: "flex", alignItems: "center", gap: 8, height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
                 {target ? money(target) : "—"}
                 <Lock size={14} color={X.sub} style={{ marginLeft: "auto" }} />
               </div>
@@ -4549,21 +4911,20 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                     })
                   }
                   style={{ fontWeight: 600, color: X.tealDk, cursor: "pointer" }}
-                  title="Go back to the daily goal"
-                >
-                  Only this day · back to the daily goal ({money(auto.v)})
+                  title={_t("Go back to the daily goal")}
+                >{_t("Only this day · back to the daily goal (")}{money(auto.v)})
                 </span>
               ) : auto.v ? (
-                "The daily goal · type to change only this day"
+                _t("The daily goal · type to change only this day")
               ) : (
-                `${hol && hol.block ? "Holiday" : we ? "Weekend" : "No daily goal"} · type to set a goal for this day`
+                _t("{0} · type to set a goal for this day", hol && hol.block ? _t("Holiday") : we ? _t("Weekend") : _t("No daily goal"))
               )}
             </div>}
           </div>
-          <Tile icon={Wallet} label="Booked on the day" value={partial ? "—" : day > today ? "—" : moneyShort(bookedOn.v)} caption={partial ? "import the Sales Report again" : day > today ? "day still ahead" : "Sales Report"} color={X.green} tint={X.greenSoft} ink={X.green} title={money(bookedOn.v)} />
-          <Tile icon={Crosshair} label="Missing on the day" value={pd ? moneyShort(pd.need) : past ? moneyShort(Math.max(0, target - bookedOn.v)) : "—"} caption={pd ? (pd.need ? "to close in quotes" : "covered") : past ? "day is over" : "—"} color={X.redDk} tint={X.redSoft} ink={X.redDk} />
-          <Tile icon={ListChecks} label="Planned" value={pd ? moneyShort(pd.planned) : "—"} caption={pd ? (AUTO_FILL ? `${list.length} quote${list.length === 1 ? "" : "s"} · ${nDue} FUP + ${nFill} pulled in` : `${list.length} quote${list.length === 1 ? "" : "s"} with FUP`) : "plan starts today"} color={X.amber} tint={X.amberSoft} ink={X.amber} title={pd ? money(pd.planned) : ""} />
-          <Tile icon={TrendingUp} label="Expected (× % Win)" value={pd ? moneyShort(pd.expected) : "—"} caption="planned × chance" tint="#E6EEFB" ink="#2F6FDB" title={pd ? money(pd.expected) : ""} />
+          <Tile icon={Wallet} label={_t("Booked on the day")} value={partial ? "—" : day > today ? "—" : moneyShort(bookedOn.v)} caption={partial ? _t("import the Sales Report again") : day > today ? _t("day still ahead") : _t("Sales Report")} color={X.green} tint={X.greenSoft} ink={X.green} title={money(bookedOn.v)} />
+          <Tile icon={Crosshair} label={_t("Missing on the day")} value={pd ? moneyShort(pd.need) : past ? moneyShort(Math.max(0, target - bookedOn.v)) : "—"} caption={pd ? (pd.need ? _t("to close in quotes") : _t("covered")) : past ? _t("day is over") : "—"} color={X.redDk} tint={X.redSoft} ink={X.redDk} />
+          <Tile icon={ListChecks} label={_t("Planned")} value={pd ? moneyShort(pd.planned) : "—"} caption={pd ? (AUTO_FILL ? _t("{0} {1} · {2} FUP + {3} pulled in", list.length, list.length === 1 ? _t("quote") : _t("quotes"), nDue, nFill) : _t("{0} {1} with FUP", list.length, list.length === 1 ? _t("quote") : _t("quotes"))) : _t("plan starts today")} color={X.amber} tint={X.amberSoft} ink={X.amber} title={pd ? money(pd.planned) : ""} />
+          <Tile icon={TrendingUp} label={_t("Expected (× % Win)")} value={pd ? moneyShort(pd.expected) : "—"} caption={_t("planned × chance")} tint="#E6EEFB" ink="#2F6FDB" title={pd ? money(pd.expected) : ""} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderRadius: 9, background: tone[1], color: tone[0], fontSize: 13, fontWeight: 600 }}>
           {React.createElement(tone[2], { size: 16, style: { flexShrink: 0 } })}
@@ -4574,24 +4935,22 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
       {!past && (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", flexWrap: "wrap", borderTop: `1px solid ${X.line}` }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>{mob ? `${list.length} quote${list.length === 1 ? "" : "s"} to work on` : "Quotes to work on"}</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{mob ? _t("{0} {1} to work on", list.length, list.length === 1 ? _t("quote") : _t("quotes")) : _t("Quotes to work on")}</div>
             {pfOn && (
               <button onClick={() => { setPf({}); setPs(null); }} style={{ ...btn, height: 28, fontSize: 11.5, padding: "0 10px" }}>
-                <XIcon size={13} /> Clear filters and sorting
-              </button>
+                <XIcon size={13} />{" "}{_t("Clear filters and sorting")}</button>
             )}
             {!mob && (
             <span style={{ fontSize: 11, fontWeight: 600, color: X.amber, background: X.amberSoft, padding: "3px 10px", borderRadius: 999 }}>
-              {list.length} planned · {cands.length} open
-            </span>
+              {list.length}{" "}{_t("planned ·")}{" "}{cands.length}{" "}{_t("open")}</span>
             )}
             <div style={{ marginLeft: "auto", display: mob ? "none" : "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              {AUTO_FILL && <span style={{ fontSize: 11.5, color: X.sub }}>Pull in by</span>}
+              {AUTO_FILL && <span style={{ fontSize: 11.5, color: X.sub }}>{_t("Pull in by")}</span>}
               {AUTO_FILL && <div style={{ display: "inline-flex", gap: 3, background: X.head, borderRadius: 9, padding: 3 }}>
                 {[
-                  ["priority", "Priority", "% Win + Thermometer"],
-                  ["likely", "Most likely", "Highest % Win first"],
-                  ["biggest", "Biggest", "Highest value first: the fewest quotes per day"],
+                  ["priority", _t("Priority"), _t("% Win + Thermometer")],
+                  ["likely", _t("Most likely"), _t("Highest % Win first")],
+                  ["biggest", _t("Biggest"), _t("Highest value first: the fewest quotes per day")],
                 ].map(([k, l, t]) => (
                   <button
                     key={k}
@@ -4603,15 +4962,14 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                   </button>
                 ))}
               </div>}
-              <select value={maxAge} onChange={(e) => setPref("maxAge", +e.target.value)} style={{ ...inp, height: 32 }} title="Leave out old quotes that will hardly close">
-                <option value={90}>Quotes up to 90 days</option>
-                <option value={180}>Quotes up to 180 days</option>
-                <option value={365}>Quotes up to 1 year</option>
-                <option value={0}>Quotes of any age</option>
+              <select value={maxAge} onChange={(e) => setPref("maxAge", +e.target.value)} style={{ ...inp, height: 32 }} title={_t("Leave out old quotes that will hardly close")}>
+                <option value={90}>{_t("Quotes up to 90 days")}</option>
+                <option value={180}>{_t("Quotes up to 180 days")}</option>
+                <option value={365}>{_t("Quotes up to 1 year")}</option>
+                <option value={0}>{_t("Quotes of any age")}</option>
               </select>
-              <button onClick={exportPlan} style={{ ...btn, height: 32, fontSize: 12 }} title="Download the plan of the day as an Excel file">
-                <Download size={14} /> Export
-              </button>
+              <button onClick={exportPlan} style={{ ...btn, height: 32, fontSize: 12 }} title={_t("Download the plan of the day as an Excel file")}>
+                <Download size={14} />{" "}{_t("Export")}</button>
             </div>
           </div>
           {mob ? (
@@ -4623,7 +4981,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                 const rs = reasonsOf(r, day);
                 return (
                   <React.Fragment key={r.id}>
-                    {other && !ps && (i === 0 || shownRows[i - 1].kind !== "other") && <div style={{ fontSize: 11.5, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4, padding: "10px 2px 2px" }}>Other open quotes</div>}
+                    {other && !ps && (i === 0 || shownRows[i - 1].kind !== "other") && <div style={{ fontSize: 11.5, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4, padding: "10px 2px 2px" }}>{_t("Other open quotes")}</div>}
                     <div
                       className="qp-card-btn"
                       onClick={() => onOpenQuote(r.id, false, shownRows.map((x) => x.id))}
@@ -4645,11 +5003,10 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                             ev.stopPropagation();
                             onOpenQuote(r.id, true);
                           }}
-                          title="Register the follow-up: note, next date and % Win"
+                          title={_t("Register the follow-up: note, next date and % Win")}
                           style={{ ...btn, height: 42, padding: "0 14px", borderRadius: 12, background: X.teal, borderColor: X.teal, color: "#fff", fontWeight: 700, fontSize: 13.5, flexShrink: 0 }}
                         >
-                          <Check size={16} /> Done
-                        </button>
+                          <Check size={16} />{" "}{_t("Done")}</button>
                       )}
                     </div>
                   </React.Fragment>
@@ -4657,7 +5014,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
               })}
               {!shownRows.length && (
                 <div style={{ textAlign: "center", color: X.sub, padding: "22px 10px", fontSize: 13 }}>
-                  {rows.length ? "No quote matches the filters." : !cands.length ? (quotes && quotes.length ? "No open quote in this classification and age." : "Import the Quote Report to see the open quotes.") : "Nothing planned for this day."}
+                  {rows.length ? _t("No quote matches the filters.") : !cands.length ? (quotes && quotes.length ? _t("No open quote in this classification and age.") : _t("Import the Quote Report to see the open quotes.")) : _t("Nothing planned for this day.")}
                 </div>
               )}
             </div>
@@ -4671,7 +5028,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                     const fOn = (pf[c.id] || []).length > 0;
                     if (c.id === "_chk")
                       return (
-                        <th key={c.id} style={{ ...th, width: c.w, textAlign: "center" }} title="Untick a quote you know will not close: it leaves the plan and the days are planned again">
+                        <th key={c.id} style={{ ...th, width: c.w, textAlign: "center" }} title={_t("Untick a quote you know will not close: it leaves the plan and the days are planned again")}>
                           <Check size={12} />
                         </th>
                       );
@@ -4684,7 +5041,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                         {c.sort ? (
                           <span
                             onClick={() => setPs((p) => (p && p.id === c.id ? (p.dir === -1 ? { id: c.id, dir: 1 } : null) : { id: c.id, dir: -1 }))}
-                            title={`${c.tip ? c.tip + " · " : ""}click to sort · 3rd click goes back to the plan order`}
+                            title={_t("{0}click to sort · 3rd click goes back to the plan order", c.tip ? c.tip + " · " : "")}
                             style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" }}
                           >
                             {c.label}
@@ -4711,9 +5068,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                     <React.Fragment key={r.id}>
                       {other && !ps && (i === 0 || shownRows[i - 1].kind !== "other") && (
                         <tr>
-                          <td colSpan={12} style={{ ...td, background: X.head, fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35, padding: "8px 14px" }}>
-                            Other open quotes
-                          </td>
+                          <td colSpan={12} style={{ ...td, background: X.head, fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35, padding: "8px 14px" }}>{_t("Other open quotes")}</td>
                         </tr>
                       )}
                       <tr>
@@ -4722,13 +5077,13 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                             type="checkbox"
                             checked={!r.off}
                             onChange={() => onToggleExcl(r.id, r.c, !r.off)}
-                            title={r.off ? "Put back in the plan" : "Leave out of the plan"}
+                            title={r.off ? _t("Put back in the plan") : _t("Leave out of the plan")}
                             style={{ accentColor: X.teal, cursor: "pointer" }}
                           />
                         </td>
                         <td style={{ ...cN, color: X.sub }}>{planNo.get(r.id)}</td>
                         <td style={{ ...c, fontWeight: 700, whiteSpace: "nowrap", textDecoration: r.off ? "line-through" : "none" }}>
-                          <span onClick={() => onOpenQuote(r.id)} title="Open the record, Activities History and notes" style={{ cursor: "pointer", color: X.tealDk, borderBottom: `1px dashed ${X.teal}` }}>
+                          <span onClick={() => onOpenQuote(r.id)} title={_t("Open the record, Activities History and notes")} style={{ cursor: "pointer", color: X.tealDk, borderBottom: `1px dashed ${X.teal}` }}>
                             {r.id}
                           </span>
                           <NoteBadge info={notesBy && notesBy[r.id]} onClick={() => onOpenQuote(r.id)} />
@@ -4746,12 +5101,12 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                             render={fupOptRender}
                             describe={fupOptDescribe}
                             onChange={(v) => (CLOSE_LABEL[v] ? onAskClose(r.id, r.c, v) : onMeta(r.id, { fup: v }, r.c))}
-                            title="FUP = deadline of this quote · Cancelled / Lost closes it (with the reason)"
+                            title={_t("FUP = deadline of this quote · Cancelled / Lost closes it (with the reason)")}
                             width={300}
                           />
                         </td>
                         <td style={c}>
-                          <PickCell value={r.win} options={WIN_VALS} render={(v) => <WinPill v={v} />} onChange={(v) => onMeta(r.id, { win: v || 0 }, r.c)} title="% Win of this quote" width={140} />
+                          <PickCell value={r.win} options={WIN_VALS} render={(v) => <WinPill v={v} />} onChange={(v) => onMeta(r.id, { win: v || 0 }, r.c)} title={_t("% Win of this quote")} width={140} />
                         </td>
                         <td style={c}>
                           <ThermoCell t={thermo[r.nn]} />
@@ -4783,18 +5138,15 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                 })}
                 {!shownRows.length && rows.length > 0 && (
                   <tr>
-                    <td colSpan={12} style={{ ...td, textAlign: "center", color: X.sub, padding: "22px 10px" }}>
-                      No quote matches the filters.{" "}
-                      <span onClick={() => { setPf({}); setPs(null); }} style={{ color: X.tealDk, cursor: "pointer", fontWeight: 600 }}>
-                        Clear filters
-                      </span>
+                    <td colSpan={12} style={{ ...td, textAlign: "center", color: X.sub, padding: "22px 10px" }}>{_t("No quote matches the filters.")}{" "}
+                      <span onClick={() => { setPf({}); setPs(null); }} style={{ color: X.tealDk, cursor: "pointer", fontWeight: 600 }}>{_t("Clear filters")}</span>
                     </td>
                   </tr>
                 )}
                 {!rows.length && (
                   <tr>
                     <td colSpan={12} style={{ ...td, textAlign: "center", color: X.sub, padding: "28px 10px" }}>
-                      {!cands.length ? (quotes && quotes.length ? "No open quote in this classification and age." : "Import the Quote Report to see the open quotes.") : "Nothing planned for this day."}
+                      {!cands.length ? (quotes && quotes.length ? _t("No open quote in this classification and age.") : _t("Import the Quote Report to see the open quotes.")) : _t("Nothing planned for this day.")}
                     </td>
                   </tr>
                 )}
@@ -4804,7 +5156,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
           )}
           <div style={{ padding: 10, textAlign: "center", borderTop: `1px solid ${X.line}` }}>
             <button onClick={() => setShowAll((v) => !v)} style={{ ...btn, height: 30, fontSize: 12 }}>
-              {showAll ? "Show only the plan of the day" : `Show the other ${cands.length - list.length} open quotes`}
+              {showAll ? _t("Show only the plan of the day") : _t("Show the other {0} open quotes", cands.length - list.length)}
             </button>
           </div>
         </>
@@ -4821,7 +5173,7 @@ function ImportButton({ label, icon: Ic, info, onFile, accent }) {
       <button
         onClick={() => ref.current && ref.current.click()}
         style={{ ...btn, background: accent ? X.teal : "#fff", color: accent ? "#fff" : X.ink, borderColor: accent ? X.teal : X.line }}
-        title={info || `Import the ${label}`}
+        title={info || _t("Import the {0}", label)}
       >
         <Ic size={15} /> {label}
         {info && <Check size={14} color={accent ? "#fff" : X.tealDk} />}
@@ -4845,7 +5197,7 @@ function DataMenu({ items }) {
   const p = usePop(260);
   return (
     <>
-      <button ref={p.anchor} onClick={p.toggle} style={{ ...btn, padding: "0 10px" }} title="Data and backup">
+      <button ref={p.anchor} onClick={p.toggle} style={{ ...btn, padding: "0 10px" }} title={_t("Data and backup")}>
         <MoreHorizontal size={17} />
       </button>
       {p.render(
@@ -4874,7 +5226,7 @@ function DataMenu({ items }) {
 
 /* ===== Lista do que ainda não foi salvo (abre ao clicar no aviso amarelo do arquivo de dados) =====
    detail = { quotes: [{ id, c, items: [registro do histórico | { k: "_meta" }] }], goals: [{ d, o, n }], report: [...] } */
-const goalTxt = (v, isDay) => (v == null ? (isDay ? "daily goal" : "—") : v < 0 ? "no goal" : money(v));
+const goalTxt = (v, isDay) => (v == null ? (isDay ? _t("daily goal") : "—") : v < 0 ? _t("no goal") : money(v));
 function UnsavedList({ detail, onOpenQuote, onSave, saving }) {
   const today = todayISO();
   const when = (t) => (t ? `${String(t).slice(0, 10) === today ? "" : fmtDay(String(t).slice(0, 10)) + " "}${String(t).slice(11, 16)}` : "");
@@ -4884,30 +5236,29 @@ function UnsavedList({ detail, onOpenQuote, onSave, saving }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
       <div style={{ padding: "6px 8px 4px", display: "flex", alignItems: "center", gap: 8 }}>
         <div>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: X.ink }}>Changes not saved yet</div>
-          <div style={{ fontSize: 11.5, color: X.sub }}>Kept in this browser until you click Save · click a QT to open it</div>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: X.ink }}>{_t("Changes not saved yet")}</div>
+          <div style={{ fontSize: 11.5, color: X.sub }}>{_t("Kept in this browser until you click Save · click a QT to open it")}</div>
         </div>
         <button onClick={onSave} disabled={saving} style={{ ...btn, marginLeft: "auto", height: 32, fontSize: 12.5, fontWeight: 700, background: X.teal, borderColor: X.teal, color: "#fff" }}>
-          <Save size={14} /> Save
-        </button>
+          <Save size={14} />{" "}{_t("Save")}</button>
       </div>
-      {detail.quotes.length > 0 && <div style={head}>Quotes · {detail.quotes.length}</div>}
+      {detail.quotes.length > 0 && <div style={head}>{_t("Quotes ·")}{" "}{detail.quotes.length}</div>}
       {detail.quotes.map((q) => (
         <div key={q.id} style={{ border: `1px solid ${X.line}`, borderRadius: 9, padding: "7px 9px", margin: "0 4px 6px", background: "#fff" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-            <span onClick={() => onOpenQuote(q.id)} title="Open the quote" style={{ fontWeight: 800, fontSize: 12.5, color: X.tealDk, cursor: "pointer", borderBottom: `1px dashed ${X.teal}` }}>
+            <span onClick={() => onOpenQuote(q.id)} title={_t("Open the quote")} style={{ fontWeight: 800, fontSize: 12.5, color: X.tealDk, cursor: "pointer", borderBottom: `1px dashed ${X.teal}` }}>
               {q.id}
             </span>
             <span style={{ fontSize: 12, color: X.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{q.c}</span>
           </div>
           {q.items.map((a, i) => {
-            const am = ACT_META[a.k] || (a.k === "_repair" ? { icon: History, title: "Restored from the history", color: X.violet, bg: X.violetSoft } : { icon: Database, title: "Follow-up data changed", color: X.sub, bg: X.head });
+            const am = ACT_META[a.k] || (a.k === "_repair" ? { icon: History, title: _t("Restored from the history"), color: X.violet, bg: X.violetSoft } : { icon: Database, title: _t("Follow-up data changed"), color: X.sub, bg: X.head });
             return (
               <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 12, marginTop: 5 }}>
                 <span style={{ width: 20, height: 20, borderRadius: 999, background: am.bg, color: am.color, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{React.createElement(am.icon, { size: 11 })}</span>
                 <div style={{ minWidth: 0, flex: 1, lineHeight: 1.4 }}>
                   <b style={{ color: am.color }}>{am.title}</b>
-                  {a.k === "_repair" ? <span style={{ color: X.sub }}> · FUP, % Win and date put back as the last entries of the Activities History say (someone had saved over them with old data)</span> : a.k === "_meta" ? <span style={{ color: X.sub }}> · FUP, % Win or date (changed and changed back, or from a Done)</span> : a.k === "note" ? <div style={{ color: X.ink, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{String(a.txt || "").slice(0, 220)}{String(a.txt || "").length > 220 ? "…" : ""}</div> : <span style={{ color: X.ink }}> · {actText(a)}</span>}
+                  {a.k === "_repair" ? <span style={{ color: X.sub }}>{" "}{_t("· FUP, % Win and date put back as the last entries of the Activities History say (someone had saved over them with old data)")}</span> : a.k === "_meta" ? <span style={{ color: X.sub }}>{" "}{_t("· FUP, % Win or date (changed and changed back, or from a Done)")}</span> : a.k === "note" ? <div style={{ color: X.ink, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{String(a.txt || "").slice(0, 220)}{String(a.txt || "").length > 220 ? "…" : ""}</div> : <span style={{ color: X.ink }}> · {actText(a)}</span>}
                 </div>
                 <span style={{ fontSize: 11, color: X.sub, whiteSpace: "nowrap" }}>{when(a.t)}</span>
               </div>
@@ -4918,15 +5269,15 @@ function UnsavedList({ detail, onOpenQuote, onSave, saving }) {
       {detail.users && (
         <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, padding: "6px 10px" }}>
           <KeyRound size={13} color={X.violet} />
-          <b>Users and passwords</b>
-          <span style={{ color: X.sub }}>changed</span>
+          <b>{_t("Users and passwords")}</b>
+          <span style={{ color: X.sub }}>{_t("changed")}</span>
         </div>
       )}
-      {detail.goals.length > 0 && <div style={head}>Goals · {detail.goals.length}</div>}
+      {detail.goals.length > 0 && <div style={head}>{_t("Goals ·")}{" "}{detail.goals.length}</div>}
       {detail.goals.map((g) => (
         <div key={g.d || "daily"} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, padding: "4px 10px" }}>
           <Target size={13} color={X.amber} />
-          <b>{g.d ? `Goal of ${dowName(g.d).slice(0, 3)}, ${fmtDate(g.d)}` : "Daily goal"}</b>
+          <b>{g.d ? _t("Goal of {0}, {1}", dowName(g.d).slice(0, 3), fmtDate(g.d)) : _t("Daily goal")}</b>
           <span style={{ color: X.sub, marginLeft: "auto", whiteSpace: "nowrap" }}>
             {goalTxt(g.o, !!g.d)} {arrow} <b style={{ color: X.ink }}>{goalTxt(g.n, !!g.d)}</b>
           </span>
@@ -4934,20 +5285,19 @@ function UnsavedList({ detail, onOpenQuote, onSave, saving }) {
       ))}
       {repQ > 0 && (
         <>
-          <div style={head}>Quote Report import</div>
+          <div style={head}>{_t("Quote Report import")}</div>
           <div style={{ fontSize: 12, color: X.sub, padding: "2px 10px 6px" }}>
-            {detail.report.length} history entries (status, value, new orders) on {repQ} quotes, written when the report was imported. They don't count in the number on the Save button.
-          </div>
+            {detail.report.length}{" "}{_t("history entries (status, value, new orders) on")}{" "}{repQ}{" "}{_t("quotes, written when the report was imported. They don't count in the number on the Save button.")}</div>
         </>
       )}
-      {!detail.quotes.length && !detail.goals.length && !repQ && <div style={{ fontSize: 12, color: X.sub, padding: "6px 10px 10px" }}>Only the order of the history changed (e.g. something marked and unmarked).</div>}
+      {!detail.quotes.length && !detail.goals.length && !repQ && <div style={{ fontSize: 12, color: X.sub, padding: "6px 10px 10px" }}>{_t("Only the order of the history changed (e.g. something marked and unmarked).")}</div>}
     </div>
   );
 }
 /* ===== Login: escolher o usuário (Sales Person ou Admin) e a senha =====
    Na primeira vez de cada usuário o programa pede para criar a senha. O arquivo de dados guarda só o hash
    (veja hashPassword em core.js); por isso criar a senha exige a pasta de dados conectada. */
-function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnect, onLogin, onCreate, onLoadFile, busy }) {
+function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnect, onLogin, onCreate, onLoadFile, busy, srv, srvLogin }) {
   const fileRef = useRef(null);
   const [who, setWho] = useState(() => {
     try {
@@ -4983,28 +5333,46 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
   const [err, setErr] = useState("");
   const [checking, setChecking] = useState(false);
   const u = who ? users[who] : null;
-  const hasPwd = !!(u && u.hash);
+  const hasPwd = !!(u && (u.hash || u.pwd)); // pwd = servidor (a página não recebe o hash)
+  const minLen = srv ? 6 : 4;
   const valid = who && ((who === ADMIN_USER && adminOn) || names.includes(who));
   const submit = (e) => {
     e && e.preventDefault();
     setErr("");
-    if (!valid) return setErr("Choose your user.");
+    if (!valid) return setErr(_t("Choose your user."));
+    // servidor: quem confere a senha é o servidor
+    if (srv) {
+      if (hasPwd && !pwd) return setErr(_t("Type your password."));
+      if (!hasPwd) {
+        if (pwd.length < minLen) return setErr(_t("The password needs at least {0} characters.", minLen));
+        if (pwd !== pwd2) return setErr(_t("The two passwords are not the same."));
+      }
+      setChecking(true);
+      srvLogin(who, pwd, !hasPwd).then((m) => {
+        setChecking(false);
+        if (m) return setErr(m);
+        try {
+          localStorage.setItem("qp_lastuser", who === ADMIN_USER ? "" : who);
+        } catch {}
+      });
+      return;
+    }
     if (hasPwd) {
-      if (!pwd) return setErr("Type your password.");
+      if (!pwd) return setErr(_t("Type your password."));
       setChecking(true);
       setTimeout(() => {
         const ok = hashPassword(pwd, u.salt) === u.hash;
         setChecking(false);
-        if (!ok) return setErr("Wrong password.");
+        if (!ok) return setErr(_t("Wrong password."));
         try {
           localStorage.setItem("qp_lastuser", who === ADMIN_USER ? "" : who);
         } catch {}
         onLogin(who);
       }, 20);
     } else {
-      if (!connected) return setErr(dfSt === "nofsa" ? "The first password must be created on a computer with Chrome or Edge, with the data folder open." : "Open the data folder first: the password is saved in the shared data file.");
-      if (pwd.length < 4) return setErr("The password needs at least 4 characters.");
-      if (pwd !== pwd2) return setErr("The two passwords are not the same.");
+      if (!connected) return setErr(dfSt === "nofsa" ? _t("The first password must be created on a computer with Chrome or Edge, with the data folder open.") : _t("Open the data folder first: the password is saved in the shared data file."));
+      if (pwd.length < minLen) return setErr(_t("The password needs at least {0} characters.", minLen));
+      if (pwd !== pwd2) return setErr(_t("The two passwords are not the same."));
       setChecking(true);
       setTimeout(() => {
         const salt = newSalt();
@@ -5027,12 +5395,12 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
             <TrendingUp size={24} />
           </span>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.4 }}>Quote Follow Up</div>
-            <div style={{ fontSize: 12.5, color: X.sub }}>Sign in to continue</div>
+            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.4 }}>{_t("Quote Follow Up")}</div>
+            <div style={{ fontSize: 12.5, color: X.sub }}>{_t("Sign in to continue")}</div>
           </div>
         </div>
         <div>
-          <label style={lbl}>User</label>
+          <label style={lbl}>{_t("User")}</label>
           <select
             value={valid ? who : ""}
             onChange={(e) => {
@@ -5043,19 +5411,19 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
             }}
             style={{ ...field, fontWeight: who ? 600 : 400 }}
           >
-            <option value="">Choose your name…</option>
-            {adminOn && <option value={ADMIN_USER}>Admin · all salespeople</option>}
+            <option value="">{_t("Choose your name…")}</option>
+            {adminOn && <option value={ADMIN_USER}>{_t("Admin · all salespeople")}</option>}
             {names.map((n) => (
               <option key={n} value={n}>
                 {n}
               </option>
             ))}
           </select>
-          {!names.length && <div style={{ fontSize: 11.5, color: X.sub, marginTop: 6 }}>The salespeople appear after the data folder is opened.</div>}
+          {!names.length && <div style={{ fontSize: 11.5, color: X.sub, marginTop: 6 }}>{srv ? _t("Could not load the list of users from the server. Reload the page.") : _t("The salespeople appear after the data folder is opened.")}</div>}
         </div>
         {valid && hasPwd && (
           <div>
-            <label style={lbl}>Password</label>
+            <label style={lbl}>{_t("Password")}</label>
             <input type="password" autoFocus value={pwd} onChange={(e) => setPwd(e.target.value)} style={field} autoComplete="current-password" />
           </div>
         )}
@@ -5064,41 +5432,37 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
             <div style={{ display: "flex", gap: 10, alignItems: "flex-start", background: X.tealSoft, color: X.tealDk, borderRadius: 10, padding: "10px 12px", fontSize: 12.5, lineHeight: 1.45 }}>
               <KeyRound size={16} style={{ flexShrink: 0, marginTop: 2 }} />
               <span>
-                <b>First access.</b> Create your password — only you will know it.
-              </span>
+                <b>{_t("First access.")}</b>{" "}{_t("Create your password — only you will know it.")}</span>
             </div>
             <div>
-              <label style={lbl}>New password</label>
+              <label style={lbl}>{_t("New password")}</label>
               <input type="password" autoFocus value={pwd} onChange={(e) => setPwd(e.target.value)} style={field} autoComplete="new-password" />
             </div>
             <div>
-              <label style={lbl}>Repeat the password</label>
+              <label style={lbl}>{_t("Repeat the password")}</label>
               <input type="password" value={pwd2} onChange={(e) => setPwd2(e.target.value)} style={field} autoComplete="new-password" />
             </div>
           </>
         )}
         {err && <div style={{ fontSize: 12.5, fontWeight: 600, color: X.redDk, background: X.redSoft, borderRadius: 8, padding: "8px 10px" }}>{err}</div>}
         <button type="submit" disabled={checking || busy || !valid} style={{ ...btn, height: 44, justifyContent: "center", fontSize: 14, fontWeight: 700, borderRadius: 11, background: valid ? X.teal : "#C7D2D9", borderColor: valid ? X.teal : "#C7D2D9", color: "#fff", cursor: valid ? "pointer" : "not-allowed" }}>
-          {checking || busy ? "Checking…" : valid && !hasPwd ? "Create password and sign in" : "Sign in"}
+          {checking || busy ? _t("Checking…") : valid && !hasPwd ? _t("Create password and sign in") : _t("Sign in")}
         </button>
         <div style={{ borderTop: `1px solid ${X.line}`, paddingTop: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12, color: X.sub }}>
-          <Database size={14} />
-          {connected ? (
-            <span>
-              Data folder <b style={{ color: X.ink }}>{dfName}</b> connected
-            </span>
+          {srv ? <Cloud size={14} /> : <Database size={14} />}
+          {srv ? (
+            <span>{_t("Online · the data is saved on the server")}</span>
+          ) : connected ? (
+            <span>{_t("Data folder")}{" "}<b style={{ color: X.ink }}>{dfName}</b>{" "}{_t("connected")}</span>
           ) : dfSt === "ask" ? (
-            <button type="button" onClick={onReconnect} style={{ ...btn, height: 30, fontSize: 12 }}>
-              Reconnect the data folder
-            </button>
+            <button type="button" onClick={onReconnect} style={{ ...btn, height: 30, fontSize: 12 }}>{_t("Reconnect the data folder")}</button>
           ) : dfSt === "opening" ? (
-            <span>Opening the data folder…</span>
+            <span>{_t("Opening the data folder…")}</span>
           ) : dfSt === "nofsa" ? (
             /* celular e navegadores sem acesso a pastas: carregar o arquivo de dados à mão */
             <>
               <button type="button" onClick={() => fileRef.current && fileRef.current.click()} style={{ ...btn, height: 34, fontSize: 12 }}>
-                <FolderOpen size={13} /> Load the data file…
-              </button>
+                <FolderOpen size={13} />{" "}{_t("Load the data file…")}</button>
               <input
                 ref={fileRef}
                 type="file"
@@ -5111,15 +5475,15 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
                   for (const f of fs) if (onLoadFile) await onLoadFile(f);
                 }}
               />
-              <span style={{ width: "100%", fontSize: 11, lineHeight: 1.4 }}>This browser can't keep the data folder connected (phones, Firefox, Safari): load the two files {DATA_FILE} and {REP_FILE}.</span>
+              <span style={{ width: "100%", fontSize: 11, lineHeight: 1.4 }}>{_t("This browser can't keep the data folder connected (phones, Firefox, Safari): load the two files")}{" "}{DATA_FILE}{" "}{_t("and")}{" "}{REP_FILE}.</span>
             </>
           ) : (
             <button type="button" onClick={onOpen} style={{ ...btn, height: 30, fontSize: 12 }}>
-              <FolderOpen size={13} /> Open the data folder…
-            </button>
+              <FolderOpen size={13} />{" "}{_t("Open the data folder…")}</button>
           )}
         </div>
-        <div style={{ fontSize: 11, color: X.sub, lineHeight: 1.45 }}>The password is saved only as an encrypted code (hash) in the data file. Forgot it? Ask the admin to reset it.</div>
+        <div style={{ fontSize: 11, color: X.sub, lineHeight: 1.45 }}>{_t("The password is saved only as an encrypted code (hash)")}{" "}{srv ? _t("on the server") : _t("in the data file")}{_t(". Forgot it? Ask the admin to reset it.")}</div>
+        <LangSwitch />
       </form>
     </div>
   );
@@ -5157,7 +5521,7 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
   };
   const where = (n) => {
     const c = colOf(n);
-    return c.sp && c.qb ? "Sales Person and Quoted By" : c.sp ? "Sales Person" : c.qb ? "Quoted By" : "added by hand";
+    return c.sp && c.qb ? _t("Sales Person and Quoted By") : c.sp ? _t("Sales Person") : c.qb ? _t("Quoted By") : _t("added by hand");
   };
   return (
     <div style={{ ...card, overflow: "hidden" }}>
@@ -5166,39 +5530,39 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
           <Users size={18} />
         </span>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 800 }}>Users and access</div>
-          <div style={{ fontSize: 12, color: X.sub }}>Choose the screen of each person · saved in the data file right away</div>
+          <div style={{ fontSize: 15.5, fontWeight: 800 }}>{_t("Users and access")}</div>
+          <div style={{ fontSize: 12, color: X.sub }}>{_t("Choose the screen of each person · saved in the data file right away")}</div>
         </div>
       </div>
       <div style={{ padding: mob ? "10px 12px" : "12px 18px", display: "flex", flexDirection: "column", gap: 10, borderBottom: `1px solid ${X.line}` }}>
         <div className="qp-hscroll" style={{ display: "flex", gap: 6 }}>
-          {chip("", "All")}
-          {chip("none", "No access", cnt.none ? X.redDk : X.sub)}
+          {chip("", _t("All"))}
+          {chip("none", _t("No access"), cnt.none ? X.redDk : X.sub)}
           {ROLE_KEYS.map((k) => chip(k, ROLES[k].label))}
         </div>
         <div style={{ position: "relative" }}>
           <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: X.sub, pointerEvents: "none" }} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a person…" style={{ ...inp, width: "100%", height: 38, paddingLeft: 30 }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={_t("Search a person…")} style={{ ...inp, width: "100%", height: 38, paddingLeft: 30 }} />
         </div>
       </div>
       <div>
         {list.map((n) => {
           const u = users[n];
-          const has = !!(u && u.hash);
+          const has = !!(u && (u.hash || u.pwd));
           const isA = n === ADMIN_USER;
           const r = roleOfU(n);
           const R = ROLES[r];
           const hand = !isA && where(n) === "added by hand";
           const roleSel = isA ? (
-            <span style={{ fontSize: 12, fontWeight: 700, color: ROLES.manager.fg }}>Admin · Management screen</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: ROLES.manager.fg }}>{_t("Admin · Management screen")}</span>
           ) : (
             <select
               value={r}
               onChange={(e) => onRole(n, e.target.value)}
-              title="Screen this person sees after signing in"
+              title={_t("Screen this person sees after signing in")}
               style={{ ...inp, height: 36, width: "100%", fontWeight: 700, color: R ? R.fg : X.redDk, background: R ? R.bg : "#FFF7F7", borderColor: R ? "transparent" : "#F3B4B4" }}
             >
-              <option value="">{hand ? "No access (remove)" : "No access"}</option>
+              <option value="">{hand ? _t("No access (remove)") : _t("No access")}</option>
               {ROLE_KEYS.map((k) => (
                 <option key={k} value={k}>
                   {ROLES[k].label}
@@ -5206,7 +5570,7 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
               ))}
             </select>
           );
-          const pwd = <span style={{ fontSize: 12, color: has ? X.green : X.sub, whiteSpace: "nowrap" }}>{has ? "password set" : "no password yet"}</span>;
+          const pwd = <span style={{ fontSize: 12, color: has ? X.green : X.sub, whiteSpace: "nowrap" }}>{has ? _t("password set") : _t("no password yet")}</span>;
           const reset =
             has &&
             (ask === n ? (
@@ -5216,13 +5580,10 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
                   setAsk("");
                 }}
                 style={{ ...btn, height: 32, fontSize: 12, background: X.redDk, borderColor: X.redDk, color: "#fff" }}
-              >
-                Confirm reset
-              </button>
+              >{_t("Confirm reset")}</button>
             ) : (
-              <button onClick={() => setAsk(n)} style={{ ...btn, height: 32, fontSize: 12 }} title="The person creates a new password at the next sign-in">
-                <RotateCcw size={13} /> Reset
-              </button>
+              <button onClick={() => setAsk(n)} style={{ ...btn, height: 32, fontSize: 12 }} title={_t("The person creates a new password at the next sign-in")}>
+                <RotateCcw size={13} />{" "}{_t("Reset")}</button>
             ));
           const who = (
             <span style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
@@ -5231,7 +5592,7 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
               </span>
               <span style={{ minWidth: 0 }}>
                 <span style={{ display: "block", fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n}</span>
-                <span style={{ display: "block", fontSize: 11, color: X.sub }}>{isA ? "secret user · Ctrl+Shift+A on the sign-in" : hand ? "added by hand (not in the reports)" : `in the report as ${where(n)}`}</span>
+                <span style={{ display: "block", fontSize: 11, color: X.sub }}>{isA ? _t("secret user · Ctrl+Shift+A on the sign-in") : hand ? _t("added by hand (not in the reports)") : _t("in the report as {0}", where(n))}</span>
               </span>
             </span>
           );
@@ -5253,15 +5614,14 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
             </div>
           );
         })}
-        {!list.length && <div style={{ padding: 20, textAlign: "center", color: X.sub, fontSize: 12.5 }}>Nobody found.</div>}
+        {!list.length && <div style={{ padding: 20, textAlign: "center", color: X.sub, fontSize: 12.5 }}>{_t("Nobody found.")}</div>}
       </div>
       <div style={{ padding: mob ? "12px 12px" : "12px 18px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", background: "#FAFBFC" }}>
         <UserPlus size={16} color={X.sub} />
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: X.ink }}>Someone who is not in the reports?</span>
-        <input value={add} onChange={(e) => setAdd(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doAdd()} placeholder="Full name" style={{ ...inp, height: 36, flex: "1 1 180px", minWidth: 0 }} />
-        <button onClick={doAdd} disabled={!addOk} style={{ ...btn, height: 36, background: addOk ? X.teal : "#fff", color: addOk ? "#fff" : X.sub, borderColor: addOk ? X.teal : X.line, cursor: addOk ? "pointer" : "not-allowed" }} title="Adds the person with the Management screen (change it in the list)">
-          <UserPlus size={14} /> Add
-        </button>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: X.ink }}>{_t("Someone who is not in the reports?")}</span>
+        <input value={add} onChange={(e) => setAdd(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doAdd()} placeholder={_t("Full name")} style={{ ...inp, height: 36, flex: "1 1 180px", minWidth: 0 }} />
+        <button onClick={doAdd} disabled={!addOk} style={{ ...btn, height: 36, background: addOk ? X.teal : "#fff", color: addOk ? "#fff" : X.sub, borderColor: addOk ? X.teal : X.line, cursor: addOk ? "pointer" : "not-allowed" }} title={_t("Adds the person with the Management screen (change it in the list)")}>
+          <UserPlus size={14} />{" "}{_t("Add")}</button>
       </div>
     </div>
   );
@@ -5275,40 +5635,63 @@ function NoAccessScreen({ name, connected, checking, onCheck, onLogout }) {
           <Ban size={26} />
         </span>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 800 }}>Hi, {String(name).split(" ")[0]}</div>
-          <div style={{ fontSize: 13, color: X.sub, marginTop: 6, lineHeight: 1.5 }}>
-            Your access is not set yet. Ask the admin to choose your screen: <b>outside sales</b>, <b>inside sales</b> or <b>management</b>.
+          <div style={{ fontSize: 18, fontWeight: 800 }}>{_t("Hi,")}{" "}{String(name).split(" ")[0]}</div>
+          <div style={{ fontSize: 13, color: X.sub, marginTop: 6, lineHeight: 1.5 }}>{_t("Your access is not set yet. Ask the admin to choose your screen:")}{" "}<b>{_t("outside sales")}</b>, <b>{_t("inside sales")}</b>{" "}{_t("or")}{" "}<b>{_t("management")}</b>.
           </div>
         </div>
         {connected ? (
           <button onClick={onCheck} disabled={checking} style={{ ...btn, height: 44, width: "100%", justifyContent: "center", fontSize: 14, background: X.teal, borderColor: X.teal, color: "#fff" }}>
-            <RefreshCw size={15} /> {checking ? "Checking…" : "The admin set it · check again"}
+            <RefreshCw size={15} /> {checking ? _t("Checking…") : _t("The admin set it · check again")}
           </button>
         ) : (
-          <div style={{ fontSize: 12, color: X.sub }}>Open the data folder on this computer to receive the access.</div>
+          <div style={{ fontSize: 12, color: X.sub }}>{_t("Open the data folder on this computer to receive the access.")}</div>
         )}
         <button onClick={onLogout} style={{ ...btn, height: 40, width: "100%", justifyContent: "center" }}>
-          <LogOut size={15} /> Log out
-        </button>
+          <LogOut size={15} />{" "}{_t("Log out")}</button>
       </div>
     </div>
   );
 }
 /* Usuário logado (no topo): nome e papel; o menu tem "Users and access" (gerência) e "Log out" */
 /* items = ações extras do menu (no celular: atualizar, salvar, pasta de dados); status = situação dos dados */
+/* idioma da tela: fica salvo neste navegador; trocar recarrega a página */
+function LangSwitch() {
+  return (
+    <div title="Language / Idioma" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <Globe size={15} color={X.sub} style={{ flexShrink: 0 }} />
+      <div style={{ display: "flex", gap: 3, background: X.head, borderRadius: 9, padding: 3, flex: 1 }}>
+        {[
+          ["en", "English"],
+          ["pt", "Português"],
+        ].map(([k, l]) => {
+          const on = k === LANG;
+          return (
+            <button
+              key={k}
+              onClick={() => !on && setLang(k)}
+              style={{ flex: 1, border: "none", borderRadius: 7, padding: "7px 10px", fontSize: 12.5, fontWeight: on ? 700 : 500, cursor: on ? "default" : "pointer", background: on ? "#fff" : "transparent", color: on ? X.tealDk : X.sub, boxShadow: on ? "0 1px 2px rgba(16,24,40,.08)" : "none", whiteSpace: "nowrap" }}
+            >
+              {l}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 function UserChip({ name, admin, role, compact, onLogout, onUsers, items, status }) {
   const p = usePop(compact ? 280 : 230, 480);
   const R = ROLES[role];
   return (
     <>
-      <button ref={p.anchor} onClick={p.toggle} style={{ ...btn, height: compact ? 38 : 40, padding: compact ? "0 6px" : "0 10px 0 6px", borderRadius: 11, gap: compact ? 4 : 8 }} title={`${admin ? "Admin" : name}${R ? " · " + R.label : ""}`}>
+      <button ref={p.anchor} onClick={p.toggle} style={{ ...btn, height: compact ? 38 : 40, padding: compact ? "0 6px" : "0 10px 0 6px", borderRadius: 11, gap: compact ? 4 : 8 }} title={`${admin ? _t("Admin") : name}${R ? " · " + R.label : ""}`}>
         <span style={{ width: 28, height: 28, borderRadius: 999, background: admin ? X.violetSoft : R ? R.bg : X.tealSoft, color: admin ? X.violet : R ? R.fg : X.tealDk, fontSize: 10.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
           {admin ? <ShieldCheck size={15} /> : initials(name)}
         </span>
         {!compact && (
           <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.15 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{admin ? "Admin" : name.split(" ")[0]}</span>
-            <span style={{ fontSize: 10.5, color: X.sub }}>{R ? R.label : "no access"}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{admin ? _t("Admin") : name.split(" ")[0]}</span>
+            <span style={{ fontSize: 10.5, color: X.sub }}>{R ? R.label : _t("no access")}</span>
           </span>
         )}
         <ChevronDown size={13} color="#A0AEC0" />
@@ -5316,8 +5699,8 @@ function UserChip({ name, admin, role, compact, onLogout, onUsers, items, status
       {p.render(
         <>
           <div style={{ padding: "8px 9px 6px", borderBottom: `1px solid ${X.line}`, marginBottom: 4 }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>{admin ? "Admin" : name}</div>
-            <div style={{ fontSize: 11.5, color: R ? R.fg : X.sub, fontWeight: 600 }}>{R ? R.label : "no access"}</div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{admin ? _t("Admin") : name}</div>
+            <div style={{ fontSize: 11.5, color: R ? R.fg : X.sub, fontWeight: 600 }}>{R ? R.label : _t("no access")}</div>
             {status && <div style={{ fontSize: 11.5, color: X.sub, marginTop: 5, lineHeight: 1.35 }}>{status}</div>}
           </div>
           {(items || []).filter(Boolean).map((it) => (
@@ -5342,9 +5725,11 @@ function UserChip({ name, admin, role, compact, onLogout, onUsers, items, status
               }}
               style={{ ...optS, ...(compact ? { padding: "10px 9px", fontSize: 13.5 } : null) }}
             >
-              <Users size={15} /> Users and access…
-            </div>
+              <Users size={15} />{" "}{_t("Users and access…")}</div>
           )}
+          <div style={{ padding: "8px 6px 6px", borderTop: `1px solid ${X.line}`, marginTop: 4 }}>
+            <LangSwitch />
+          </div>
           <div
             className="qp-opt"
             onClick={() => {
@@ -5353,8 +5738,7 @@ function UserChip({ name, admin, role, compact, onLogout, onUsers, items, status
             }}
             style={{ ...optS, ...(compact ? { padding: "10px 9px", fontSize: 13.5, borderTop: `1px solid ${X.line}`, borderRadius: 0, marginTop: 4 } : null) }}
           >
-            <LogOut size={15} /> Log out
-          </div>
+            <LogOut size={15} />{" "}{_t("Log out")}</div>
         </>,
       )}
     </>
@@ -5369,28 +5753,28 @@ const DATA_FILE = "Quote Follow Up data.xlsx"; // FUP, % Win, requisição, nota
 const REP_FILE = "Quote Follow Up reports.xlsx"; // cotações e vendas dos relatórios
 // nomes antigos (o programa se chamava Quote Pipeline): ao abrir a pasta, os arquivos são renomeados para os novos
 const OLD_FILES = { data: "Quote Pipeline data.xlsx", rep: "Quote Pipeline reports.xlsx" };
-const XLSX_TYPE = [{ description: "Excel", accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] } }];
+const XLSX_TYPE = [{ description: _t("Excel"), accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] } }];
 const SAVE_DELAY = 1500; // ms depois da última mudança
 /* Gravação do arquivo de dados: compactado (o arquivo fica ~3× menor e grava mais rápido). */
 const DATA_WRITE = { type: "array", bookType: "xlsx", compression: true, bookSST: true };
 /* Erro do arquivo de dados em palavras: o que o navegador disse + o que fazer. */
 const fileErr = (e) => {
-  const name = (e && e.name) || "Error";
+  const name = (e && e.name) || _t("Error");
   const msg = (e && e.message) || String(e);
   const hint =
     /InvalidState|NotReadable/.test(name)
-      ? "Windows refused the last step of the save (replacing the file). This happens mostly with files on a network drive; it can also be the file open in Excel or a sync/antivirus program. Nothing is lost: the data stays in this browser. Save the data file in a local folder, e.g. Documents (button on the right)."
+      ? _t("Windows refused the last step of the save (replacing the file). This happens mostly with files on a network drive; it can also be the file open in Excel or a sync/antivirus program. Nothing is lost: the data stays in this browser. Save the data file in a local folder, e.g. Documents (button on the right).")
       : /NoModificationAllowed|InvalidModification/.test(name)
-      ? "The file is locked by another program (Excel, OneDrive/SharePoint sync, antivirus or the network drive). Close it in Excel; if it keeps happening, save the data file in a local folder (button on the right)."
+      ? _t("The file is locked by another program (Excel, OneDrive/SharePoint sync, antivirus or the network drive). Close it in Excel; if it keeps happening, save the data file in a local folder (button on the right).")
       : /NotAllowed|Security/.test(name)
-      ? "The browser did not allow saving in this folder. Pick a local folder (e.g. Documents) for the data file."
+      ? _t("The browser did not allow saving in this folder. Pick a local folder (e.g. Documents) for the data file.")
       : /NotFound/.test(name)
-      ? "The file was moved, renamed or deleted. Open it again from the ⋯ menu."
+      ? _t("The file was moved, renamed or deleted. Open it again from the ⋯ menu.")
       : /NotReadable/.test(name)
-      ? "The browser could not read the file: it is locked by another program or the network drive is unavailable."
+      ? _t("The browser could not read the file: it is locked by another program or the network drive is unavailable.")
       : /QuotaExceeded/.test(name)
-      ? "There is no free space to save the file."
-      : "If the file is on a network drive, try keeping it in a local folder (e.g. Documents).";
+      ? _t("There is no free space to save the file.")
+      : _t("If the file is on a network drive, try keeping it in a local folder (e.g. Documents).");
   return { text: `${name}: ${msg}`, hint };
 };
 /* "Assinatura" do que vai para o arquivo: se não mudou desde a última gravação, não grava de novo. */
@@ -5418,6 +5802,77 @@ const stableJson = (v) =>
 const DAY_NO_GOAL = -1; // meta do dia = "sem meta" digitada à mão num dia útil (0 digitado)
 const PULL_EVERY = 60000; // ms entre as olhadas nos arquivos de dados (mudanças salvas por outra pessoa)
 const RETRY_DELAY = 60000; // ms para tentar de novo depois de um erro (cada tentativa deixa um .crswap se o disco recusar)
+
+/* ===== modo servidor (API + MariaDB) =====
+   Quando a página é aberta pelo servidor (node server.mjs, direto ou pelo túnel), os dados vêm do banco:
+   não há pasta nem botão Save. Cada mudança vai sozinha para o servidor ~1 s depois, e a página olha a cada
+   20 s se alguém mudou alguma coisa. Aberta como arquivo (ou num Live Server sem a API), tudo continua
+   como antes, com a pasta dos arquivos de dados. */
+const SRV_NAME = _t("the server");
+const SRV_REPVER = "qp_srv_repver"; // versão das cotações guardadas no cache deste navegador
+const SRV_SAVE_DELAY = 1200; // ms depois da última mudança
+const SRV_PULL_EVERY = 20000; // ms entre as olhadas no servidor
+const REPORT_KINDS = new Set(["status", "amount", "order"]); // histórico que vem do Quote Report (só a gerência grava)
+async function api(path, { body, timeout = 60000 } = {}) {
+  const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const tm = ctl && setTimeout(() => ctl.abort(), timeout);
+  const init = { method: body !== undefined ? "POST" : "GET", credentials: "same-origin", cache: "no-store", headers: { "X-Requested-With": "qfu", Accept: "application/json" }, signal: ctl ? ctl.signal : undefined };
+  try {
+    if (body !== undefined) {
+      const json = JSON.stringify(body);
+      init.headers["Content-Type"] = "application/json";
+      // importação grande: vai compactada (o servidor descompacta)
+      if (json.length > 200000 && typeof CompressionStream !== "undefined") {
+        init.body = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"))).blob();
+        init.headers["Content-Encoding"] = "gzip";
+      } else init.body = json;
+    }
+    let r;
+    try {
+      r = await fetch(path, init);
+    } catch (e) {
+      throw Object.assign(new Error(e && e.name === "AbortError" ? _t("the server took too long to answer") : _t("no connection to the server")), { status: 0 });
+    }
+    let j = null;
+    try {
+      j = await r.json();
+    } catch {}
+    if (!r.ok) throw Object.assign(new Error((j && j.message) || _t("server error {0}", r.status)), { status: r.status, code: j && j.error });
+    return j;
+  } finally {
+    if (tm) clearTimeout(tm);
+  }
+}
+// a página veio do servidor do Quote Follow Up? (arquivo, Live Server ou GitHub Pages: não)
+async function detectServer() {
+  if (typeof location === "undefined" || !/^https?:$/.test(location.protocol)) return false;
+  try {
+    const j = await api("/api/ping", { timeout: 6000 });
+    return !!(j && j.app === "quote-follow-up");
+  } catch {
+    return false;
+  }
+}
+// cotações e vendas do servidor (formato curto) → o mesmo formato que o programa usa
+function hydrateRep(r) {
+  let minD = "",
+    maxD = "",
+    hasClass = false,
+    hasLine = false;
+  const quotes = ((r.quotesRep && r.quotesRep.quotes) || []).map((x) => {
+    const q = { conta: "", cls: "", st: "", qb: "", sp: "", a: 0, sa: 0, so: [], al: {}, fs: "", up: "", ...x, lr: !!x.lr };
+    q.nn = normName(q.c);
+    if (!minD || q.d < minD) minD = q.d;
+    if (!maxD || q.d > maxD) maxD = q.d;
+    if (q.cls) hasClass = true;
+    if (Object.keys(q.al).length) hasLine = true;
+    return q;
+  });
+  const info = r.quotesRep || {};
+  const quotesRep = quotes.length ? { v: 2, quotes, minD, maxD, fileName: info.fileName || "", at: info.at || "", ...(info.fillAt ? { fillAt: info.fillAt } : null), hasClass, hasLine } : null;
+  const rows = r.salesRows || [];
+  return { ver: r.ver, quotesRep, salesRep: rows.length ? buildSalesIndex(rows, r.salesInfo || {}) : null };
+}
 
 /* ===== aplicação ===== */
 export default function App() {
@@ -5485,12 +5940,27 @@ export default function App() {
   const syncOk = useRef(true);
   const again = useRef(false);
   stateRef.current = { quotesRep, salesRep, meta, excl, acts, dailyGoal, dayGoals, users };
+  /* modo servidor: o que está no banco (versões, cotações e vendas como vieram) e quem entrou */
+  const srvRef = useRef(false);
+  const [srv, setSrv] = useState(false);
+  const [srvMe, setSrvMe] = useState(null); // { name, role } de quem entrou, segundo o servidor
+  const [srvNames, setSrvNames] = useState({ names: [], users: {} }); // lista da tela de login
+  const [srvData, setSrvData] = useState(false); // os dados do servidor já chegaram nesta sessão
+  const srvLoaded = useRef(""); // nome de quem tem os dados carregados nesta página ("" = ninguém)
+  const sessRef = useRef("");
+  const ver = useRef({ data: 0, rep: 0 }); // versões do banco que esta página tem
+  const savedQ = useRef(new Map()); // cotações como estão no banco (para mandar só as que a importação mudou)
+  const savedSales = useRef(null);
+  const scopeRef = useRef({ mgr: true, ids: null }); // cotações que esta pessoa pode alterar
+  const srvRetry = useRef(0);
+  const saveGen = useRef(0);
 
   const say = (tone, text) => setToast({ tone, text });
 
   /* ---------- arquivos de dados: ler, juntar, gravar ---------- */
   const partOf = (st, kind) => (kind === "rep" ? { quotesRep: st.quotesRep, salesRep: st.salesRep } : { meta: st.meta, excl: st.excl, acts: st.acts, dailyGoal: st.dailyGoal, dayGoals: st.dayGoals, users: st.users || {} });
-  const sigOf = (st, kind) => dataSig(partOf(st, kind));
+  // no servidor os usuários não fazem parte do Save (papel e senha vão direto pela API)
+  const sigOf = (st, kind) => dataSig(srvRef.current && kind === "data" ? { ...partOf(st, kind), users: null } : partOf(st, kind));
   const fileName = (kind) => (kind === "rep" ? REP_FILE : DATA_FILE);
   const getFH = async (kind, create, dir) => {
     try {
@@ -5504,15 +5974,15 @@ export default function App() {
   const readFileObj = async (f) => {
     if (!f.size) return null;
     const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
-    if (!isDataWorkbook(wb)) throw new Error(`${f.name} is not a Quote Follow Up data file`);
+    if (!isDataWorkbook(wb)) throw new Error(_t("{0} is not a Quote Follow Up data file", f.name));
     const d = parseDataWorkbook(wb);
     if (d.ver && d.ver > APP_VERSION && !newerFile.current) {
       newerFile.current = d.ver;
       setDfErr({
         kind: "save",
-        title: "A newer version of Quote Follow Up saved the data files",
-        text: `${f.name} was saved by the version of ${d.ver}; this page runs the version of ${APP_VERSION}.`,
-        hint: "Reload this page (F5) — or open the new Quote Follow Up — before saving, so the old version does not write over the new data. Saving is blocked on this page.",
+        title: _t("A newer version of Quote Follow Up saved the data files"),
+        text: _t("{0} was saved by the version of {1}; this page runs the version of {2}.", f.name, d.ver, APP_VERSION),
+        hint: _t("Reload this page (F5) — or open the new Quote Follow Up — before saving, so the old version does not write over the new data. Saving is blocked on this page."),
       });
     }
     return d;
@@ -5608,9 +6078,9 @@ export default function App() {
       t0 = t;
     };
     const buf = XLSX.write(buildDataWorkbook(data), DATA_WRITE);
-    lap(`build Excel (${(buf.byteLength / 1e6).toFixed(2)} MB)`);
+    lap(_t("build Excel ({0} MB)", (buf.byteLength / 1e6).toFixed(2)));
     const w = await fh.createWritable();
-    lap("open temporary file");
+    lap(_t("open temporary file"));
     try {
       await w.write(buf);
       lap("write");
@@ -5619,8 +6089,8 @@ export default function App() {
       try {
         await w.close();
       } finally {
-        lap("replace the file (close)");
-        console.info(`Quote Follow Up · ${fileName(kind)} · save steps: ` + T.join(" · "));
+        lap(_t("replace the file (close)"));
+        console.info(_t("Quote Follow Up · {0} · save steps: ", fileName(kind)) + T.join(" · "));
       }
     } catch (e) {
       try {
@@ -5644,10 +6114,11 @@ export default function App() {
   const pulling = useRef(false);
   const [checkSt, setCheckSt] = useState({ busy: false, at: "" }); // botão Refresh: conferindo agora / hora da última conferida
   const pullIfChanged = async (manual) => {
+    if (srvRef.current) return srvPull(manual);
     const dir = handleRef.current;
     if (!dir || dir.kind !== "directory" || !syncOk.current) return;
     if (writing.current || pulling.current) {
-      if (manual === true) say("info", writing.current ? "Saving now: the files are checked again right after." : "Already checking the data files…");
+      if (manual === true) say("info", writing.current ? _t("Saving now: the files are checked again right after.") : _t("Already checking the data files…"));
       return;
     }
     pulling.current = true;
@@ -5678,12 +6149,12 @@ export default function App() {
           const mu = mergeUsers(m.users || {}, local.users || {});
           setUsers(mu);
           stateRef.current = { ...local, meta: m.meta, excl: m.excl, acts: m.acts, dailyGoal: m.dailyGoal, dayGoals: m.dayGoals, users: mu };
-          if (d.usersBad) setTimeout(() => say("warn", "The users list in the data file was changed outside the program and could not be read — kept the users this computer knows. Save to write it again."), 1500);
+          if (d.usersBad) setTimeout(() => say("warn", _t("The users list in the data file was changed outside the program and could not be read — kept the users this computer knows. Save to write it again.")), 1500);
           savedSig.current.data = sigOf(fileD, "data");
           savedSnap.current = { meta: fileD.meta, excl: fileD.excl, dailyGoal: fileD.dailyGoal, dayGoals: fileD.dayGoals, users: fileD.users };
           savedActs.current = new Set(fileD.acts.map(actKey));
           needSplit.current = false;
-          got.push(n ? `${n} quote${n > 1 ? "s" : ""} with new follow-up data` : "follow-up data");
+          got.push(n ? (n > 1 ? _t("{0} quotes with new follow-up data", n) : _t("1 quote with new follow-up data")) : _t("follow-up data"));
         } else {
           const fileR = { quotesRep: d.quotesRep || null, salesRows: d.salesRows || [], salesInfo: d.salesInfo || {} };
           const mine = sigOf(local, "rep") !== savedSig.current.rep;
@@ -5706,19 +6177,19 @@ export default function App() {
           // arquivo sem os Product Groups que este navegador tem: fica "não salvo" para o próximo Save regravar com eles
           savedSig.current.rep = sigOf({ quotesRep: fileR.quotesRep, salesRep: fileR.salesRows.length ? buildSalesIndex(fileR.salesRows, fileR.salesInfo) : null }, "rep") + (m.pgFromLocal ? "|pg" : "");
           if (m.pgFromLocal) console.info(`Quote Follow Up · ${REP_FILE} had no Product Groups for ${m.pgFromLocal} quotes: kept the ones in this browser (Save writes them back)`);
-          got.push("quotes and sales reports");
+          got.push(_t("quotes and sales reports"));
         }
         lastMod.current[kind] = f.lastModified;
       }
       if (got.length) {
-        console.info("Quote Follow Up · loaded changes saved by someone else: " + got.join(", "));
-        say("info", `Someone else saved the data files: ${got.join(" and ")} loaded. Your unsaved changes are still here.`);
+        console.info(_t("Quote Follow Up · loaded changes saved by someone else: ") + got.join(", "));
+        say("info", _t("Someone else saved the data files: {0} loaded. Your unsaved changes are still here.", got.join(_t(" and "))));
         setDf((x) => ({ ...x, openedAt: nowStamp() }));
-      } else if (manual === true) say("ok", "You already have the latest data: nobody saved the data files since you opened or saved them.");
+      } else if (manual === true) say("ok", _t("You already have the latest data: nobody saved the data files since you opened or saved them."));
       setCheckSt({ busy: false, at: nowStamp() });
     } catch (e) {
       console.warn("Quote Follow Up · could not check the data files for changes", e);
-      if (manual === true) say("err", `Could not read the data files: ${(e && e.message) || e}`);
+      if (manual === true) say("err", _t("Could not read the data files: {0}", (e && e.message) || e));
       setCheckSt((x) => ({ ...x, busy: false }));
     } finally {
       pulling.current = false;
@@ -5753,7 +6224,7 @@ export default function App() {
       // "data": vale o que ESTE navegador mudou desde a última leitura; o resto vem do arquivo (mudanças de outra pessoa)
       const m = mergeData(d, local, true, kind === "data" ? savedSnap.current : null);
       await applyData(m);
-      say("info", `${f.name} was saved by someone else since you opened it. Their changes were kept and joined with yours before saving.`);
+      say("info", _t("{0} was saved by someone else since you opened it. Their changes were kept and joined with yours before saving.", f.name));
       return { ...local, ...m, salesRep: m.salesRows.length ? buildSalesIndex(m.salesRows, m.salesInfo) : null };
     } catch (e) {
       console.warn("Quote Follow Up · could not check the data file before saving", e);
@@ -5792,9 +6263,10 @@ export default function App() {
   /* Save: grava o "data" (pequeno) e, só se as cotações/vendas mudaram (importação), o "reports".
      force = grava o "data" mesmo sem mudança (clique em Saved). */
   const saveNow = async (force) => {
+    if (srvRef.current) return srvSave();
     if (!handleRef.current || writing.current) return;
     if (newerFile.current) {
-      say("err", `Saving is blocked: the data files were saved by a newer version of Quote Follow Up (${newerFile.current}). Reload this page (F5).`);
+      say("err", _t("Saving is blocked: the data files were saved by a newer version of Quote Follow Up ({0}). Reload this page (F5).", newerFile.current));
       return;
     }
     const st0 = stateRef.current;
@@ -5821,7 +6293,7 @@ export default function App() {
       const fe = fileErr(e);
       console.error("Quote Follow Up · save failed", e);
       setDf((d) => ({ ...d, st: "err", part: "", err: fe.text }));
-      setDfErr({ kind: "save", title: `Could not save in ${fileName(cur)}`, ...fe });
+      setDfErr({ kind: "save", title: _t("Could not save in {0}", fileName(cur)), ...fe });
     } finally {
       writing.current = false;
     }
@@ -5849,7 +6321,7 @@ export default function App() {
     needSplit.current = !!(r && r.legacy);
     savedSnap.current = dd ? { meta: dd.meta || {}, excl: dd.excl || [], dailyGoal: dd.dailyGoal || 0, dayGoals: dd.dayGoals || {}, users: dd.users || {} } : { meta: {}, excl: [], dailyGoal: 0, dayGoals: {}, users: {} };
     setDf({ st: "on", name: dir.name, openedAt: nowStamp() });
-    if (dd && dd.usersBad) setTimeout(() => say("warn", "The users list in the data file was changed outside the program and could not be read — kept the users this computer knows. Save to write it again."), 1800);
+    if (dd && dd.usersBad) setTimeout(() => say("warn", _t("The users list in the data file was changed outside the program and could not be read — kept the users this computer knows. Save to write it again.")), 1800);
     setDfErr((x) => (newerFile.current && x && x.kind === "save" ? x : null));
     syncOk.current = true;
     if (write) {
@@ -5870,12 +6342,12 @@ export default function App() {
       const fe = fileErr(e);
       console.error("Quote Follow Up · open failed", e);
       setDf((x) => ({ st: x.prev && x.prev !== "opening" ? x.prev : "none", name: x.prev === "on" ? x.name : "" }));
-      setDfErr({ kind: "open", title: `Could not read the data files in ${dir.name}`, ...fe });
+      setDfErr({ kind: "open", title: _t("Could not read the data files in {0}", dir.name), ...fe });
       return null;
     }
     if (!r && !create) {
       setDf((x) => ({ st: x.prev && x.prev !== "opening" ? x.prev : "none", name: x.prev === "on" ? x.name : "" }));
-      setDfErr({ kind: "open", title: `No Quote Follow Up data files in ${dir.name}`, text: `${DATA_FILE} was not found in this folder.`, hint: "Pick the folder that has the data file, or use “Create the data files in a folder…”." });
+      setDfErr({ kind: "open", title: _t("No Quote Follow Up data files in {0}", dir.name), text: _t("{0} was not found in this folder.", DATA_FILE), hint: _t("Pick the folder that has the data file, or use “Create the data files in a folder…”.") });
       return null;
     }
     const m = await syncFrom(dir, r, create);
@@ -5885,11 +6357,11 @@ export default function App() {
     try {
       const dir = await pickFolder();
       const res = await openFolder(dir, true);
-      if (res) say("ok", `Data files ${res.r ? "updated" : "created"} in ${dir.name}: ${DATA_FILE} (follow-ups, notes, history) and ${REP_FILE} (quotes and sales).`);
+      if (res) say("ok", _t("Data files {0} in {1}: {2} (follow-ups, notes, history) and {3} (quotes and sales).", res.r ? "updated" : "created", dir.name, DATA_FILE, REP_FILE));
     } catch (e) {
       if (e && e.name === "AbortError") return;
       setDf((x) => (x.st === "opening" ? { st: "none" } : x));
-      setDfErr({ kind: "open", title: "Could not create the data files", ...fileErr(e) });
+      setDfErr({ kind: "open", title: _t("Could not create the data files"), ...fileErr(e) });
     }
   };
   const connectOpen = async () => {
@@ -5900,52 +6372,336 @@ export default function App() {
         const m = res.m;
         say(
           "ok",
-          `Connected to the folder ${dir.name}${m ? `: ${((m.quotesRep && m.quotesRep.quotes.length) || 0).toLocaleString("pt-BR")} quotes, ${m.acts.length} activities` : ""}.${res.r && res.r.legacy ? ` On the next Save the quotes move to ${REP_FILE} and ${DATA_FILE} becomes small.` : ""} Changes stay in this browser until you click Save (or Ctrl+S).`,
+          _t("Connected to the folder {0}{1}.{2} Changes stay in this browser until you click Save (or Ctrl+S).", dir.name, m ? _t(": {0} quotes, {1} activities", ((m.quotesRep && m.quotesRep.quotes.length) || 0).toLocaleString("pt-BR"), m.acts.length) : "", res.r && res.r.legacy ? _t(" On the next Save the quotes move to {0} and {1} becomes small.", REP_FILE, DATA_FILE) : ""),
         );
       }
     } catch (e) {
       if (e && e.name === "AbortError") return;
       setDf((x) => (x.st === "opening" ? { st: "none" } : x));
-      setDfErr({ kind: "open", title: "Could not open the data folder", ...fileErr(e) });
+      setDfErr({ kind: "open", title: _t("Could not open the data folder"), ...fileErr(e) });
     }
   };
   const reconnect = async () => {
     const dir = handleRef.current;
     if (!dir || dir.kind !== "directory") return connectOpen();
     try {
-      if ((await dir.requestPermission({ mode: "readwrite" })) !== "granted") throw new Error("permission to save in the folder was not given");
-      if (await openFolder(dir, false)) say("ok", `Reconnected to ${dir.name}.`);
+      if ((await dir.requestPermission({ mode: "readwrite" })) !== "granted") throw new Error(_t("permission to save in the folder was not given"));
+      if (await openFolder(dir, false)) say("ok", _t("Reconnected to {0}.", dir.name));
     } catch (e) {
-      say("err", `Could not reconnect: ${(e && e.message) || e}. Use "Open the data folder" to pick it again.`);
+      say("err", _t("Could not reconnect: {0}. Use \"Open the data folder\" to pick it again.", (e && e.message) || e));
     }
   };
   // sem File System Access (Firefox etc.): baixar / carregar o arquivo à mão (tudo num arquivo só)
   const downloadData = () => {
-    const buf = XLSX.write(buildDataWorkbook(stateRef.current), DATA_WRITE);
-    downloadBlob(new Blob([buf], { type: XLSX_TYPE[0].accept && Object.keys(XLSX_TYPE[0].accept)[0] }), `Quote Follow Up data ${today}.xlsx`);
+    const buf = XLSX.write(buildDataWorkbook(srvRef.current ? { ...stateRef.current, users: null } : stateRef.current), DATA_WRITE);
+    downloadBlob(new Blob([buf], { type: XLSX_TYPE[0].accept && Object.keys(XLSX_TYPE[0].accept)[0] }), _t("Quote Follow Up data {0}.xlsx", today));
   };
   const loadDataFile = async (file) => {
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      if (!isDataWorkbook(wb)) throw new Error("not a Quote Follow Up data file");
+      if (!isDataWorkbook(wb)) throw new Error(_t("not a Quote Follow Up data file"));
       const m = mergeData(parseDataWorkbook(wb), stateRef.current);
       await applyData(m);
       skipSave.current = 0;
-      say("ok", `Data file loaded: ${((m.quotesRep && m.quotesRep.quotes.length) || 0).toLocaleString("pt-BR")} quotes.`);
+      say("ok", _t("Data file loaded: {0} quotes.", ((m.quotesRep && m.quotesRep.quotes.length) || 0).toLocaleString("pt-BR")));
     } catch (e) {
-      say("err", `Could not load ${file.name}: ${(e && e.message) || e}`);
+      say("err", _t("Could not load {0}: {1}", file.name, (e && e.message) || e));
     }
+  };
+
+  /* ---------- modo servidor: carregar, gravar e buscar as mudanças dos outros ---------- */
+  // cotações e vendas como estão no banco (guardadas também no cache deste navegador, com a versão)
+  const srvApplyRep = async (p) => {
+    setQuotesRep(p.quotesRep);
+    setSalesRep(p.salesRep);
+    stateRef.current = { ...stateRef.current, quotesRep: p.quotesRep, salesRep: p.salesRep };
+    savedQ.current = new Map(((p.quotesRep && p.quotesRep.quotes) || []).map((q) => [q.id, q]));
+    savedSales.current = p.salesRep ? p.salesRep.rows : null;
+    savedSig.current.rep = sigOf({ quotesRep: p.quotesRep, salesRep: p.salesRep }, "rep");
+    ver.current.rep = p.ver;
+    try {
+      await kv.set(SRV_REPVER, -1);
+      if (p.quotesRep) await kv.set(K.quotes, p.quotesRep);
+      else await kv.del(K.quotes);
+      if (p.salesRep) await kv.set(K.sales, p.salesRep);
+      else await kv.del(K.sales);
+      await kv.set(SRV_REPVER, p.ver);
+    } catch {}
+  };
+  /* follow-ups, histórico, metas e usuários do banco. merge = o que esta página mudou e ainda não foi para o
+     servidor continua (vale o que ESTA página mudou; o resto vem do banco, com as mudanças dos outros) */
+  const srvApplyData = (d, merge) => {
+    const fileD = { meta: d.meta || {}, excl: d.excl || [], acts: d.acts || [], dailyGoal: d.dailyGoal || 0, dayGoals: d.dayGoals || {}, users: d.users || {} };
+    const local = stateRef.current;
+    const mine = merge && sigOf(local, "data") !== savedSig.current.data;
+    const m = mine ? mergeData({ ...fileD, quotesRep: local.quotesRep, salesRows: [] }, local, true, savedSnap.current) : fileD;
+    setMeta(m.meta || {});
+    setExcl(m.excl || []);
+    setActs(m.acts || []);
+    setDailyGoal(m.dailyGoal || 0);
+    setDayGoals(m.dayGoals || {});
+    setUsers(fileD.users);
+    stateRef.current = { ...stateRef.current, meta: m.meta || {}, excl: m.excl || [], acts: m.acts || [], dailyGoal: m.dailyGoal || 0, dayGoals: m.dayGoals || {}, users: fileD.users };
+    savedSnap.current = { meta: fileD.meta, excl: fileD.excl, dailyGoal: fileD.dailyGoal, dayGoals: fileD.dayGoals, users: fileD.users };
+    savedActs.current = new Set(fileD.acts.map(actKey));
+    savedSig.current.data = sigOf(fileD, "data");
+    ver.current.data = d.ver;
+  };
+  const srvFetchNames = async () => {
+    try {
+      setSrvNames(await api("/api/login-names", { timeout: 20000 }));
+    } catch {}
+  };
+  const srvLoad = async () => {
+    const who = sessRef.current;
+    if (!who) return;
+    const merge = srvLoaded.current === who; // entrou de novo (sessão expirou): o que estava pendente continua
+    setDf((x) => ({ ...x, st: "opening", name: SRV_NAME, err: "" }));
+    try {
+      const v = await api("/api/version");
+      const [cq, cs, cv] = await Promise.all([kv.get(K.quotes), kv.get(K.sales), kv.get(SRV_REPVER)]).catch(() => []);
+      const repDirty = merge && sigOf(stateRef.current, "rep") !== savedSig.current.rep;
+      let rep = null;
+      if (!repDirty) {
+        // as cotações do cache servem se são da mesma versão do banco (poupa ~1,5 MB a cada abertura no celular)
+        if (cq && cv === v.rep && (!cs || cs.v === 2)) rep = { ver: v.rep, quotesRep: cq, salesRep: cs || null };
+        else rep = hydrateRep(await api("/api/data?part=rep", { timeout: 180000 }));
+      }
+      const d = await api("/api/data?part=data");
+      if (sessRef.current !== who) return;
+      if (rep) await srvApplyRep(rep);
+      srvApplyData(d, merge);
+      srvLoaded.current = who;
+      setSrvData(true);
+      setDf({ st: "on", name: SRV_NAME, openedAt: nowStamp() });
+    } catch (e) {
+      if (e.status === 401) return srvExpired();
+      if (e.status === 403) {
+        // o Admin tirou o acesso
+        setSrvMe((x) => (x ? { ...x, role: "" } : x));
+        setDf({ st: "on", name: SRV_NAME });
+        return;
+      }
+      console.error("Quote Follow Up · could not load from the server", e);
+      setDf({ st: "err", name: SRV_NAME, err: e.message, load: true });
+    }
+  };
+  const srvSignedIn = (me) => {
+    sessRef.current = me.name;
+    setSrvMe(me);
+    login(me.name);
+  };
+  const srvExpired = () => {
+    sessRef.current = "";
+    setSrvMe(null);
+    setSession("");
+    try {
+      sessionStorage.removeItem("qp_session");
+    } catch {}
+    setDf((x) => ({ ...x, st: "on" }));
+    say("warn", _t("Your session ended: sign in again. What you changed on this page is kept."));
+    srvFetchNames();
+  };
+  // o papel pode mudar enquanto a pessoa usa (o Admin escolheu outra tela, ou deu o acesso agora)
+  const srvMeUpdate = (me) => {
+    if (!me || me.name !== sessRef.current) return;
+    setSrvMe((x) => (x && x.role === me.role ? x : me));
+    if (me.role && srvLoaded.current !== me.name) srvLoad();
+  };
+  const srvStart = async () => {
+    srvRef.current = true;
+    setSrv(true);
+    handleRef.current = { kind: "server", name: SRV_NAME };
+    setDf({ st: "opening", name: SRV_NAME });
+    let me = null;
+    try {
+      me = await api("/api/me");
+    } catch {}
+    await srvFetchNames();
+    if (me && me.name) {
+      srvSignedIn(me);
+      if (me.role) srvLoad();
+      else setDf({ st: "on", name: SRV_NAME });
+    } else {
+      sessRef.current = "";
+      setSession("");
+      try {
+        sessionStorage.removeItem("qp_session");
+      } catch {}
+      setDf({ st: "on", name: SRV_NAME });
+    }
+  };
+  // tela de login: "" = entrou; senão, a mensagem para mostrar
+  const srvLogin = async (name, pwd, create) => {
+    try {
+      const me = await api(create ? "/api/password" : "/api/login", { body: { name, password: pwd } });
+      srvSignedIn(me);
+      if (me.role) srvLoad();
+      return "";
+    } catch (e) {
+      if (e.code === "no-password" || e.code === "has-password") await srvFetchNames();
+      return e.status === 0 ? _t("Could not reach the server: {0}.", e.message) : e.message || _t("Could not sign in.");
+    }
+  };
+  /* Gravar: manda só o que mudou desde a última vez que esta página leu ou gravou no banco. */
+  const srvSave = async () => {
+    if (!srvLoaded.current || srvLoaded.current !== sessRef.current) return;
+    if (writing.current) return; // o efeito de gravação automática chama de novo quando terminar
+    const st0 = stateRef.current;
+    const needD = sigOf(st0, "data") !== savedSig.current.data;
+    const needR = sigOf(st0, "rep") !== savedSig.current.rep;
+    if (!needD && !needR) {
+      setDf((d) => (d.st === "saving" || d.st === "err" ? { ...d, st: "on", err: "" } : d));
+      return;
+    }
+    const sc = scopeRef.current;
+    const ok = (id) => sc.mgr || (sc.ids && sc.ids.has(id));
+    const body = {};
+    const qs = (st0.quotesRep && st0.quotesRep.quotes) || [];
+    if (needD) {
+      const sv = savedSnap.current;
+      const meta = {};
+      for (const id of new Set([...Object.keys(st0.meta || {}), ...Object.keys(sv.meta || {})]))
+        if (ok(id) && stableJson((st0.meta || {})[id] || null) !== stableJson((sv.meta || {})[id] || null)) meta[id] = (st0.meta || {})[id] || null;
+      const e0 = new Set(sv.excl || []),
+        e1 = new Set(st0.excl || []);
+      const add = [...e1].filter((id) => !e0.has(id) && ok(id)),
+        del = [...e0].filter((id) => !e1.has(id) && ok(id));
+      const acts = (st0.acts || []).filter((a) => !savedActs.current.has(actKey(a)) && (REPORT_KINDS.has(a.k) ? sc.mgr : ok(a.id)));
+      if (Object.keys(meta).length) body.meta = meta;
+      if (add.length || del.length) body.excl = { add, del };
+      if (acts.length) body.acts = acts;
+      if (sc.mgr) {
+        if ((st0.dailyGoal || 0) !== (sv.dailyGoal || 0)) body.dailyGoal = st0.dailyGoal || 0;
+        const dg = {};
+        for (const d of new Set([...Object.keys(st0.dayGoals || {}), ...Object.keys(sv.dayGoals || {})])) if ((st0.dayGoals || {})[d] !== (sv.dayGoals || {})[d]) dg[d] = (st0.dayGoals || {})[d] ?? null;
+        if (Object.keys(dg).length) body.dayGoals = dg;
+      }
+    }
+    if (needR && sc.mgr) {
+      const ids = new Set(qs.map((q) => q.id));
+      const qr = st0.quotesRep || {},
+        sr = st0.salesRep;
+      body.rep = {
+        quotes: qs.filter((q) => savedQ.current.get(q.id) !== q).map(({ nn, ...q }) => q),
+        removed: [...savedQ.current.keys()].filter((id) => !ids.has(id)),
+        info: { quoteFile: qr.fileName || "", quoteAt: qr.at || "", fillAt: qr.fillAt || "" },
+      };
+      if (sr && sr.rows !== savedSales.current) {
+        body.rep.sales = sr.rows;
+        body.rep.info.salesFile = sr.fileName || "";
+        body.rep.info.salesAt = sr.at || "";
+      }
+    }
+    writing.current = true;
+    saveGen.current++;
+    setDf((d) => ({ ...d, st: "saving", part: body.rep ? "rep" : "data" }));
+    const before = { ...ver.current };
+    try {
+      if (body.rep) await kv.set(SRV_REPVER, -1).catch(() => {});
+      const r = Object.keys(body).length ? await api("/api/sync", { body, timeout: body.rep ? 300000 : 60000 }) : { data: before.data, prevData: before.data, rep: before.rep, prevRep: before.rep, skipped: [] };
+      // o que foi mandado agora está no banco (as mudanças feitas durante a gravação vão na próxima)
+      if (needD) {
+        savedSnap.current = { meta: st0.meta || {}, excl: st0.excl || [], dailyGoal: st0.dailyGoal || 0, dayGoals: st0.dayGoals || {}, users: savedSnap.current.users };
+        savedActs.current = new Set((st0.acts || []).map(actKey));
+        savedSig.current.data = sigOf(st0, "data");
+      }
+      if (needR) {
+        savedQ.current = new Map(qs.map((q) => [q.id, q]));
+        savedSales.current = st0.salesRep ? st0.salesRep.rows : null;
+        savedSig.current.rep = sigOf(st0, "rep");
+      }
+      // outra pessoa gravou antes de mim: busca já o que ela mudou
+      const othersD = r.prevData !== before.data,
+        othersR = r.prevRep !== before.rep;
+      ver.current = { data: othersD ? -1 : r.data, rep: othersR ? -1 : r.rep };
+      if (body.rep && !othersR) kv.set(SRV_REPVER, r.rep).catch(() => {});
+      srvRetry.current = 0;
+      setDf((d) => ({ ...d, st: "on", part: "", savedAt: nowStamp(), err: "" }));
+      if (r.skipped && r.skipped.length) say("warn", r.skipped.length === 1 ? _t("1 change was not saved: {0} is not in your portfolio.", r.skipped[0]) : _t("{0} changes were not saved: {1}{2} are not in your portfolio.", r.skipped.length, r.skipped.slice(0, 5).join(", "), r.skipped.length > 5 ? "…" : ""));
+      if (othersD || othersR) setTimeout(() => pullRef.current && pullRef.current(false), 30);
+    } catch (e) {
+      console.warn("Quote Follow Up · could not save on the server", e);
+      if (e.status === 401) srvExpired();
+      else {
+        srvRetry.current++;
+        setDf((d) => ({ ...d, st: "err", part: "", err: e.message }));
+        if (e.status === 403 || e.status === 400 || e.status === 413) say("err", _t("Not saved: {0}", e.message));
+      }
+    } finally {
+      writing.current = false;
+    }
+  };
+  /* Buscar o que os outros mudaram: olha as versões do banco; só baixa a parte que mudou. */
+  const srvPull = async (manual) => {
+    if (!sessRef.current) return;
+    if (writing.current || pulling.current) {
+      if (manual === true) say("info", writing.current ? _t("Saving now: the server is checked again right after.") : _t("Already checking the server…"));
+      return;
+    }
+    pulling.current = true;
+    if (manual === true) setCheckSt((x) => ({ ...x, busy: true }));
+    const gen = saveGen.current;
+    const fresh = () => !writing.current && gen === saveGen.current; // ninguém gravou no meio (senão os dados baixados já estão velhos)
+    try {
+      const v = await api("/api/version", { timeout: 20000 });
+      srvMeUpdate(v.me);
+      if (!v.me.role || srvLoaded.current !== sessRef.current) {
+        if (manual === true) say(v.me.role ? "info" : "warn", v.me.role ? _t("Loading…") : _t("The admin has not chosen your screen yet."));
+        setCheckSt({ busy: false, at: nowStamp() });
+        return;
+      }
+      const got = [];
+      const repDirty = sigOf(stateRef.current, "rep") !== savedSig.current.rep;
+      if (v.rep !== ver.current.rep && !repDirty) {
+        const r = await api("/api/data?part=rep", { timeout: 180000 });
+        if (fresh()) {
+          await srvApplyRep(hydrateRep(r));
+          got.push(_t("quotes and sales"));
+        }
+      }
+      if (v.data !== ver.current.data) {
+        const d = await api("/api/data?part=data");
+        if (fresh()) {
+          srvApplyData(d, true);
+          got.push("follow-ups");
+        }
+      }
+      if (got.length) {
+        console.info(_t("Quote Follow Up · loaded changes saved by someone else: ") + got.join(", "));
+        setDf((x) => ({ ...x, openedAt: nowStamp(), ...(x.st === "err" && x.load ? { st: "on", err: "", load: false } : null) }));
+      }
+      if (manual === true) say(got.length ? "info" : "ok", got.length ? _t("Brought the latest changes: {0}.", got.join(_t(" and "))) : _t("You already have the latest data."));
+      setCheckSt({ busy: false, at: nowStamp() });
+    } catch (e) {
+      if (e.status === 401) srvExpired();
+      else if (manual === true) say("err", _t("Could not reach the server: {0}", e.message));
+      setCheckSt((x) => ({ ...x, busy: false }));
+    } finally {
+      pulling.current = false;
+    }
+  };
+  // usuários (Admin): a resposta da API traz a lista nova
+  const srvUsers = (u) => {
+    setUsers(u);
+    stateRef.current = { ...stateRef.current, users: u };
+    savedSnap.current = { ...savedSnap.current, users: u };
   };
 
   /* ---------- carregar: cache do navegador e, se houver, a pasta dos arquivos de dados ---------- */
   useEffect(() => {
     (async () => {
+      if (await detectServer()) {
+        await srvStart();
+        setLoaded(true);
+        return;
+      }
       const [q, s] = await Promise.all([kv.get(K.quotes), kv.get(K.sales)]);
       if (q) setQuotesRep(q);
       if (s && s.v === 2) setSalesRep(s);
       else if (s) {
         await kv.del(K.sales);
-        say("warn", "The Sales Report was saved by an older version: import it again.");
+        say("warn", _t("The Sales Report was saved by an older version: import it again."));
       }
       let h = null;
       try {
@@ -5953,7 +6709,7 @@ export default function App() {
       } catch {}
       if (h && h.kind === "file") {
         // conexão antiga (um arquivo só): agora o programa usa a pasta (dois arquivos)
-        setDf({ st: "ask", name: "the data folder", legacyFile: h.name });
+        setDf({ st: "ask", name: _t("the data folder"), legacyFile: h.name });
       } else if (h && h.queryPermission) {
         handleRef.current = h;
         try {
@@ -5970,7 +6726,7 @@ export default function App() {
   }, []);
   /* Como no pulz: sem gravação automática. As mudanças ficam no navegador (não se perdem) e o botão Save
      mostra quantas ainda não estão nos arquivos; Save (ou Ctrl+S) grava. */
-  const connected = !!handleRef.current && handleRef.current.kind === "directory" && ["on", "err", "saving"].includes(df.st);
+  const connected = !!handleRef.current && (handleRef.current.kind === "directory" || handleRef.current.kind === "server") && ["on", "err", "saving"].includes(df.st);
   const dirtyD = connected && loaded && sigOf(stateRef.current, "data") !== savedSig.current.data;
   const dirtyR = connected && loaded && sigOf(stateRef.current, "rep") !== savedSig.current.rep;
   const unsaved = dirtyD || dirtyR;
@@ -6049,10 +6805,10 @@ export default function App() {
     if (!r.fixed.length) return;
     r.fixed.forEach((id) => repaired.current.add(id));
     setMeta(r.meta);
-    console.info("Quote Follow Up · restored from the Activities History: " + r.fixed.join(", "));
+    console.info(_t("Quote Follow Up · restored from the Activities History: ") + r.fixed.join(", "));
     const n = r.fixed.length;
     // depois do aviso de abertura da pasta, para não ser coberto por ele
-    setTimeout(() => say("info", `${n} quote${n > 1 ? "s had" : " had"} FUP / % Win / follow-up date older than their Activities History (someone saved over them with old data). Restored from the history — click Save to write it.`), 1500);
+    setTimeout(() => say("info", n > 1 ? _t("{0} quotes had FUP / % Win / follow-up date older than their Activities History (someone saved over them with old data). Restored from the history — click Save to write it.", n) : _t("1 quote had FUP / % Win / follow-up date older than its Activities History (someone saved over it with old data). Restored from the history — click Save to write it.")), 1500);
   }, [loaded, meta, acts]);
   // segundos desde o início da gravação (mostrado no botão "Saving…")
   const [saveSecs, setSaveSecs] = useState(0);
@@ -6109,6 +6865,7 @@ export default function App() {
       return "";
     }
   });
+  sessRef.current = session;
   // classificação padrão: OEM para a gerência; o vendedor (externo e interno) começa vendo todas as dele
   const sellerRole = !!session && session !== ADMIN_USER && ["outside", "inside"].includes(((users || {})[session] || {}).role);
   const cls = prefs.cls !== undefined ? prefs.cls : sellerRole ? "" : (clsList.find((c) => norm(c.v) === "oem") || { v: "" }).v;
@@ -6124,7 +6881,21 @@ export default function App() {
   const sellerNames = useMemo(() => [...new Set([...spNameSet, ...qbNameSet, ...handNames])].sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" })), [spNameSet, qbNameSet, handNames]);
   const colOf = (n) => ({ sp: spNameSet.has(n), qb: qbNameSet.has(n) });
   // papel de quem entrou: o Admin usa a tela da gerência; sem papel válido = sem acesso
-  const role = !session ? "" : isAdmin ? "manager" : ROLES[((users || {})[session] || {}).role] ? users[session].role : "";
+  const role = !session
+    ? ""
+    : srv
+    ? srvMe && srvMe.name === session && srvMe.role
+      ? isAdmin || srvMe.role === "admin"
+        ? "manager"
+        : ROLES[srvMe.role]
+        ? srvMe.role
+        : ""
+      : ""
+    : isAdmin
+    ? "manager"
+    : ROLES[((users || {})[session] || {}).role]
+    ? users[session].role
+    : "";
   const lockSeller = role === "outside" || role === "inside" ? session : "";
   const seller = lockSeller
     ? (role === "inside" ? "qb:" : "sp:") + lockSeller
@@ -6163,6 +6934,9 @@ export default function App() {
   const scoped = useMemo(() => scopeQuotes(quotes, { cls, line, who }), [quotes, cls, line, who]);
   // Hoje: todos os follow-ups da pessoa, sem classificação nem linha (um follow-up vencido não some por filtro)
   const scopedToday = useMemo(() => scopeQuotes(quotes, { who }), [quotes, who]);
+  // servidor: o vendedor só grava nas próprias cotações (o servidor confere também)
+  const myIds = useMemo(() => (role === "manager" ? null : new Set(scopedToday.map((q) => q.id))), [role, scopedToday]);
+  scopeRef.current = { mgr: role === "manager", ids: myIds };
   // Sales Report no recorte da tela: booked por dia só do vendedor e da linha escolhidos
   const salesView = useMemo(() => salesForLine(salesForSeller(salesRep, who), line), [salesRep, who, line]);
   // período como no pulz: ano fiscal inteiro ou um mês dele (padrão: o ano fiscal atual)
@@ -6316,16 +7090,22 @@ export default function App() {
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
       if (isDataWorkbook(wb)) {
+        if (srvRef.current) {
+          say("warn", _t("{0} is a data file of the folder version. On the server the data is in the database: import the Quote Report or the Sales Report.", file.name));
+          return;
+        }
         await loadDataFile(file);
         return;
       }
+      // servidor: o cache das cotações deixa de valer até a importação chegar ao banco
+      if (srvRef.current) await kv.set(SRV_REPVER, -1).catch(() => {});
       const isQ = isQuoteWorkbook(wb);
       const kind = isQ ? "quote" : "sales";
       const at = nowStamp();
-      const note = kind !== want ? ` (this file looks like the ${kind === "quote" ? "Quote" : "Sales"} Report, so it went there)` : "";
+      const note = kind !== want ? _t(" (this file looks like the {0} Report, so it went there)", kind === "quote" ? _t("Quote") : _t("Sales")) : "";
       if (kind === "quote") {
         const r = parseQuoteWorkbook(wb);
-        if (!r || !r.quotes.length) throw new Error("No quote found. The file needs the columns Quote ID, Customer and Create Date.");
+        if (!r || !r.quotes.length) throw new Error(_t("No quote found. The file needs the columns Quote ID, Customer and Create Date."));
         /* relatório mais velho que o guardado (a última cotação dele é anterior à última guardada): só completa
            Product Groups e linhas que faltam; não muda situação nem valores (senão uma ganha voltaria a Open) */
         if (quotesRep && quotesRep.maxD && r.maxD && r.maxD < quotesRep.maxD) {
@@ -6335,7 +7115,7 @@ export default function App() {
           await kv.set(K.quotes, rep);
           say(
             "ok",
-            `Older Quote Report (until ${fmtDate(r.maxD)}; the stored quotes go until ${fmtDate(quotesRep.maxD)}): used only to fill what was missing. ${f.filled.toLocaleString("pt-BR")} quote${f.filled === 1 ? "" : "s"} got the Product Groups / lines. Status, values and orders did not change${f.outside ? ` · ${f.outside.toLocaleString("pt-BR")} quotes of the file are not stored and were left out` : ""}.`,
+            _t("Older Quote Report (until {0}; the stored quotes go until {1}): used only to fill what was missing. {2} {3} got the Product Groups / lines. Status, values and orders did not change{4}.", fmtDate(r.maxD), fmtDate(quotesRep.maxD), f.filled.toLocaleString("pt-BR"), f.filled === 1 ? _t("quote") : _t("quotes"), f.outside ? _t(" · {0} quotes of the file are not stored and were left out", f.outside.toLocaleString("pt-BR")) : ""),
           );
           return;
         }
@@ -6346,17 +7126,17 @@ export default function App() {
         await kv.set(K.quotes, rep);
         say(
           r.hasLine ? "ok" : "warn",
-          `Quote Report: ${r.quotes.length.toLocaleString("pt-BR")} quotes read · ${m.added.toLocaleString("pt-BR")} new · ${m.updated.toLocaleString("pt-BR")} changed · ${m.quotes.length.toLocaleString("pt-BR")} stored${note}.${r.skipped ? ` ${r.skipped.toLocaleString("pt-BR")} item line${r.skipped === 1 ? "" : "s"} left out (Product Group outside PT / CP / MH: ${money(r.skippedAmt)})${m.removed ? `, ${m.removed} quote${m.removed === 1 ? "" : "s"} removed` : ""}.` : ""}${r.hasLine ? "" : " No Product Group column: the PT / CP / MH filter will not find these quotes."}`,
+          _t("Quote Report: {0} quotes read · {1} new · {2} changed · {3} stored{4}.{5}{6}", r.quotes.length.toLocaleString("pt-BR"), m.added.toLocaleString("pt-BR"), m.updated.toLocaleString("pt-BR"), m.quotes.length.toLocaleString("pt-BR"), note, r.skipped ? _t(" {0} item {1} left out (Product Group outside PT / CP / MH: {2}){3}.", r.skipped.toLocaleString("pt-BR"), r.skipped === 1 ? _t("line") : _t("lines"), money(r.skippedAmt), m.removed ? _t(", {0} {1} removed", m.removed, m.removed === 1 ? _t("quote") : _t("quotes")) : "") : "", r.hasLine ? "" : _t(" No Product Group column: the PT / CP / MH filter will not find these quotes.")),
         );
       } else {
         let r = parseSalesWorkbook(wb);
-        if (!r || !r.booked) throw new Error("No booked line found. The file needs a date column, a customer column and an amount.");
+        if (!r || !r.booked) throw new Error(_t("No booked line found. The file needs a date column, a customer column and an amount."));
         /* relatório mais velho que o guardado: não substitui o período (as vendas guardadas são mais novas);
            só entram os dias anteriores ao que já está guardado */
         if (salesRep && salesRep.maxD && r.maxD < salesRep.maxD) {
           const before = r.rows.filter((x) => x.d < salesRep.minD);
           if (!before.length) {
-            say("warn", `Older Sales Report (until ${fmtDate(r.maxD)}; the stored sales go until ${fmtDate(salesRep.maxD)}): nothing was changed — the stored sales are newer.`);
+            say("warn", _t("Older Sales Report (until {0}; the stored sales go until {1}): nothing was changed — the stored sales are newer.", fmtDate(r.maxD), fmtDate(salesRep.maxD)));
             return;
           }
           const ds = before.map((x) => x.d).sort();
@@ -6368,11 +7148,11 @@ export default function App() {
         await kv.set(K.sales, rep);
         say(
           r.hasSO ? "ok" : "warn",
-          `Sales Report: ${r.booked.toLocaleString("pt-BR")} booked lines from ${fmtDate(r.minD)} to ${fmtDate(r.maxD)} (this period was replaced; the rest of the history stays)${note}.${r.hasSO ? "" : " No Sales Id column: Sold will use the Sales Amt of the quotes."}`,
+          _t("Sales Report: {0} booked lines from {1} to {2} (this period was replaced; the rest of the history stays){3}.{4}", r.booked.toLocaleString("pt-BR"), fmtDate(r.minD), fmtDate(r.maxD), note, r.hasSO ? "" : _t(" No Sales Id column: Sold will use the Sales Amt of the quotes.")),
         );
       }
     } catch (e) {
-      say("err", `Could not read ${file.name}: ${e.message || e}`);
+      say("err", _t("Could not read {0}: {1}", file.name, e.message || e));
     } finally {
       setBusy("");
     }
@@ -6385,16 +7165,16 @@ export default function App() {
   const restore = async (file) => {
     try {
       const j = JSON.parse(await file.text());
-      if (!j || (j.app !== "quote-follow-up" && j.app !== "quote-pipeline")) throw new Error("not a Quote Follow Up backup");
+      if (!j || (j.app !== "quote-follow-up" && j.app !== "quote-pipeline")) throw new Error(_t("not a Quote Follow Up backup"));
       const m = mergeData({ meta: j.meta, dailyGoal: j.dailyGoal, dayGoals: j.dayGoals, excl: j.excl, acts: j.acts }, stateRef.current);
       setMeta(m.meta);
       setDailyGoal(m.dailyGoal);
       setDayGoals(m.dayGoals);
       setExcl(m.excl);
       setActs(m.acts);
-      say("ok", `Backup restored: ${Object.keys(j.meta || {}).length} quotes with FUP / % Win.`);
+      say("ok", _t("Backup restored: {0} quotes with FUP / % Win.", Object.keys(j.meta || {}).length));
     } catch (e) {
-      say("err", `Could not restore: ${e.message || e}`);
+      say("err", _t("Could not restore: {0}", e.message || e));
     }
   };
 
@@ -6405,7 +7185,24 @@ export default function App() {
       sessionStorage.setItem("qp_session", name);
     } catch {}
   };
-  const logout = () => {
+  const logout = async () => {
+    if (srvRef.current) {
+      // manda o que falta antes de sair; se não der (sem internet), fica guardado para quando a mesma pessoa entrar de novo
+      try {
+        await saveNow();
+      } catch {}
+      const st = stateRef.current;
+      const left = sigOf(st, "data") !== savedSig.current.data || sigOf(st, "rep") !== savedSig.current.rep;
+      if (left) say("warn", _t("Some changes could not be sent to the server yet: they go when you sign in again on this page."));
+      else {
+        srvLoaded.current = "";
+        setSrvData(false);
+      }
+      api("/api/logout", { body: {} }).catch(() => {});
+      sessRef.current = "";
+      setSrvMe(null);
+      srvFetchNames();
+    }
     setSession("");
     setOpenQ("");
     try {
@@ -6427,20 +7224,55 @@ export default function App() {
     login(name);
   };
   const resetPassword = (name) => {
+    if (srvRef.current) {
+      api("/api/users/reset", { body: { name } })
+        .then((r) => {
+          srvUsers(r.users);
+          say("ok", _t("Password of {0} reset: a new one is created at the next sign-in (and {1} is signed out on every device).", name, name));
+        })
+        .catch((e) => say("err", _t("Could not reset the password of {0}: {1}", name, e.message)));
+      return;
+    }
     pendingSave.current = true;
     setUsers((u) => ({ ...u, [name]: { ...((u || {})[name] || {}), role: keepRole(name, u), salt: "", hash: "", at: nowStamp() } }));
-    say("ok", `Password of ${name} reset: a new one is created at the next sign-in.`);
+    say("ok", _t("Password of {0} reset: a new one is created at the next sign-in.", name));
   };
   // Admin escolhe a tela de alguém (grava logo, como as senhas; "at" novo = vale a escolha mais recente)
   const setRole = (name, r) => {
+    if (srvRef.current) {
+      api("/api/users/role", { body: { name, role: ROLES[r] ? r : "" } })
+        .then((x) => {
+          srvUsers(x.users);
+          say("ok", ROLES[r] ? _t("{0} now sees the {1} screen.", name, ROLES[r].label) : _t("{0} has no access now.", name));
+        })
+        .catch((e) => say("err", _t("Could not change the screen of {0}: {1}", name, e.message)));
+      return;
+    }
     pendingSave.current = true;
     setUsers((u) => ({ ...u, [name]: { salt: "", hash: "", ...((u || {})[name] || {}), role: ROLES[r] ? r : "", at: nowStamp() } }));
-    say("ok", ROLES[r] ? `${name} now sees the ${ROLES[r].label} screen.` : `${name} has no access now.`);
+    say("ok", ROLES[r] ? _t("{0} now sees the {1} screen.", name, ROLES[r].label) : _t("{0} has no access now.", name));
   };
   const addUser = (name) => setRole(name, "manager");
   // precisa entrar: ninguém logado, ou quem entrou não existe mais (nem nos relatórios nem acrescentado pelo Admin)
-  const needLogin = !session || (!isAdmin && sellerNames.length > 0 && !sellerNames.includes(session));
+  const needLogin = !session || (!srv && !isAdmin && sellerNames.length > 0 && !sellerNames.includes(session));
   const noAccess = !needLogin && !role;
+
+  /* servidor: cada mudança vai sozinha ~1 s depois (sem botão Save); depois de um erro, tenta de novo com
+     espera crescente (5 s, 10 s, 20 s… até 1 min) */
+  useEffect(() => {
+    if (!srv || !srvData || !session || df.st === "saving" || df.st === "opening") return;
+    const st = stateRef.current;
+    if (sigOf(st, "data") === savedSig.current.data && sigOf(st, "rep") === savedSig.current.rep) return;
+    const wait = df.st === "err" ? Math.min(60000, 5000 * 2 ** Math.min(4, srvRetry.current - 1)) : SRV_SAVE_DELAY;
+    const t = setTimeout(() => saveNow(), wait);
+    return () => clearTimeout(t);
+  }, [srv, srvData, session, meta, acts, excl, dailyGoal, dayGoals, quotesRep, salesRep, df.st, df.savedAt]);
+  // servidor: olha as versões a cada 20 s (só com a página visível)
+  useEffect(() => {
+    if (!srv) return;
+    const iv = setInterval(() => document.visibilityState === "visible" && pullRef.current && pullRef.current(false), SRV_PULL_EVERY);
+    return () => clearInterval(iv);
+  }, [srv]);
 
   /* abas: cada papel tem as suas (ROLE_TABS); a aba escolhida fica guardada por papel */
   const tabs = ROLE_TABS[role] || [];
@@ -6451,45 +7283,65 @@ export default function App() {
   const [showFilters, setShowFilters] = useState(false); // celular: filtros recolhidos atrás de um botão
   // celular: a página precisa da meta viewport para não abrir "encolhida"
   useEffect(() => {
-    if (document.querySelector('meta[name="viewport"]')) return;
-    const m = document.createElement("meta");
-    m.name = "viewport";
-    m.content = "width=device-width, initial-scale=1, viewport-fit=cover";
-    document.head.appendChild(m);
+    const add = (tag, attrs) => {
+      const sel = tag + Object.entries(attrs).slice(0, 1).map(([k, v]) => `[${k}="${v}"]`).join("");
+      if (document.querySelector(sel)) return;
+      const e = document.createElement(tag);
+      Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+      document.head.appendChild(e);
+    };
+    add("meta", { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" });
+    add("meta", { name: "theme-color", content: X.bg });
+    add("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
+    add("meta", { name: "mobile-web-app-capable", content: "yes" });
+    add("meta", { name: "apple-mobile-web-app-title", content: _t("Quote Follow Up") });
   }, []);
+  // servidor: dá para instalar na tela inicial do celular (ícone próprio, abre em tela cheia, sem a barra do navegador)
+  useEffect(() => {
+    if (!srv || document.querySelector('link[rel="manifest"]')) return;
+    [
+      ["manifest", "/manifest.webmanifest"],
+      ["apple-touch-icon", "/apple-touch-icon.png"],
+      ["icon", "/icon-192.png"],
+    ].forEach(([rel, href]) => {
+      const l = document.createElement("link");
+      l.rel = rel;
+      l.href = href;
+      document.head.appendChild(l);
+    });
+  }, [srv]);
   const repInfo = (r, kind) =>
-    r ? `${kind === "q" ? r.quotes.length.toLocaleString("pt-BR") + " quotes stored" : r.rows.length.toLocaleString("pt-BR") + " booked rows stored"} · ${fmtDate(r.minD)}–${fmtDate(r.maxD)} · last file ${r.fileName || "—"}${r.at ? " imported " + fmtStamp(r.at) : ""}` : "";
+    r ? _t("{0} · {1}–{2} · last file {3}{4}", kind === "q" ? r.quotes.length.toLocaleString("pt-BR") + _t(" quotes stored") : r.rows.length.toLocaleString("pt-BR") + _t(" booked rows stored"), fmtDate(r.minD), fmtDate(r.maxD), r.fileName || "—", r.at ? _t(" imported ") + fmtStamp(r.at) : "") : "";
   const selS = { ...inp, background: "#FEF6EA", borderColor: "#E9C48A", color: "#8A5A12", fontWeight: 600, maxWidth: 230 };
 
   /* ---------- botão Save (ao lado das abas) ---------- */
   const saveBtn = (() => {
     const base = { ...btn, height: mob ? 38 : 40, padding: mob ? "0 11px" : "0 14px", fontSize: 13, fontWeight: 700, borderRadius: 11 };
+    if (srv) return null; // servidor: grava sozinho
     if (!FSA)
       return (
-        <button onClick={downloadData} title="This browser cannot keep a file connected: download the data file" style={base}>
-          <Save size={16} /> Save
-        </button>
+        <button onClick={downloadData} title={_t("This browser cannot keep a file connected: download the data file")} style={base}>
+          <Save size={16} />{" "}{_t("Save")}</button>
       );
     if (!connected && df.st !== "saving")
       return (
-        <button onClick={df.st === "ask" ? reconnect : connectNew} title={df.st === "ask" ? "Reconnect the data folder first" : "No data folder connected: choose a folder to create the data files (or open one from the ⋯ menu)"} style={base}>
-          <Save size={16} /> Save
-        </button>
+        <button onClick={df.st === "ask" ? reconnect : connectNew} title={df.st === "ask" ? _t("Reconnect the data folder first") : _t("No data folder connected: choose a folder to create the data files (or open one from the ⋯ menu)")} style={base}>
+          <Save size={16} />{" "}{_t("Save")}</button>
       );
     if (df.st === "saving")
       return (
-        <button disabled title={df.part === "rep" ? `Writing ${REP_FILE} (quotes and sales). It is big: on the network drive this can take a while.` : `Writing ${DATA_FILE}.`} style={{ ...base, cursor: "wait", color: X.sub, background: "#EEF2F5" }}>
-          <Save size={16} /> {df.part === "rep" ? "Saving quotes…" : "Saving…"} {saveSecs}s
+        <button disabled title={df.part === "rep" ? _t("Writing {0} (quotes and sales). It is big: on the network drive this can take a while.", REP_FILE) : _t("Writing {0}.", DATA_FILE)} style={{ ...base, cursor: "wait", color: X.sub, background: "#EEF2F5" }}>
+          <Save size={16} /> {df.part === "rep" ? _t("Saving quotes…") : _t("Saving…")} {saveSecs}s
         </button>
       );
     const hot = unsaved || df.st === "err";
     return (
       <button
         onClick={() => saveNow(!hot)}
-        title={hot ? `Write the changes (Ctrl+S)${dirtyR ? ` · the quotes and sales changed too (${REP_FILE}, bigger: takes longer)` : ""}` : `Everything is saved in the folder ${df.name} · click (or Ctrl+S) to save again`}
+        title={hot ? _t("Write the changes (Ctrl+S){0}", dirtyR ? _t(" · the quotes and sales changed too ({0}, bigger: takes longer)", REP_FILE) : "") : _t("Everything is saved in the folder {0} · click (or Ctrl+S) to save again", df.name)}
         style={hot ? { ...base, background: X.teal, borderColor: X.teal, color: "#fff", boxShadow: "0 2px 6px rgba(31,154,132,.3)" } : { ...base, color: X.tealDk, borderColor: "#BFE3D9" }}
       >
-        <Save size={16} /> {hot ? "Save" : "Saved"}
+        <Save size={16} /> {hot ? _t("Save") : _t("Saved")}
         {unsavedN > 0 && <span style={{ fontSize: 11, fontWeight: 800, background: "#fff", color: X.tealDk, padding: "1px 7px", borderRadius: 999 }}>{unsavedN.toLocaleString("pt-BR")}</span>}
       </button>
     );
@@ -6497,60 +7349,85 @@ export default function App() {
   /* ---------- chip do arquivo de dados ---------- */
   const dfChip = (() => {
     const base = { display: "inline-flex", alignItems: "center", gap: 7, height: 36, padding: "0 12px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", border: "1px solid" };
+    if (srv) {
+      if (df.st === "opening")
+        return (
+          <span style={{ ...base, cursor: "wait", background: "#EEF2F5", borderColor: X.line, color: X.sub }}>
+            <Cloud size={15} />{" "}{_t("Loading from the server…")}</span>
+        );
+      if (df.st === "err")
+        return (
+          <span
+            onClick={() => (df.load ? pullIfChanged(true) : saveNow())}
+            title={`${df.err}. ${df.load ? _t("Click to try again.") : _t("The changes are kept on this page and sent again by themselves. Click to try now.")}`}
+            style={{ ...base, background: X.redSoft, borderColor: "#F3B4B4", color: X.redDk }}
+          >
+            <CloudOff size={15} /> {df.load ? _t("Server unavailable · try again") : _t("Not saved yet · trying again")}
+          </span>
+        );
+      if (df.st === "saving" || unsaved)
+        return (
+          <span title={df.part === "rep" ? _t("Sending the imported reports to the server…") : _t("Sending the changes to the server…")} style={{ ...base, cursor: "default", background: "#EEF2F5", borderColor: X.line, color: X.sub }}>
+            <RefreshCw size={14} className="qp-spin" /> {df.part === "rep" ? _t("Saving the reports… {0}s", saveSecs) : _t("Saving…")}
+          </span>
+        );
+      return (
+        <span title={_t("Everything is saved on the server. What the other people change shows up here by itself.")} style={{ ...base, cursor: "default", background: X.tealSoft, borderColor: "#BFE3D9", color: X.tealDk }}>
+          <Cloud size={15} />{" "}{_t("Saved")}{" "}<span style={{ fontWeight: 500, color: X.sub }}>{df.savedAt ? `· ${df.savedAt.slice(11, 16)}` : _t("· online")}</span>
+        </span>
+      );
+    }
     if (df.st === "opening")
       return (
-        <span title="Reading the data file and joining it with this browser. A big file (or a network drive) can take a few seconds." style={{ ...base, cursor: "wait", background: "#EEF2F5", borderColor: X.line, color: X.sub }}>
-          <Database size={15} /> Opening {df.name}…
+        <span title={_t("Reading the data file and joining it with this browser. A big file (or a network drive) can take a few seconds.")} style={{ ...base, cursor: "wait", background: "#EEF2F5", borderColor: X.line, color: X.sub }}>
+          <Database size={15} />{" "}{_t("Opening")}{" "}{df.name}…
         </span>
       );
     if (df.st === "saving")
       return (
-        <span title="Writing the data files. On a network drive this can take a while." style={{ ...base, cursor: "wait", background: "#EEF2F5", borderColor: X.line, color: X.sub }}>
-          <Database size={15} /> {df.name} · saving {df.part === "rep" ? "quotes and sales" : "follow-ups"}…
+        <span title={_t("Writing the data files. On a network drive this can take a while.")} style={{ ...base, cursor: "wait", background: "#EEF2F5", borderColor: X.line, color: X.sub }}>
+          <Database size={15} /> {df.name}{" "}{_t("· saving")}{" "}{df.part === "rep" ? _t("quotes and sales") : _t("follow-ups")}…
         </span>
       );
     if (df.st === "on" && unsaved)
       return (
-        <span ref={unsavedPop.anchor} onClick={unsavedPop.toggle} title={`Click to see what changed. The changes are kept in this browser; Save (or Ctrl+S) writes them in the folder ${df.name}${dirtyR ? ` (including ${REP_FILE}: quotes and sales)` : ""}`} style={{ ...base, background: "#FEF0C7", borderColor: "#E9C48A", color: "#8A5A12" }}>
+        <span ref={unsavedPop.anchor} onClick={unsavedPop.toggle} title={_t("Click to see what changed. The changes are kept in this browser; Save (or Ctrl+S) writes them in the folder {0}{1}", df.name, dirtyR ? _t(" (including {0}: quotes and sales)", REP_FILE) : "")} style={{ ...base, background: "#FEF0C7", borderColor: "#E9C48A", color: "#8A5A12" }}>
           <Database size={15} /> {df.name}{" "}
           <span style={{ fontWeight: 500 }}>
-            · {unsavedN ? `${unsavedN.toLocaleString("pt-BR")} unsaved change${unsavedN === 1 ? "" : "s"}` : needSplit.current ? "click Save to split into 2 files" : dirtyD ? "history only, not saved" : dirtyR ? "imported reports not saved" : "not saved"}
-            {dirtyR && (unsavedN || dirtyD) && !needSplit.current ? " + reports" : ""}
+            · {unsavedN ? _t("{0} unsaved {1}", unsavedN.toLocaleString("pt-BR"), unsavedN === 1 ? _t("change") : _t("changes")) : needSplit.current ? _t("click Save to split into 2 files") : dirtyD ? _t("history only, not saved") : dirtyR ? _t("imported reports not saved") : _t("not saved")}
+            {dirtyR && (unsavedN || dirtyD) && !needSplit.current ? _t(" + reports") : ""}
           </span>
         </span>
       );
     if (df.st === "on")
       return (
-        <span title={`Data folder ${df.name}: ${DATA_FILE} and ${REP_FILE} · everything is saved`} style={{ ...base, cursor: "default", background: X.tealSoft, borderColor: "#BFE3D9", color: X.tealDk }}>
-          <Database size={15} /> {df.name} <span style={{ fontWeight: 500, color: X.sub }}>{df.savedAt ? `· saved ${df.savedAt.slice(11, 16)}` : df.openedAt ? `· opened ${df.openedAt.slice(11, 16)}` : ""}</span>
+        <span title={_t("Data folder {0}: {1} and {2} · everything is saved", df.name, DATA_FILE, REP_FILE)} style={{ ...base, cursor: "default", background: X.tealSoft, borderColor: "#BFE3D9", color: X.tealDk }}>
+          <Database size={15} /> {df.name} <span style={{ fontWeight: 500, color: X.sub }}>{df.savedAt ? _t("· saved {0}", df.savedAt.slice(11, 16)) : df.openedAt ? _t("· opened {0}", df.openedAt.slice(11, 16)) : ""}</span>
         </span>
       );
     if (df.st === "err")
       return (
-        <span onClick={() => saveNow()} title={`Could not save in ${df.name}: ${df.err}. The changes are kept in this browser. Click to try again.`} style={{ ...base, background: X.redSoft, borderColor: "#F3B4B4", color: X.redDk }}>
-          <AlertTriangle size={15} /> Not saved · {df.name} · click to try again
-        </span>
+        <span onClick={() => saveNow()} title={_t("Could not save in {0}: {1}. The changes are kept in this browser. Click to try again.", df.name, df.err)} style={{ ...base, background: X.redSoft, borderColor: "#F3B4B4", color: X.redDk }}>
+          <AlertTriangle size={15} />{" "}{_t("Not saved ·")}{" "}{df.name}{" "}{_t("· click to try again")}</span>
       );
     if (df.st === "ask")
       return (
         <span
           onClick={reconnect}
-          title={df.legacyFile ? `The data is now kept in two files in a folder. Click and pick the folder where ${df.legacyFile} is.` : "The browser asks for permission again after the page is reopened. Click to reconnect the data folder."}
+          title={df.legacyFile ? _t("The data is now kept in two files in a folder. Click and pick the folder where {0} is.", df.legacyFile) : _t("The browser asks for permission again after the page is reopened. Click to reconnect the data folder.")}
           style={{ ...base, background: "#FEF0C7", borderColor: "#E9C48A", color: "#8A5A12" }}
         >
-          <Link2 size={15} /> {df.legacyFile ? "Choose the data folder" : `Reconnect ${df.name || "the data folder"}`}
+          <Link2 size={15} /> {df.legacyFile ? _t("Choose the data folder") : _t("Reconnect {0}", df.name || _t("the data folder"))}
         </span>
       );
     if (df.st === "nofsa")
       return (
-        <span onClick={downloadData} title="This browser cannot keep a file connected (use Chrome or Edge). Click to download the data file; load it again from the ⋯ menu." style={{ ...base, background: "#fff", borderColor: X.line, color: X.sub }}>
-          <Download size={15} /> Download data file
-        </span>
+        <span onClick={downloadData} title={_t("This browser cannot keep a file connected (use Chrome or Edge). Click to download the data file; load it again from the ⋯ menu.")} style={{ ...base, background: "#fff", borderColor: X.line, color: X.sub }}>
+          <Download size={15} />{" "}{_t("Download data file")}</span>
       );
     return (
-      <span onClick={connectNew} title="The data is only in this browser: clearing the cache erases it. Click to create an Excel data file (or open one from the ⋯ menu)." style={{ ...base, background: "#FEF0C7", borderColor: "#E9C48A", color: "#8A5A12" }}>
-        <AlertTriangle size={15} /> No data file · create one
-      </span>
+      <span onClick={connectNew} title={_t("The data is only in this browser: clearing the cache erases it. Click to create an Excel data file (or open one from the ⋯ menu).")} style={{ ...base, background: "#FEF0C7", borderColor: "#E9C48A", color: "#8A5A12" }}>
+        <AlertTriangle size={15} />{" "}{_t("No data file · create one")}</span>
     );
   })();
 
@@ -6580,13 +7457,23 @@ export default function App() {
   );
   const css = <style>{GLOBAL_CSS}</style>;
 
+  if (!loaded)
+    return (
+      <>
+        {css}
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: X.sub, fontSize: 13, gap: 8 }}>
+          <RefreshCw size={16} className="qp-spin" />{" "}{_t("Loading…")}</div>
+      </>
+    );
   if (needLogin)
     return (
       <>
         {css}
         <LoginScreen
-          names={sellerNames}
-          users={users || {}}
+          names={srv ? srvNames.names : sellerNames}
+          users={srv ? srvNames.users : users || {}}
+          srv={srv}
+          srvLogin={srvLogin}
           connected={connected}
           dfName={df.name}
           dfSt={df.st}
@@ -6610,8 +7497,8 @@ export default function App() {
     );
 
   const R = ROLES[role];
-  const filtersTxt = `${seller ? seller.slice(3) : "All salespeople"} · ${cls || "All classifications"} · ${line ? "line " + line : "all lines"}`;
-  const showPeriod = ["portfolio", "mine", "analysis", "sellers"].includes(tab);
+  const filtersTxt = `${seller ? seller.slice(3) : _t("All salespeople")} · ${cls || _t("All classifications")} · ${line ? _t("line ") + line : _t("all lines")}`;
+  const showPeriod = ["portfolio", "analysis", "sellers", "overview"].includes(tab);
   const canFupReport = role === "inside" || role === "manager";
   const nFilters = [cls, line, !lockSeller && seller].filter(Boolean).length;
 
@@ -6619,11 +7506,11 @@ export default function App() {
   const fLbl = { fontSize: 12, color: X.sub, fontWeight: 600 };
   const periodOpts = (
     <>
-    <option value="all">All periods</option>
+    <option value="all">{_t("All periods")}</option>
     {pGroups.map((g) => (
       <optgroup key={g.y} label={`${g.label} · ${g.range}`}>
         <option value={"fy:" + g.y}>
-          {g.label} · {g.range} (whole year){g.current ? " · current" : ""}
+          {g.label} · {g.range}{" "}{_t("(whole year)")}{g.current ? _t(" · current") : ""}
         </option>
         {g.months.map((m) => (
           <option key={m} value={"m:" + m}>
@@ -6636,7 +7523,7 @@ export default function App() {
     </>
   );
   const periodSel = showPeriod && (
-    <div style={{ position: "relative", display: "flex", alignItems: "center", minWidth: 0, ...(mob ? { flex: 1 } : null) }} title="Period: all, a whole fiscal year or one month">
+    <div style={{ position: "relative", display: "flex", alignItems: "center", minWidth: 0, ...(mob ? { flex: 1 } : null) }} title={_t("Period: all, a whole fiscal year or one month")}>
       <CalendarDays size={15} color="#8A5A12" style={{ position: "absolute", left: 11, pointerEvents: "none" }} />
       <select value={period} onChange={(e) => setPref("period", e.target.value)} style={{ ...selS, maxWidth: "none", minWidth: mob ? 0 : 250, width: mob ? "100%" : undefined, paddingLeft: 34, height: mob ? 40 : 36 }}>
         {periodOpts}
@@ -6644,10 +7531,8 @@ export default function App() {
     </div>
   );
   const clsSel = clsList.length > 0 && (
-    <label style={{ display: "flex", flexDirection: mob ? "column" : "row", alignItems: mob ? "stretch" : "center", gap: mob ? 5 : 7, ...fLbl }}>
-      Classification
-      <select value={cls} onChange={(e) => setPref("cls", e.target.value)} style={{ ...selS, ...(mob ? { maxWidth: "none", width: "100%", height: 40 } : null) }}>
-        <option value="">All</option>
+    <label style={{ display: "flex", flexDirection: mob ? "column" : "row", alignItems: mob ? "stretch" : "center", gap: mob ? 5 : 7, ...fLbl }}>{_t("Classification")}<select value={cls} onChange={(e) => setPref("cls", e.target.value)} style={{ ...selS, ...(mob ? { maxWidth: "none", width: "100%", height: 40 } : null) }}>
+        <option value="">{_t("All")}</option>
         {clsList.map((o) => (
           <option key={o.v} value={o.v}>
             {o.v} ({o.n.toLocaleString("pt-BR")})
@@ -6657,9 +7542,9 @@ export default function App() {
     </label>
   );
   const lineSeg = (
-    <div title="Product line (Product Group): quoted, open, lost, sold and booked values only count the line" style={{ display: "flex", flexDirection: mob ? "column" : "row", alignItems: mob ? "stretch" : "center", gap: mob ? 5 : 6, ...fLbl }}>
+    <div title={_t("Product line (Product Group): quoted, open, lost, sold and booked values only count the line")} style={{ display: "flex", flexDirection: mob ? "column" : "row", alignItems: mob ? "stretch" : "center", gap: mob ? 5 : 6, ...fLbl }}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-        <Layers size={14} /> Line{mob ? "" : ":"}
+        <Layers size={14} />{" "}{_t("Line")}{mob ? "" : ":"}
       </span>
       <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 9, border: `1px solid ${line ? "#E9C48A" : X.line}`, background: line ? "#FFFBEB" : "#fff" }}>
         {["", ...ALL_LINES].map((v) => {
@@ -6670,7 +7555,7 @@ export default function App() {
               onClick={() => setPref("line", v)}
               style={{ flex: mob ? 1 : "none", border: "none", borderRadius: 7, padding: mob ? "9px 11px" : "5px 11px", fontSize: 12, fontWeight: on ? 700 : 500, cursor: "pointer", background: on ? (v ? "#FDE9CF" : X.tealSoft) : "transparent", color: on ? (v ? "#8A5A12" : X.tealDk) : X.sub }}
             >
-              {v || "All"}
+              {v || _t("All")}
             </button>
           );
         })}
@@ -6679,32 +7564,31 @@ export default function App() {
   );
   const noLineTag = line && noLine > 0 && (
     <span
-      title={`These quotes were stored by an older version of the program (or the Quote Report had no Product Group column), so the program does not know their line. Import the Quote Report that has them again: the lines are filled in and nothing else changes.\n\n${noLineList
+      title={_t("These quotes were stored by an older version of the program (or the Quote Report had no Product Group column), so the program does not know their line. Import the Quote Report that has them again: the lines are filled in and nothing else changes.\n\n{0}{1}", noLineList
         .slice(0, 12)
-        .map((q) => `${q.id} · ${q.c} · ${fmtDate(q.d)} · ${q.cls || "no classification"}${q.up ? ` · last import ${fmtStamp(q.up)}` : ""}`)
-        .join("\n")}${noLine > 12 ? `\n… and ${noLine - 12} more` : ""}`}
+        .map((q) => `${q.id} · ${q.c} · ${fmtDate(q.d)} · ${q.cls || _t("no classification")}${q.up ? _t(" · last import {0}", fmtStamp(q.up)) : ""}`)
+        .join("\n"), noLine > 12 ? _t("\n… and {0} more", noLine - 12) : "")}
       style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: X.redDk, background: X.redSoft, padding: "5px 10px", borderRadius: 8 }}
     >
-      <AlertTriangle size={14} /> {noLine.toLocaleString("pt-BR")} quote{noLine === 1 ? "" : "s"} without product line · import the Quote Report again
-    </span>
+      <AlertTriangle size={14} /> {noLine.toLocaleString("pt-BR")} {noLine === 1 ? _t("quote") : _t("quotes")}{" "}{_t("without product line · import the Quote Report again")}</span>
   );
   // gerência: vendedor livre (externo = Sales Person, interno = Quoted By) · externo e interno: preso no próprio nome
   const sellerOpts = (
     <>
-    <option value="">All salespeople</option>
+    <option value="">{_t("All salespeople")}</option>
     {spList.length > 0 && (
-      <optgroup label="Outside sales · Sales Person">
+      <optgroup label={_t("Outside sales · Sales Person")}>
         {spList.map((o) => (
-          <option key={"sp" + o.v} value={`sp:${o.v}`} title={"Sales Person in the Quote Report as: " + o.raw.join(" · ")}>
+          <option key={"sp" + o.v} value={`sp:${o.v}`} title={_t("Sales Person in the Quote Report as: ") + o.raw.join(" · ")}>
             {o.v} ({o.n.toLocaleString("pt-BR")})
           </option>
         ))}
       </optgroup>
     )}
     {qbList.length > 0 && (
-      <optgroup label="Inside sales · Quoted By">
+      <optgroup label={_t("Inside sales · Quoted By")}>
         {qbList.map((o) => (
-          <option key={"qb" + o.v} value={`qb:${o.v}`} title={"Quoted By in the Quote Report as: " + o.raw.join(" · ")}>
+          <option key={"qb" + o.v} value={`qb:${o.v}`} title={_t("Quoted By in the Quote Report as: ") + o.raw.join(" · ")}>
             {o.v} ({o.n.toLocaleString("pt-BR")})
           </option>
         ))}
@@ -6713,47 +7597,57 @@ export default function App() {
     </>
   );
   const sellerSel = lockSeller ? (
-    <span title={`Signed in as ${lockSeller}: you see only the quotes where you are the ${R.colTxt}`} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: R.fg, background: R.bg, padding: "7px 11px", borderRadius: 9 }}>
-      {React.createElement(R.icon, { size: 14 })} Only my quotes · {R.colTxt}
+    <span title={_t("Signed in as {0}: you see only the quotes where you are the {1}", lockSeller, R.colTxt)} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: R.fg, background: R.bg, padding: "7px 11px", borderRadius: 9 }}>
+      {React.createElement(R.icon, { size: 14 })}{" "}{_t("Only my quotes ·")}{" "}{R.colTxt}
     </span>
   ) : (
     <label style={{ display: "flex", flexDirection: mob ? "column" : "row", alignItems: mob ? "stretch" : "center", gap: mob ? 5 : 8, fontSize: 12.5, fontWeight: 600, color: X.ink }}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 7, ...(mob ? fLbl : null) }}>
-        <UserRound size={15} color={X.sub} /> Salesperson
-      </span>
-      <select value={seller} onChange={(e) => setPref("seller", e.target.value)} title="Outside = Sales Person column · Inside = Quoted By column" style={{ ...selS, maxWidth: "none", minWidth: mob ? 0 : 230, width: mob ? "100%" : undefined, height: mob ? 40 : 36, background: seller ? "#FEF6EA" : "#FDE9CF" }}>
+        <UserRound size={15} color={X.sub} />{" "}{_t("Salesperson")}</span>
+      <select value={seller} onChange={(e) => setPref("seller", e.target.value)} title={_t("Outside = Sales Person column · Inside = Quoted By column")} style={{ ...selS, maxWidth: "none", minWidth: mob ? 0 : 230, width: mob ? "100%" : undefined, height: mob ? 40 : 36, background: seller ? "#FEF6EA" : "#FDE9CF" }}>
         {sellerOpts}
       </select>
     </label>
   );
   const clearBtn = (line || (!lockSeller && seller)) && (
-    <button onClick={() => setPrefs((p) => ({ ...p, line: "", ...(lockSeller ? null : { seller: "" }) }))} style={{ ...btn, height: mob ? 38 : 32, fontSize: 12, padding: "0 10px", justifyContent: "center" }} title="Clear Line and Salesperson">
-      <XIcon size={13} /> Clear
-    </button>
+    <button onClick={() => setPrefs((p) => ({ ...p, line: "", ...(lockSeller ? null : { seller: "" }) }))} style={{ ...btn, height: mob ? 38 : 32, fontSize: 12, padding: "0 10px", justifyContent: "center" }} title={_t("Clear Line and Salesperson")}>
+      <XIcon size={13} />{" "}{_t("Clear")}</button>
   );
   const fupRep = canFupReport && <FupReportButton acts={acts} quotes={scoped} meta={meta} thermo={thermo} today={today} filtersTxt={filtersTxt} />;
   /* ---------- celular: os filtros ficam numa folha ----------
      Na aba Quotes a folha abre pelo botão ao lado da busca (junto com ordem e filtros por coluna);
      nas outras abas, pelo botão de filtro no topo. O Today não tem filtro: mostra todos os follow-ups da pessoa. */
+  // períodos de um toque (só os que existem na lista de períodos); os outros ficam no seletor embaixo
+  const hasMonth = (m) => pGroups.some((g) => g.months.includes(m));
+  const curFy = pGroups.find((g) => g.current);
+  const thisM = today.slice(0, 7),
+    lastM = addMonths(thisM + "-01", -1).slice(0, 7);
+  const periodChips = [
+    hasMonth(thisM) && ["m:" + thisM, _t("This month")],
+    hasMonth(lastM) && ["m:" + lastM, _t("Last month")],
+    curFy && ["fy:" + curFy.y, _t("This fiscal year")],
+    ["all", _t("All periods")],
+  ].filter(Boolean);
   const sheetFilters = (
     <>
       {showPeriod && (
-        <SheetField label="Period">
-          <select value={period} onChange={(e) => setPref("period", e.target.value)} style={{ ...inp, width: "100%", height: 46, fontSize: 14, borderRadius: 12 }}>
+        <SheetField label={_t("Period")}>
+          <Chips value={periodChips.some((c) => c[0] === period) ? period : ""} options={periodChips} onChange={(v) => setPref("period", v)} />
+          <select value={period} onChange={(e) => setPref("period", e.target.value)} style={{ ...inp, width: "100%", height: 44, fontSize: 14, borderRadius: 12, ...(periodChips.some((c) => c[0] === period) ? { color: X.sub } : { borderColor: X.teal, fontWeight: 700 }) }}>
             {periodOpts}
           </select>
         </SheetField>
       )}
       {clsList.length > 0 && (
-        <SheetField label="Classification">
-          <Chips value={cls} options={[["", "All"], ...clsList.map((o) => [o.v, o.v])]} onChange={(v) => setPref("cls", v)} />
+        <SheetField label={_t("Classification")}>
+          <Chips value={cls} options={[["", _t("All")], ...clsList.map((o) => [o.v, o.v])]} onChange={(v) => setPref("cls", v)} />
         </SheetField>
       )}
-      <SheetField label="Product line">
-        <Chips value={line} options={[["", "All"], ...ALL_LINES.map((v) => [v, v])]} onChange={(v) => setPref("line", v)} />
+      <SheetField label={_t("Product line")}>
+        <Chips value={line} options={[["", _t("All")], ...ALL_LINES.map((v) => [v, v])]} onChange={(v) => setPref("line", v)} />
       </SheetField>
       {!lockSeller && (
-        <SheetField label="Salesperson">
+        <SheetField label={_t("Salesperson")}>
           <select value={seller} onChange={(e) => setPref("seller", e.target.value)} style={{ ...inp, width: "100%", height: 46, fontSize: 14, borderRadius: 12 }}>
             {sellerOpts}
           </select>
@@ -6761,7 +7655,7 @@ export default function App() {
       )}
       {noLineTag}
       {fupRep && (
-        <SheetField label="Report">
+        <SheetField label={_t("Report")}>
           <span>{fupRep}</span>
         </SheetField>
       )}
@@ -6769,23 +7663,26 @@ export default function App() {
   );
   // quantos filtros estão ligados (o período não conta: sempre tem um)
   const nSheet = [cls, line, !lockSeller && seller].filter(Boolean).length;
-  const filterTabs = ["portfolio", "calendar", "goal", "analysis", "sellers"];
+  // os mesmos filtros como chips com × (celular, em cima da lista)
+  const extraChips = [
+    cls && { k: "cls", label: cls, onClear: () => setPref("cls", "") },
+    line && { k: "line", label: _t("Line {0}", line), onClear: () => setPref("line", "") },
+    !lockSeller && seller && { k: "seller", label: seller.slice(3), onClear: () => setPref("seller", "") },
+  ].filter(Boolean);
+  const clearExtra = () => setPrefs((p) => ({ ...p, cls: "", line: "", ...(lockSeller ? null : { seller: "" }) }));
+  const filterTabs = ["portfolio", "calendar", "goal", "analysis", "sellers", "overview"];
   const hasTopFilter = mob && quotesRep && filterTabs.includes(tab) && tab !== "portfolio"; // Quotes: o filtro fica ao lado da busca
   const filterSheet = mob && (
     <Sheet
       open={showFilters}
-      title="Filters"
+      title={_t("Filters")}
       onClose={() => setShowFilters(false)}
       footer={
         <>
           {nSheet > 0 && (
-            <button onClick={() => setPrefs((p) => ({ ...p, cls: "", line: "", ...(lockSeller ? null : { seller: "" }) }))} style={{ ...btn, height: 44, flex: 1, justifyContent: "center", borderRadius: 12 }}>
-              Clear
-            </button>
+            <button onClick={() => setPrefs((p) => ({ ...p, cls: "", line: "", ...(lockSeller ? null : { seller: "" }) }))} style={{ ...btn, height: 44, flex: 1, justifyContent: "center", borderRadius: 12 }}>{_t("Clear")}</button>
           )}
-          <button onClick={() => setShowFilters(false)} style={{ ...btn, height: 44, flex: 2, justifyContent: "center", borderRadius: 12, background: X.teal, borderColor: X.teal, color: "#fff" }}>
-            Done
-          </button>
+          <button onClick={() => setShowFilters(false)} style={{ ...btn, height: 44, flex: 2, justifyContent: "center", borderRadius: 12, background: X.teal, borderColor: X.teal, color: "#fff" }}>{_t("Done")}</button>
         </>
       }
     >
@@ -6803,15 +7700,15 @@ export default function App() {
         {clearBtn}
         <span style={{ fontSize: 11.5, color: X.sub, display: "inline-flex", alignItems: "center", gap: 6 }}>
           <Database size={13} />
-          {salesRep ? `Sales ${fmtDate(salesRep.minD)}–${fmtDate(salesRep.maxD)}` : "No Sales Report: Sold uses the quote's Sales Amt"}
-          {seller && salesRep && (salesRep.hasSeller ? ` · booked: only ${seller.slice(3)}` : " · booked does not follow the salesperson yet: import the Sales Report again")}
+          {salesRep ? _t("Sales {0}–{1}", fmtDate(salesRep.minD), fmtDate(salesRep.maxD)) : _t("No Sales Report: Sold uses the quote's Sales Amt")}
+          {seller && salesRep && (salesRep.hasSeller ? _t(" · booked: only {0}", seller.slice(3)) : _t(" · booked does not follow the salesperson yet: import the Sales Report again"))}
         </span>
         {fupRep && <span style={{ marginLeft: "auto" }}>{fupRep}</span>}
       </div>
     );
 
   /* ---------- abas: no computador no topo; no celular, fixas embaixo ---------- */
-  const tabBadge = (k) => (k === "portfolio" || k === "mine" ? rows.length : null);
+  const tabBadge = (k) => (k === "portfolio" ? rows.length : null);
   const tabsTop = !mob && tabs.length > 1 && (
     <div style={{ display: "inline-flex", gap: 4, background: "#fff", border: `1px solid ${X.line}`, borderRadius: 12, padding: 4, boxShadow: "0 1px 3px rgba(16,24,40,.05)" }}>
       {tabs.map(([k, l, Ico]) => {
@@ -6835,7 +7732,7 @@ export default function App() {
       className="no-print"
       style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 1200, background: "#fff", borderTop: `1px solid ${X.line}`, boxShadow: "0 -4px 16px rgba(16,24,40,.06)", display: "flex", padding: "6px 6px calc(6px + env(safe-area-inset-bottom))" }}
     >
-      {tabs.map(([k, l, Ico]) => {
+      {tabs.filter((t) => !MOB_MENU_TABS.has(t[0])).map(([k, l, Ico]) => {
         const on = tab === k;
         return (
           <button
@@ -6862,91 +7759,114 @@ export default function App() {
     <button
       onClick={() => pullIfChanged(true)}
       disabled={checkSt.busy}
-      title={`Bring the changes other people saved in the data files (this also happens by itself every minute and when you come back to this window)${checkSt.at ? ` · last check ${checkSt.at.slice(11, 16)}` : ""}`}
+      title={_t("Bring the changes other people saved in the data files (this also happens by itself every minute and when you come back to this window){0}", checkSt.at ? _t(" · last check {0}", checkSt.at.slice(11, 16)) : "")}
       style={{ ...btn, height: mob ? 38 : 40, padding: mob ? "0 10px" : "0 12px", fontSize: 13, fontWeight: 700, borderRadius: 11, color: X.tealDk, cursor: checkSt.busy ? "wait" : "pointer" }}
     >
-      <RefreshCw size={15} /> {mob ? "" : checkSt.busy ? "Checking…" : "Refresh"}
+      <RefreshCw size={15} /> {mob ? "" : checkSt.busy ? _t("Checking…") : _t("Refresh")}
     </button>
   );
   const imports = (
     <>
-      <ImportButton label={busy === "quote" ? "Reading…" : "Quote Report"} icon={FileSpreadsheet} info={repInfo(quotesRep, "q")} onFile={(f) => importFile(f, "quote")} accent={!quotesRep} />
-      <ImportButton label={busy === "sales" ? "Reading…" : "Sales Report"} icon={Upload} info={repInfo(salesRep, "s")} onFile={(f) => importFile(f, "sales")} accent={!!quotesRep && !salesRep} />
+      <ImportButton label={busy === "quote" ? _t("Reading…") : _t("Quote Report")} icon={FileSpreadsheet} info={repInfo(quotesRep, "q")} onFile={(f) => importFile(f, "quote")} accent={!quotesRep} />
+      <ImportButton label={busy === "sales" ? _t("Reading…") : _t("Sales Report")} icon={Upload} info={repInfo(salesRep, "s")} onFile={(f) => importFile(f, "sales")} accent={!!quotesRep && !salesRep} />
     </>
   );
   /* celular: um ícone diz se está tudo salvo (✓), se falta salvar (tocar salva), ou se a pasta pede atenção */
   const warnS = { background: "#FEF0C7", borderColor: "#E9C48A", color: "#8A5A12" };
-  const syncBtn =
-    df.st === "saving" || df.st === "opening" ? (
-      <button disabled title={df.st === "saving" ? "Saving…" : "Opening the data folder…"} style={iconBtn({ color: X.sub, cursor: "wait" })}>
+  const syncBtn = srv ? (
+    df.st === "err" ? (
+      <button onClick={() => (df.load ? pullIfChanged(true) : saveNow())} title={df.load ? _t("Server unavailable · tap to try again") : _t("Not saved yet · tap to try again")} style={iconBtn({ background: X.redSoft, borderColor: "#F3B4B4", color: X.redDk })}>
+        <CloudOff size={17} />
+      </button>
+    ) : df.st === "saving" || df.st === "opening" || unsaved ? (
+      <button disabled title={_t("Saving…")} style={iconBtn({ color: X.sub, cursor: "wait" })}>
+        <RefreshCw size={17} className="qp-spin" />
+      </button>
+    ) : (
+      <button onClick={() => pullIfChanged(true)} title={_t("Everything is saved · tap to bring the changes of the other people")} style={iconBtn({ color: X.tealDk, borderColor: "#BFE3D9" })}>
+        {checkSt.busy ? <RefreshCw size={17} className="qp-spin" /> : <CheckCircle2 size={18} />}
+      </button>
+    )
+  ) : df.st === "saving" || df.st === "opening" ? (
+      <button disabled title={df.st === "saving" ? _t("Saving…") : _t("Opening the data folder…")} style={iconBtn({ color: X.sub, cursor: "wait" })}>
         <RefreshCw size={17} className="qp-spin" />
       </button>
     ) : !FSA ? (
-      <button onClick={downloadData} title="This browser can't keep the data folder: download the data file" style={iconBtn(unsaved ? warnS : null)}>
+      <button onClick={downloadData} title={_t("This browser can't keep the data folder: download the data file")} style={iconBtn(unsaved ? warnS : null)}>
         <Download size={17} />
       </button>
     ) : df.st === "ask" ? (
-      <button onClick={reconnect} title="Reconnect the data folder" style={iconBtn(warnS)}>
+      <button onClick={reconnect} title={_t("Reconnect the data folder")} style={iconBtn(warnS)}>
         <Link2 size={17} />
       </button>
     ) : !connected ? (
-      <button onClick={connectNew} title="No data folder: the changes are only in this browser" style={iconBtn(warnS)}>
+      <button onClick={connectNew} title={_t("No data folder: the changes are only in this browser")} style={iconBtn(warnS)}>
         <AlertTriangle size={17} />
       </button>
     ) : df.st === "err" ? (
-      <button onClick={() => saveNow()} title="Not saved · tap to try again" style={iconBtn({ background: X.redSoft, borderColor: "#F3B4B4", color: X.redDk })}>
+      <button onClick={() => saveNow()} title={_t("Not saved · tap to try again")} style={iconBtn({ background: X.redSoft, borderColor: "#F3B4B4", color: X.redDk })}>
         <AlertTriangle size={17} />
       </button>
     ) : unsaved ? (
-      <button onClick={() => saveNow()} title="Save now" style={iconBtn({ background: X.teal, borderColor: X.teal, color: "#fff" })}>
+      <button onClick={() => saveNow()} title={_t("Save now")} style={iconBtn({ background: X.teal, borderColor: X.teal, color: "#fff" })}>
         <Save size={17} />
         {unsavedN > 0 && (
           <span style={{ position: "absolute", top: -4, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#F2B04C", color: "#fff", fontSize: 10.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff" }}>{unsavedN}</span>
         )}
       </button>
     ) : (
-      <button onClick={() => pullIfChanged(true)} title="Everything is saved · tap to bring the changes of the other people" style={iconBtn({ color: X.tealDk, borderColor: "#BFE3D9" })}>
+      <button onClick={() => pullIfChanged(true)} title={_t("Everything is saved · tap to bring the changes of the other people")} style={iconBtn({ color: X.tealDk, borderColor: "#BFE3D9" })}>
         {checkSt.busy ? <RefreshCw size={17} className="qp-spin" /> : <CheckCircle2 size={18} />}
       </button>
     );
-  const dfStatusTxt =
-    df.st === "on"
-      ? unsaved
-        ? `${unsavedN ? `${unsavedN} change${unsavedN === 1 ? "" : "s"}` : "Changes"} not saved yet in ${df.name}`
-        : `All saved in ${df.name}${df.savedAt ? ` · ${df.savedAt.slice(11, 16)}` : ""}`
+  const dfStatusTxt = srv
+    ? df.st === "opening"
+      ? _t("Loading the data from the server…")
       : df.st === "err"
-      ? `Not saved in ${df.name}: ${df.err}`
+      ? _t("{0}: {1} · trying again", df.load ? _t("Server unavailable") : _t("Not saved yet"), df.err)
+      : df.st === "saving" || unsaved
+      ? _t("Saving…")
+      : _t("All saved on the server{0}", df.savedAt ? ` · ${df.savedAt.slice(11, 16)}` : "")
+    : df.st === "on"
+      ? unsaved
+        ? _t("{0} not saved yet in {1}", unsavedN ? `${unsavedN} ${unsavedN === 1 ? _t("change") : _t("changes")}` : _t("Changes"), df.name)
+        : _t("All saved in {0}{1}", df.name, df.savedAt ? ` · ${df.savedAt.slice(11, 16)}` : "")
+      : df.st === "err"
+      ? _t("Not saved in {0}: {1}", df.name, df.err)
       : df.st === "ask"
-      ? `Reconnect ${df.name || "the data folder"} to save`
+      ? _t("Reconnect {0} to save", df.name || _t("the data folder"))
       : df.st === "nofsa"
-      ? "This browser can't keep the data folder: download the data file to keep the changes"
+      ? _t("This browser can't keep the data folder: download the data file to keep the changes")
       : df.st === "saving"
-      ? "Saving…"
-      : "No data folder: the changes are only in this browser";
+      ? _t("Saving…")
+      : _t("No data folder: the changes are only in this browser");
   const menuItems = [
-    connected && { label: checkSt.busy ? "Checking…" : "Bring the latest changes", icon: RefreshCw, onClick: () => pullIfChanged(true) },
-    connected && { label: "Save now", icon: Save, onClick: () => saveNow(!unsaved) },
-    ...(FSA
+    mob && role === "manager" && { label: isAdmin ? _t("Data and users") : _t("Data and reports"), icon: Database, onClick: () => setTab("data") },
+    connected && { label: checkSt.busy ? _t("Checking…") : _t("Bring the latest changes"), icon: RefreshCw, onClick: () => pullIfChanged(true) },
+    connected && !srv && { label: _t("Save now"), icon: Save, onClick: () => saveNow(!unsaved) },
+    ...(srv
+      ? [role === "manager" && { label: _t("Download a copy (Excel)"), icon: Download, onClick: downloadData }]
+      : FSA
       ? [
-          { label: "Open the data folder…", icon: FolderOpen, onClick: connectOpen },
-          { label: "Create the data files in a folder…", icon: FilePlus, onClick: connectNew },
+          { label: _t("Open the data folder…"), icon: FolderOpen, onClick: connectOpen },
+          { label: _t("Create the data files in a folder…"), icon: FilePlus, onClick: connectNew },
         ]
       : [
-          { label: "Load a data file…", icon: FolderOpen, onClick: () => loadDataRef.current && loadDataRef.current.click() },
-          { label: "Download the data file", icon: Download, onClick: downloadData },
+          { label: _t("Load a data file…"), icon: FolderOpen, onClick: () => loadDataRef.current && loadDataRef.current.click() },
+          { label: _t("Download the data file"), icon: Download, onClick: downloadData },
         ]),
   ];
-  const dataMenu = (
+  const dataMenu = srv ? null : (
     <DataMenu
       items={
         FSA
           ? [
-              { label: "Open the data folder…", icon: FolderOpen, onClick: connectOpen },
-              { label: "Create the data files in a folder…", icon: FilePlus, onClick: connectNew },
+              { label: _t("Open the data folder…"), icon: FolderOpen, onClick: connectOpen },
+              { label: _t("Create the data files in a folder…"), icon: FilePlus, onClick: connectNew },
             ]
           : [
-              { label: "Load a data file…", icon: FolderOpen, onClick: () => loadDataRef.current && loadDataRef.current.click() },
-              { label: "Download the data file", icon: Download, onClick: downloadData },
+              { label: _t("Load a data file…"), icon: FolderOpen, onClick: () => loadDataRef.current && loadDataRef.current.click() },
+              { label: _t("Download the data file"), icon: Download, onClick: downloadData },
             ]
       }
     />
@@ -6967,8 +7887,20 @@ export default function App() {
   );
   const dataTab = (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {srv ? (
+        <div style={secCard}>
+          {secHead(Cloud, _t("Server"), _t("Follow-ups, notes, history, goals, users, quotes and sales are kept in the database"))}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {dfChip}
+            {refreshBtn}
+            <button onClick={downloadData} title={_t("An Excel copy of everything (the same data file of the folder version, without the passwords)")} style={btn}>
+              <Download size={15} />{" "}{_t("Download a copy (Excel)")}</button>
+          </div>
+          <div style={{ fontSize: 12, color: X.sub }}>{_t("Every change is saved by itself in about a second. The changes of the other people show up here within 20 seconds.")}</div>
+        </div>
+      ) : (
       <div style={secCard}>
-        {secHead(Database, "Data files", `${DATA_FILE} (follow-ups, notes, history, goals, users) and ${REP_FILE} (quotes and sales)`)}
+        {secHead(Database, _t("Data files"), _t("{0} (follow-ups, notes, history, goals, users) and {1} (quotes and sales)", DATA_FILE, REP_FILE))}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {dfChip}
           {refreshBtn}
@@ -6978,33 +7910,30 @@ export default function App() {
           {FSA ? (
             <>
               <button onClick={connectOpen} style={btn}>
-                <FolderOpen size={15} /> Open the data folder…
-              </button>
+                <FolderOpen size={15} />{" "}{_t("Open the data folder…")}</button>
               <button onClick={connectNew} style={btn}>
-                <FilePlus size={15} /> Create the data files in a folder…
-              </button>
+                <FilePlus size={15} />{" "}{_t("Create the data files in a folder…")}</button>
             </>
           ) : (
             <>
               <button onClick={() => loadDataRef.current && loadDataRef.current.click()} style={btn}>
-                <FolderOpen size={15} /> Load a data file…
-              </button>
+                <FolderOpen size={15} />{" "}{_t("Load a data file…")}</button>
               <button onClick={downloadData} style={btn}>
-                <Download size={15} /> Download the data file
-              </button>
+                <Download size={15} />{" "}{_t("Download the data file")}</button>
             </>
           )}
         </div>
       </div>
+      )}
       <div style={secCard}>
-        {secHead(FileSpreadsheet, "Reports", "Import the Quote Report and the Sales Report: the quotes and sales are joined with the ones stored")}
+        {secHead(FileSpreadsheet, _t("Reports"), _t("Import the Quote Report and the Sales Report: the quotes and sales are joined with the ones stored"))}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{imports}</div>
         <div style={{ fontSize: 12, color: X.sub, display: "flex", flexDirection: "column", gap: 4 }}>
           <span>
-            <b style={{ color: X.ink }}>Quote Report</b> · {quotesRep ? repInfo(quotesRep, "q") : "not imported yet"}
+            <b style={{ color: X.ink }}>{_t("Quote Report")}</b> · {quotesRep ? repInfo(quotesRep, "q") : _t("not imported yet")}
           </span>
           <span>
-            <b style={{ color: X.ink }}>Sales Report</b> · {salesRep ? repInfo(salesRep, "s") : "not imported yet"}
+            <b style={{ color: X.ink }}>{_t("Sales Report")}</b> · {salesRep ? repInfo(salesRep, "s") : _t("not imported yet")}
           </span>
         </div>
       </div>
@@ -7012,33 +7941,58 @@ export default function App() {
         <UsersPanel names={sellerNames} colOf={colOf} users={users || {}} onRole={setRole} onAdd={addUser} onReset={resetPassword} />
       ) : (
         <div style={{ ...secCard, flexDirection: "row", alignItems: "center", fontSize: 12.5, color: X.sub }}>
-          <Lock size={15} /> Only the Admin chooses the screen of each person and resets passwords.
-        </div>
+          <Lock size={15} />{" "}{_t("Only the Admin chooses the screen of each person and resets passwords.")}</div>
       )}
     </div>
   );
 
   /* ---------- conteúdo de cada aba ---------- */
+  // Overview → abre outra aba; na lista de cotações, já com o filtro rápido ligado (atrasados, de hoje, sem FUP)
+  const goTab = (k, quick) => {
+    if (quick)
+      ["c", "t"].forEach((x) => {
+        try {
+          sessionStorage.setItem(`qp_qt_${x}_quick`, JSON.stringify(quick));
+          sessionStorage.setItem(`qp_qt_${x}_st`, JSON.stringify("open"));
+          sessionStorage.setItem(`qp_qt_${x}_flt`, "{}");
+        } catch {}
+      });
+    setTab(k);
+    window.scrollTo(0, 0);
+  };
   const tableProps = { onAskClose: askClose, thermo, rows, cancelRows, meta, onMeta, today, periodLabel: periodLabelOf(period), qIndex, sales: salesView, acts, onNote, onDone, onResched, onReq, user, onUser: setUser, notesBy, openQ, onOpenQuote: openQuote };
   const calProps = { goalEdit: role === "manager", thermo, quotes: scoped, sales: salesView, cls, line, meta, onMeta, onAskClose: askClose, onDone, onToggleExcl, onOpenQuote: openQuote, notesBy, dailyGoal, setDailyGoal, dayGoals, setDayGoals, excl, prefs, setPref, today };
-  const content = !loaded ? (
-    <div style={{ padding: 60, textAlign: "center", color: X.sub }}>Loading…</div>
+  const content = !loaded || (srv && !srvData) ? (
+    srv && df.st === "err" ? (
+      <div style={{ ...card, padding: "32px 18px", textAlign: "center", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+        <CloudOff size={28} color={X.redDk} />
+        <div style={{ fontSize: 16, fontWeight: 800 }}>{_t("Could not load the data from the server")}</div>
+        <div style={{ fontSize: 13, color: X.sub, maxWidth: 420 }}>{df.err}{_t(". Check the internet connection and try again.")}</div>
+        <button onClick={() => srvLoad()} style={{ ...btn, height: 42, padding: "0 18px", borderRadius: 11, background: X.teal, borderColor: X.teal, color: "#fff", fontWeight: 700 }}>
+          <RefreshCw size={15} />{" "}{_t("Try again")}</button>
+      </div>
+    ) : (
+      <div style={{ padding: 60, textAlign: "center", color: X.sub, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <RefreshCw size={20} className="qp-spin" />
+        {srv ? _t("Loading the quotes from the server…") : _t("Loading…")}
+      </div>
+    )
   ) : tab === "data" ? (
     dataTab
   ) : !quotesRep ? (
     role === "manager" ? (
-      <EmptyState onFile={importFile} />
+      <EmptyState onFile={importFile} srv={srv} />
     ) : (
       <div style={{ ...card, padding: "32px 18px", textAlign: "center", display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
         <FileSpreadsheet size={26} color={X.sub} />
-        <div style={{ fontSize: 16, fontWeight: 800 }}>No quotes yet</div>
-        <div style={{ fontSize: 13, color: X.sub, maxWidth: 420 }}>The management imports the Quote Report into the data folder. {connected ? "Then click Refresh." : "Open the data folder on this computer (⋯ menu)."}</div>
+        <div style={{ fontSize: 16, fontWeight: 800 }}>{_t("No quotes yet")}</div>
+        <div style={{ fontSize: 13, color: X.sub, maxWidth: 420 }}>{srv ? _t("The management imports the Quote Report: then the quotes show up here by themselves.") : <>{_t("The management imports the Quote Report into the data folder.")}{" "}{connected ? _t("Then click Refresh.") : _t("Open the data folder on this computer (⋯ menu).")}</>}</div>
       </div>
     )
+  ) : tab === "overview" ? (
+    <ManagerOverview rows={rows} quotes={scoped} meta={meta} thermo={thermo} acts={acts} sales={salesView} cls={cls} line={line} dailyGoal={dailyGoal} dayGoals={dayGoals} today={today} groupOf={groupOf} periodTxt={periodLabelOf(period)} filtersTxt={filtersTxt} onOpenQuote={openQuote} onGo={goTab} />
   ) : tab === "today" ? (
-    <TodayView quotes={scopedToday} cls="" meta={meta} thermo={thermo} today={today} notesBy={notesBy} excl={excl} prefs={prefs} onOpenQuote={openQuote} onGoMine={() => setTab("mine")} />
-  ) : tab === "mine" ? (
-    <QuoteTable {...tableProps} cards title="Quotes" filtersExtra={mob ? sheetFilters : null} filtersExtraN={mob ? nSheet : 0} />
+    <TodayView quotes={scopedToday} cls="" meta={meta} thermo={thermo} today={today} notesBy={notesBy} excl={excl} prefs={prefs} onOpenQuote={openQuote} onGoMine={() => setTab("portfolio")} />
   ) : tab === "calendar" || tab === "goal" ? (
     <CalendarView {...calProps} />
   ) : tab === "sellers" ? (
@@ -7052,12 +8006,12 @@ export default function App() {
       qIndex={qIndex}
       groupOf={groupOf}
       periodTxt={periodLabelOf(period)}
-      sellerTxt={seller ? seller.slice(3) : "All salespeople"}
-      filtersTxt={`${cls || "All classifications"} · ${line ? "line " + line : "all lines"}`}
+      sellerTxt={seller ? seller.slice(3) : _t("All salespeople")}
+      filtersTxt={`${cls || _t("All classifications")} · ${line ? _t("line ") + line : _t("all lines")}`}
       onOpenQuote={openQuote}
     />
   ) : (
-    <QuoteTable {...tableProps} cards={mob} filtersExtra={mob ? sheetFilters : null} filtersExtraN={mob ? nSheet : 0} />
+    <QuoteTable {...tableProps} cards={mob} filtersExtra={mob ? sheetFilters : null} filtersExtraN={mob ? nSheet : 0} extraChips={mob ? extraChips : []} onClearExtra={clearExtra} />
   );
 
   return (
@@ -7070,23 +8024,20 @@ export default function App() {
           <div style={{ minWidth: 0, flex: "1 1 220px", display: "flex", flexDirection: "column", gap: 3 }}>
             <div style={{ fontSize: 13.5, fontWeight: 800 }}>{dfErr.title}</div>
             <div style={{ fontSize: 12.5, color: X.ink }}>{dfErr.hint}</div>
-            <div style={{ fontSize: 11.5, color: X.sub, fontFamily: "ui-monospace, Consolas, monospace", wordBreak: "break-word" }}>Browser message: {dfErr.text}</div>
+            <div style={{ fontSize: 11.5, color: X.sub, fontFamily: "ui-monospace, Consolas, monospace", wordBreak: "break-word" }}>{_t("Browser message:")}{" "}{dfErr.text}</div>
           </div>
-          {FSA && (
+          {FSA && !srv && (
             <button
               onClick={connectNew}
-              title="Pick another folder: the data files are written there and used from now on"
+              title={_t("Pick another folder: the data files are written there and used from now on")}
               style={{ ...btn, height: 30, fontSize: 12, background: "#fff", borderColor: "#F3B4B4", color: X.redDk }}
             >
-              <Database size={14} /> Save the data files in another folder…
-            </button>
+              <Database size={14} />{" "}{_t("Save the data files in another folder…")}</button>
           )}
           {dfErr.kind === "save" && (
-            <button onClick={() => saveNow()} title="Try to save again now" style={{ ...btn, height: 30, fontSize: 12, background: "#fff", borderColor: "#F3B4B4", color: X.redDk }}>
-              Try again
-            </button>
+            <button onClick={() => saveNow()} title={_t("Try to save again now")} style={{ ...btn, height: 30, fontSize: 12, background: "#fff", borderColor: "#F3B4B4", color: X.redDk }}>{_t("Try again")}</button>
           )}
-          <button onClick={() => setDfErr(null)} title="Close" style={{ ...btn, height: 30, padding: "0 8px", background: "transparent", borderColor: "#F3B4B4", color: X.redDk }}>
+          <button onClick={() => setDfErr(null)} title={_t("Close")} style={{ ...btn, height: 30, padding: "0 8px", background: "transparent", borderColor: "#F3B4B4", color: X.redDk }}>
             <XIcon size={15} />
           </button>
         </div>
@@ -7103,7 +8054,7 @@ export default function App() {
           /* celular: o nome da aba, e só três botões (filtro, salvamento, menu) */
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: -0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.15 }}>{(tabs.find((t) => t[0] === tab) || [, "Quote Follow Up"])[1]}</div>
+              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: -0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.15 }}>{(tabs.find((t) => t[0] === tab) || [, _t("Quote Follow Up")])[1]}</div>
               <div style={{ fontSize: 12, color: R ? R.fg : X.sub, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {lockSeller ? String(session).split(" ")[0] + " · " : ""}
                 {R ? R.label : ""}
@@ -7111,7 +8062,7 @@ export default function App() {
             </div>
             <span className="no-print" style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
               {hasTopFilter && (
-                <button onClick={() => setShowFilters(true)} title="Filters" style={iconBtn(nSheet ? { background: X.tealSoft, borderColor: "#9FD6C9", color: X.tealDk } : null)}>
+                <button onClick={() => setShowFilters(true)} title={_t("Filters")} style={iconBtn(nSheet ? { background: X.tealSoft, borderColor: "#9FD6C9", color: X.tealDk } : null)}>
                   <SlidersHorizontal size={18} />
                   {dotBadge(nSheet)}
                 </button>
@@ -7126,11 +8077,11 @@ export default function App() {
             <TrendingUp size={mob ? 18 : 21} />
           </span>
           <div style={{ minWidth: 0, flex: mob ? 1 : "none" }}>
-            <div style={{ fontSize: mob ? 16 : 20, fontWeight: 800, letterSpacing: -0.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Quote Follow Up</div>
+            <div style={{ fontSize: mob ? 16 : 20, fontWeight: 800, letterSpacing: -0.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{_t("Quote Follow Up")}</div>
             <div style={{ fontSize: 12, color: R ? R.fg : X.sub, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
               {R && React.createElement(R.icon, { size: 12 })}
               {R ? R.label : ""}
-              {!mob && <span style={{ color: X.sub, fontWeight: 400 }}>· {role === "outside" ? "today's follow-ups and my quotes" : role === "inside" ? "portfolio, calendar and the plan of the day" : "results, salespeople, goal and data"}</span>}
+              {!mob && <span style={{ color: X.sub, fontWeight: 400 }}>· {role === "manager" ? _t("overview, quotes, team, goal and analysis") : _t("today's follow-ups, quotes and calendar")}</span>}
             </div>
           </div>
         </div>
@@ -7144,8 +8095,6 @@ export default function App() {
                 {imports}
               </>
             )}
-            <div style={{ width: 1, height: 26, background: X.line, margin: "0 2px" }} />
-            {tabsTop}
             {refreshBtn}
             {saveBtn}
             <UserChip name={session} admin={isAdmin} role={role} onLogout={logout} onUsers={isAdmin ? () => setTab("data") : null} />
@@ -7192,15 +8141,15 @@ export default function App() {
         />
       </div>
 
+      {/* computador: as abas numa linha só, embaixo do título */}
+      {!mob && tabsTop && <div className="no-print">{tabsTop}</div>}
+
       {df.st === "ask" && (
         <div style={{ ...card, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#FFFBEB", borderColor: "#F3D08A", fontSize: 13 }}>
           <Link2 size={16} color="#8A5A12" />
-          <span style={{ color: "#8A5A12", flex: "1 1 200px" }}>
-            The browser needs your permission again to save in <b>{df.name}</b>. Reconnect before importing or editing, so nothing is left out of the file.
-          </span>
+          <span style={{ color: "#8A5A12", flex: "1 1 200px" }}>{_t("The browser needs your permission again to save in")}{" "}<b>{df.name}</b>{_t(". Reconnect before importing or editing, so nothing is left out of the file.")}</span>
           <button onClick={reconnect} style={{ ...btn, marginLeft: "auto", height: 32, background: X.teal, color: "#fff", borderColor: X.teal }}>
-            <Link2 size={14} /> Reconnect
-          </button>
+            <Link2 size={14} />{" "}{_t("Reconnect")}</button>
         </div>
       )}
 
@@ -7266,7 +8215,7 @@ export default function App() {
   );
 }
 
-function EmptyState({ onFile }) {
+function EmptyState({ onFile, srv }) {
   const step = (n, title, text) => (
     <div style={{ display: "flex", gap: 12, alignItems: "flex-start", textAlign: "left" }}>
       <span style={{ width: 26, height: 26, borderRadius: 99, background: X.tealSoft, color: X.tealDk, fontWeight: 800, fontSize: 13, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{n}</span>
@@ -7280,15 +8229,15 @@ function EmptyState({ onFile }) {
     <div style={{ ...card, padding: "40px 24px", display: "flex", justifyContent: "center" }}>
       <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 18 }}>
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 19, fontWeight: 800 }}>Start with the Quote Report</div>
-          <div style={{ fontSize: 13, color: X.sub, marginTop: 6 }}>The files stay on this computer: nothing is uploaded anywhere.</div>
+          <div style={{ fontSize: 19, fontWeight: 800 }}>{_t("Start with the Quote Report")}</div>
+          <div style={{ fontSize: 13, color: X.sub, marginTop: 6 }}>{srv ? _t("The report is read on this computer; the quotes are saved on the server for everyone.") : _t("The files stay on this computer: nothing is uploaded anywhere.")}</div>
         </div>
-        {step(1, "Quote Report", "Needs Quote ID, Customer and Create Date. Status, Amount, Sales Amt, Sales Id and Classification are used when present.")}
-        {step(2, "Sales Report (optional)", "Booked lines with Sales Id: gives the real Sold value of each won quote and the booked total of the month for the goal.")}
-        {step(3, "Fill in FUP and % Win", "Straight in the table (the Thermometer is automatic). Then open the Calendar, type the daily goal and click a day to see its plan.")}
+        {step(1, _t("Quote Report"), _t("Needs Quote ID, Customer and Create Date. Status, Amount, Sales Amt, Sales Id and Classification are used when present."))}
+        {step(2, _t("Sales Report (optional)"), _t("Booked lines with Sales Id: gives the real Sold value of each won quote and the booked total of the month for the goal."))}
+        {step(3, _t("Fill in FUP and % Win"), _t("Straight in the table (the Thermometer is automatic). Then open the Calendar, type the daily goal and click a day to see its plan."))}
         <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 4, flexWrap: "wrap" }}>
-          <ImportButton label="Import Quote Report" icon={FileSpreadsheet} onFile={(f) => onFile(f, "quote")} accent />
-          <ImportButton label="Import Sales Report" icon={Upload} onFile={(f) => onFile(f, "sales")} />
+          <ImportButton label={_t("Import Quote Report")} icon={FileSpreadsheet} onFile={(f) => onFile(f, "quote")} accent />
+          <ImportButton label={_t("Import Sales Report")} icon={Upload} onFile={(f) => onFile(f, "sales")} />
         </div>
       </div>
     </div>

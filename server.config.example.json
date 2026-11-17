@@ -1,0 +1,12 @@
+{
+  "port": 8080,
+  "host": "127.0.0.1",
+  "sessionDays": 30,
+  "db": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "qfu_app",
+    "password": "TROQUE-ESTA-SENHA",
+    "database": "quote_follow_up"
+  }
+}

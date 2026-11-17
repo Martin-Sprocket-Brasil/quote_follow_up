@@ -13,7 +13,7 @@ if errorlevel 1 (
   pause
   exit /b
 )
-if not exist node_modules (
+if not exist node_modules\express (
   echo.
   echo Primeira vez: instalando as bibliotecas ^(pode demorar 1-2 min^)...
   call npm install

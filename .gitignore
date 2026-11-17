@@ -1,1 +1,15 @@
+# bibliotecas (o build.bat instala de novo)
 node_modules/
+
+# dados da empresa: nunca no GitHub
+*.xlsx
+import.sql
+*.crswap
+
+# gerado pelo build.bat
+QuoteFollowUp.html
+
+# servidor: senha do banco e registro
+server.config.json
+servidor.log
+.core-server.tmp.mjs

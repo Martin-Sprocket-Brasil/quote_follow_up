@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quote Follow Up · MER / DER do banco de dados</title>
+<style>
+  :root {
+    --bg: #F4F7F9; --line: #E4E9EE; --ink: #1D2B36; --sub: #6B7A86; --head: #F3F6F8;
+    --teal: #1F9A84; --tealDk: #15806B; --tealSoft: #DDF1EC;
+    --violet: #5B52C9; --violetSoft: #ECEAFB;
+    --amber: #B7791F; --amberSoft: #FDF0D9;
+    --slate: #52606D; --slateSoft: #E9EEF2;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 22px 28px 0; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: -0.3px; }
+  .meta { color: var(--sub); font-size: 13px; margin-top: 3px; }
+  nav { display: flex; gap: 4px; margin-top: 16px; border-bottom: 1px solid var(--line); }
+  nav button { border: 0; background: none; padding: 10px 16px; font: inherit; font-weight: 600; color: var(--sub); cursor: pointer; border-bottom: 2.5px solid transparent; margin-bottom: -1px; }
+  nav button.on { color: var(--tealDk); border-bottom-color: var(--teal); }
+  main { padding: 18px 28px 40px; }
+  section { display: none; }
+  section.on { display: block; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 1px 3px rgba(16,24,40,.05); }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--sub); }
+  .bar .sp { flex: 1; }
+  .bar button { border: 1px solid var(--line); background: #fff; border-radius: 8px; height: 32px; padding: 0 12px; font: inherit; font-weight: 600; color: var(--ink); cursor: pointer; }
+  .bar button:hover { background: var(--head); }
+  .lg { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .scroll { overflow: auto; }
+  svg { display: block; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .tbl { cursor: grab; }
+  .tbl.drag { cursor: grabbing; }
+  .tbl, .rel { transition: opacity .15s; }
+  .dim .tbl:not(.hi), .dim .rel:not(.hi) { opacity: .18; }
+  .rel.hi path.ln { stroke-width: 2.4; }
+  .note { color: var(--sub); font-size: 12.5px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .note b { color: var(--ink); }
+  /* dicionário */
+  .dict { display: grid; gap: 16px; }
+  .dt { padding: 16px 18px; }
+  .dt h3 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .dt h3 code { font-size: 15px; }
+  .dt .desc { color: var(--sub); font-size: 13px; margin: 4px 0 10px; }
+  .chip { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; letter-spacing: .2px; }
+  table.cols { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.cols th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--sub); background: var(--head); padding: 7px 10px; }
+  table.cols td { border-top: 1px solid var(--line); padding: 7px 10px; vertical-align: top; }
+  table.cols td.n { white-space: nowrap; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+  table.cols td.t { white-space: nowrap; font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--slate); }
+  .k { display: inline-block; font-size: 10px; font-weight: 800; padding: 0 5px; border-radius: 4px; margin-left: 6px; vertical-align: 1px; }
+  .k.pk { background: var(--amberSoft); color: var(--amber); }
+  .k.fk { background: var(--tealSoft); color: var(--tealDk); }
+  .k.lk { background: var(--slateSoft); color: var(--slate); }
+  .k.uq { background: var(--violetSoft); color: var(--violet); }
+  .rules { margin: 10px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--sub); }
+  .rules code { color: var(--ink); }
+  code { font-family: ui-monospace, Consolas, monospace; }
+  @media (max-width: 700px) { header, main { padding-left: 14px; padding-right: 14px; } table.cols td.d { min-width: 200px; } }
+  @media print {
+    nav, .bar button { display: none; }
+    section { display: block !important; page-break-after: always; }
+    .scroll { overflow: visible; }
+    body { background: #fff; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Quote Follow Up · modelo do banco de dados</h1>
+  <div class="meta">MariaDB 10.11 · banco <code>quote_follow_up</code> · utf8mb4 · 11 tabelas, 1 visão e 2 gatilhos · gerado a partir do <code>schema.sql</code></div>
+  <nav>
+    <button data-tab="der" class="on">DER · tabelas</button>
+    <button data-tab="mer">MER · conceitual</button>
+    <button data-tab="dic">Dicionário de dados</button>
+  </nav>
+</header>
+<main>
+  <section id="der" class="on">
+    <div class="card">
+      <div class="bar">
+        <span class="lg"><span class="sw" style="background:var(--teal)"></span>Relatórios</span>
+        <span class="lg"><span class="sw" style="background:var(--violet)"></span>Acompanhamento</span>
+        <span class="lg"><span class="sw" style="background:var(--amber)"></span>Acesso</span>
+        <span class="lg"><span class="sw" style="background:var(--slate)"></span>Configuração</span>
+        <span class="lg"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#15806B" stroke-width="2"/></svg>chave estrangeira (FK)</span>
+        <span class="lg"><svg width="34" height="10"><line x1="0" y1="5" x2="34" y2="5" stroke="#7B8794" stroke-width="1.6" stroke-dasharray="5 4"/></svg>ligação lógica (sem FK, de propósito)</span>
+        <span class="lg"><span style="width:4px;height:14px;border-radius:2px;background:#5B52C9;display:inline-block"></span>chave única de várias colunas</span>
+        <span class="sp"></span>
+        <button id="reset">Reorganizar</button>
+      </div>
+      <div class="scroll"><svg id="derSvg"></svg></div>
+      <div class="note">
+        <b>Como ler:</b> 🔑 chave primária · <b>FK</b> chave estrangeira · <b>UQ</b> único · nas pontas das linhas, <b>||</b> = exatamente um, <b>o|</b> = zero ou um, <b>o&lt;</b> = zero ou muitos (pé de galinha).
+        Passe o mouse numa tabela para ver só as ligações dela; arraste para mudar de lugar.
+        <br><b>Por que algumas ligações não têm FK:</b> um Quote Report novo pode tirar uma cotação da base, e o follow-up e o histórico dela não podem sumir junto. O vendedor de cada cotação (<code>sales_person</code> / <code>quoted_by</code>) se liga a <code>users.name</code> pelo nome, com a mesma regra de agrupamento do programa.
+      </div>
+    </div>
+  </section>
+
+  <section id="mer">
+    <div class="card">
+      <div class="bar">
+        <span class="lg"><svg width="30" height="18"><rect x="1" y="1" width="28" height="16" rx="3" fill="#fff" stroke="#1D2B36" stroke-width="1.4"/></svg>entidade</span>
+        <span class="lg"><svg width="30" height="20"><polygon points="15,1 29,10 15,19 1,10" fill="#fff" stroke="#1D2B36" stroke-width="1.4"/></svg>relacionamento</span>
+        <span class="lg"><svg width="30" height="18"><ellipse cx="15" cy="9" rx="13" ry="7" fill="#fff" stroke="#1D2B36" stroke-width="1.2"/></svg>atributo do relacionamento</span>
+        <span class="lg"><u>sublinhado</u> = identificador</span>
+        <span class="lg"><b style="color:var(--ink)">(mín, máx)</b> perto de uma entidade = quantas dela se ligam a uma da outra ponta</span>
+      </div>
+      <div class="scroll"><svg id="merSvg"></svg></div>
+      <div class="note">
+        <b>Exemplo:</b> “COTAÇÃO — gera — PEDIDO”: perto de PEDIDO está <b>(0,N)</b> → uma cotação gera nenhum ou vários pedidos; perto de COTAÇÃO está <b>(1,N)</b> → um pedido vem de pelo menos uma cotação.
+        <b>META DO DIA</b> e <b>CONFIGURAÇÃO</b> não se ligam a nada: guardam a meta da equipe, as versões e os últimos relatórios importados.
+      </div>
+    </div>
+  </section>
+
+  <section id="dic"><div class="dict" id="dict"></div></section>
+</main>
+
+<script>
+const SCHEMA = {
+ "quotes": {
+  "comment": "Cotações do Quote Report",
+  "cols": [
+   {
+    "name": "quote_id",
+    "type": "VARCHAR(20)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Quote ID (ex.: QT00210345), sempre em maiúsculas"
+   },
+   {
+    "name": "quote_date",
+    "type": "DATE",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Create Date da cotação"
+   },
+   {
+    "name": "customer",
+    "type": "VARCHAR(150)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Nome do cliente como veio no Quote Report"
+   },
+   {
+    "name": "customer_key",
+    "type": "VARCHAR(150)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Nome normalizado (normName do core.js): agrupa o cliente no Thermometer"
+   },
+   {
+    "name": "account",
+    "type": "VARCHAR(20)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Conta AX (ex.: C0002424)"
+   },
+   {
+    "name": "classification",
+    "type": "VARCHAR(40)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "OEM, Distributo, End User, LATAM, PFP, Resale, Supplier…"
+   },
+   {
+    "name": "status",
+    "type": "VARCHAR(40)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Status do Quote Report em minúsculas (confirmed, created, sent, lost, cancelled…)"
+   },
+   {
+    "name": "quoted_by",
+    "type": "VARCHAR(100)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Quoted By = vendedor interno (ex.: SP0814 - Vinicius Maestrello)"
+   },
+   {
+    "name": "sales_person",
+    "type": "VARCHAR(100)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Sales Person = vendedor externo"
+   },
+   {
+    "name": "amount",
+    "type": "DECIMAL(18,6)",
+    "null": false,
+    "auto": false,
+    "default": "0",
+    "comment": "Valor cotado (soma dos itens, sem arredondar)"
+   },
+   {
+    "name": "sales_amt",
+    "type": "DECIMAL(18,6)",
+    "null": false,
+    "auto": false,
+    "default": "0",
+    "comment": "Sales Amt da própria cotação"
+   },
+   {
+    "name": "amount_pt",
+    "type": "DECIMAL(18,6)",
+    "null": false,
+    "auto": false,
+    "default": "0",
+    "comment": "Parte do valor cotado na linha PT"
+   },
+   {
+    "name": "amount_cp",
+    "type": "DECIMAL(18,6)",
+    "null": false,
+    "auto": false,
+    "default": "0",
+    "comment": "Parte do valor cotado na linha CP"
+   },
+   {
+    "name": "amount_mh",
+    "type": "DECIMAL(18,6)",
+    "null": false,
+    "auto": false,
+    "default": "0",
+    "comment": "Parte do valor cotado na linha MH"
+   },
+   {
+    "name": "line_read",
+    "type": "TINYINT(1)",
+    "null": false,
+    "auto": false,
+    "default": "0",
+    "comment": "1 = a linha dos itens foi lida do Quote Report (tinha Product Group)"
+   },
+   {
+    "name": "first_seen",
+    "type": "DATETIME",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "Quando a cotação entrou no programa"
+   },
+   {
+    "name": "updated_at",
+    "type": "DATETIME",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "Última vez que veio num Quote Report (a mais nova sempre ganha)"
+   }
+  ],
+  "pk": [
+   "quote_id"
+  ],
+  "uq": [],
+  "fks": [],
+  "checks": [],
+  "idx": 6
+ },
+ "quote_orders": {
+  "comment": "Cotação → pedidos (Sales IDs)",
+  "cols": [
+   {
+    "name": "quote_id",
+    "type": "VARCHAR(20)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "sales_id",
+    "type": "VARCHAR(20)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Sales Id do pedido (ex.: SO00099598)"
+   }
+  ],
+  "pk": [
+   "quote_id",
+   "sales_id"
+  ],
+  "uq": [],
+  "fks": [
+   {
+    "col": "quote_id",
+    "ref": "quotes",
+    "refcol": "quote_id",
+    "rule": "ON DELETE CASCADE ON UPDATE CASCADE"
+   }
+  ],
+  "checks": [],
+  "idx": 1
+ },
+ "quote_product_groups": {
+  "comment": "Cotação → valor por Product Group",
+  "cols": [
+   {
+    "name": "quote_id",
+    "type": "VARCHAR(20)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "product_group",
+    "type": "VARCHAR(80)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Nome já limpo (pgLabel), ex.: Sprockets (11)"
+   },
+   {
+    "name": "amount",
+    "type": "DECIMAL(18,2)",
+    "null": false,
+    "auto": false,
+    "default": "0",
+    "comment": ""
+   }
+  ],
+  "pk": [
+   "quote_id",
+   "product_group"
+  ],
+  "uq": [],
+  "fks": [
+   {
+    "col": "quote_id",
+    "ref": "quotes",
+    "refcol": "quote_id",
+    "rule": "ON DELETE CASCADE ON UPDATE CASCADE"
+   }
+  ],
+  "checks": [],
+  "idx": 1
+ },
+ "sales": {
+  "comment": "Linhas Booked do Sales Report",
+  "cols": [
+   {
+    "name": "id",
+    "type": "BIGINT UNSIGNED",
+    "null": false,
+    "auto": true,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "sales_id",
+    "type": "VARCHAR(20)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Sales Id do pedido"
+   },
+   {
+    "name": "booked_date",
+    "type": "DATE",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "customer",
+    "type": "VARCHAR(150)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": ""
+   },
+   {
+    "name": "classification",
+    "type": "VARCHAR(40)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": ""
+   },
+   {
+    "name": "line",
+    "type": "VARCHAR(2)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "PT, CP, MH ou vazio"
+   },
+   {
+    "name": "booked",
+    "type": "DECIMAL(18,6)",
+    "null": false,
+    "auto": false,
+    "default": "0",
+    "comment": "Pode ser negativo (devolução / ajuste)"
+   },
+   {
+    "name": "salesperson",
+    "type": "VARCHAR(100)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Sales Responsible + Name (ex.: SP0178 - Julia Pulz Campo)"
+   }
+  ],
+  "pk": [
+   "id"
+  ],
+  "uq": [
+   [
+    "sales_id",
+    "booked_date",
+    "classification",
+    "line",
+    "customer",
+    "salesperson"
+   ]
+  ],
+  "fks": [],
+  "checks": [
+   "line IN ('', 'PT', 'CP', 'MH')"
+  ],
+  "idx": 2
+ },
+ "followups": {
+  "comment": "Campos manuais de cada cotação (FUP, % Win, requisição, fechamento)",
+  "cols": [
+   {
+    "name": "quote_id",
+    "type": "VARCHAR(20)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "customer",
+    "type": "VARCHAR(150)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Nome do cliente no momento (para ler o histórico sem a cotação)"
+   },
+   {
+    "name": "fup",
+    "type": "CHAR(1)",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "A = próximo dia · B = 2× em 5 dias · C = 2 semanas · D = 1 mês · E = Ongoing (data do Done)"
+   },
+   {
+    "name": "fup_since",
+    "type": "DATE",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "Âncora do ciclo: dia em que o FUP foi marcado ou do último Done"
+   },
+   {
+    "name": "win",
+    "type": "TINYINT UNSIGNED",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "% Win: 25, 50, 75 ou 99"
+   },
+   {
+    "name": "left_out_of_plan",
+    "type": "TINYINT(1)",
+    "null": false,
+    "auto": false,
+    "default": "0",
+    "comment": "1 = tirada do plano do dia (caixinha)"
+   },
+   {
+    "name": "cycle_step",
+    "type": "TINYINT UNSIGNED",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "B: quantos follow-ups do ciclo já foram feitos"
+   },
+   {
+    "name": "next_date",
+    "type": "DATE",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "E · Ongoing: data do próximo follow-up escolhida no Done"
+   },
+   {
+    "name": "requisition",
+    "type": "VARCHAR(255)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Requisição do cliente (ex.: RODRIGO - POLIAS)"
+   },
+   {
+    "name": "closed_as",
+    "type": "VARCHAR(10)",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "Fechada à mão: lost ou cancelled"
+   },
+   {
+    "name": "close_reason",
+    "type": "VARCHAR(40)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Price, Lead Time, Budget Only, Project Discontinued, Stalled project, No Response"
+   },
+   {
+    "name": "updated_at",
+    "type": "TIMESTAMP",
+    "null": false,
+    "auto": false,
+    "default": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+    "comment": ""
+   }
+  ],
+  "pk": [
+   "quote_id"
+  ],
+  "uq": [],
+  "fks": [],
+  "checks": [
+   "fup IS NULL OR fup IN ('A', 'B', 'C', 'D', 'E')",
+   "win IS NULL OR win IN (25, 50, 75, 99)",
+   "closed_as IS NULL OR closed_as IN ('lost', 'cancelled')"
+  ],
+  "idx": 2
+ },
+ "followup_done_days": {
+  "comment": "Dias com Done por cotação",
+  "cols": [
+   {
+    "name": "quote_id",
+    "type": "VARCHAR(20)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "done_day",
+    "type": "DATE",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   }
+  ],
+  "pk": [
+   "quote_id",
+   "done_day"
+  ],
+  "uq": [],
+  "fks": [
+   {
+    "col": "quote_id",
+    "ref": "followups",
+    "refcol": "quote_id",
+    "rule": "ON DELETE CASCADE ON UPDATE CASCADE"
+   }
+  ],
+  "checks": [],
+  "idx": 1
+ },
+ "activities": {
+  "comment": "Activities History e anotações (somente inclusão)",
+  "cols": [
+   {
+    "name": "id",
+    "type": "BIGINT UNSIGNED",
+    "null": false,
+    "auto": true,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "act_key",
+    "type": "CHAR(64)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "SHA-256 do actKey (data|QT|tipo|nota|para): impede o mesmo registro duas vezes"
+   },
+   {
+    "name": "at",
+    "type": "DATETIME",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Data e hora (hora local do computador de quem registrou)"
+   },
+   {
+    "name": "quote_id",
+    "type": "VARCHAR(20)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "customer",
+    "type": "VARCHAR(150)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": ""
+   },
+   {
+    "name": "kind",
+    "type": "VARCHAR(16)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "note, fup, win, done, resched, req, plan, status, amount, order, close, reopen, why"
+   },
+   {
+    "name": "from_value",
+    "type": "VARCHAR(255)",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "De (ex.: FUP A, % Win 50, valor antigo)"
+   },
+   {
+    "name": "to_value",
+    "type": "VARCHAR(255)",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "Para (ex.: FUP B, data do próximo follow-up, valor novo)"
+   },
+   {
+    "name": "note",
+    "type": "TEXT",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "Texto da anotação (ou o motivo, no fechamento)"
+   },
+   {
+    "name": "created_by",
+    "type": "VARCHAR(100)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Usuário logado que registrou"
+   }
+  ],
+  "pk": [
+   "id"
+  ],
+  "uq": [
+   [
+    "act_key"
+   ]
+  ],
+  "fks": [],
+  "checks": [
+   "kind IN ('note', 'fup', 'win', 'done', 'resched', 'req', 'plan', 'status', 'amount', 'order', 'close', 'reopen', 'why')"
+  ],
+  "idx": 3
+ },
+ "day_goals": {
+  "comment": "Meta de dias específicos",
+  "cols": [
+   {
+    "name": "day",
+    "type": "DATE",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "goal",
+    "type": "DECIMAL(18,2)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "updated_at",
+    "type": "TIMESTAMP",
+    "null": false,
+    "auto": false,
+    "default": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+    "comment": ""
+   }
+  ],
+  "pk": [
+   "day"
+  ],
+  "uq": [],
+  "fks": [],
+  "checks": [
+   "goal >= 0 OR goal = -1"
+  ],
+  "idx": 0
+ },
+ "settings": {
+  "comment": "Meta diária e informações gerais",
+  "cols": [
+   {
+    "name": "name",
+    "type": "VARCHAR(60)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "value",
+    "type": "VARCHAR(255)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": ""
+   },
+   {
+    "name": "updated_at",
+    "type": "TIMESTAMP",
+    "null": false,
+    "auto": false,
+    "default": "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+    "comment": ""
+   }
+  ],
+  "pk": [
+   "name"
+  ],
+  "uq": [],
+  "fks": [],
+  "checks": [],
+  "idx": 0
+ },
+ "users": {
+  "comment": "Usuários, papel (tela) e senha",
+  "cols": [
+   {
+    "name": "name",
+    "type": "VARCHAR(100)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Nome como aparece no login (Admin, ou o vendedor sem o código SP)"
+   },
+   {
+    "name": "role",
+    "type": "VARCHAR(10)",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "admin · manager (gerência) · outside (externo) · inside (interno) · NULL = sem acesso"
+   },
+   {
+    "name": "pass_salt",
+    "type": "CHAR(32)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": "Vazio = ainda vai criar a senha"
+   },
+   {
+    "name": "pass_hash",
+    "type": "CHAR(64)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": ""
+   },
+   {
+    "name": "changed_at",
+    "type": "DATETIME",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "Última mudança de senha ou papel (o mais recente vale)"
+   }
+  ],
+  "pk": [
+   "name"
+  ],
+  "uq": [],
+  "fks": [],
+  "checks": [
+   "role IS NULL OR role IN ('admin', 'manager', 'outside', 'inside')"
+  ],
+  "idx": 0
+ },
+ "sessions": {
+  "comment": "Sessões de login do servidor",
+  "cols": [
+   {
+    "name": "token_hash",
+    "type": "CHAR(64)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "name",
+    "type": "VARCHAR(100)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "created_at",
+    "type": "DATETIME",
+    "null": false,
+    "auto": false,
+    "default": "CURRENT_TIMESTAMP",
+    "comment": ""
+   },
+   {
+    "name": "last_seen",
+    "type": "DATETIME",
+    "null": false,
+    "auto": false,
+    "default": "CURRENT_TIMESTAMP",
+    "comment": ""
+   },
+   {
+    "name": "expires_at",
+    "type": "DATETIME",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "user_agent",
+    "type": "VARCHAR(200)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": ""
+   }
+  ],
+  "pk": [
+   "token_hash"
+  ],
+  "uq": [],
+  "fks": [],
+  "checks": [],
+  "idx": 2
+ }
+};
+const NS = "http://www.w3.org/2000/svg";
+const C = { ink: "#1D2B36", sub: "#6B7A86", line: "#E4E9EE", head: "#F3F6F8", fk: "#15806B", lk: "#7B8794" };
+const GROUPS = {
+  rep: { color: "#1F9A84", soft: "#DDF1EC", label: "Relatórios" },
+  acomp: { color: "#5B52C9", soft: "#ECEAFB", label: "Acompanhamento" },
+  acesso: { color: "#B7791F", soft: "#FDF0D9", label: "Acesso" },
+  conf: { color: "#52606D", soft: "#E9EEF2", label: "Configuração" },
+};
+const TBL_GROUP = { quotes: "rep", quote_orders: "rep", quote_product_groups: "rep", sales: "rep", followups: "acomp", followup_done_days: "acomp", activities: "acomp", users: "acesso", sessions: "acesso", settings: "conf", day_goals: "conf", v_quote_state: "rep" };
+
+// a visão entra no diagrama como uma "tabela" tracejada
+SCHEMA.v_quote_state = {
+  view: true,
+  comment: "Visão: situação de cada cotação (won, lost, cancelled, open) com as regras do core.js, incluindo o fechamento à mão. Junta quotes + followups + quote_orders.",
+  pk: [], uq: [], fks: [], checks: [],
+  cols: [
+    ["quote_id", "VARCHAR(20)"], ["quote_date", "DATE"], ["customer", "VARCHAR(150)"], ["classification", "VARCHAR(40)"], ["quoted_by", "VARCHAR(100)"], ["sales_person", "VARCHAR(100)"], ["amount", "DECIMAL(18,6)"],
+    ["report_state", "calculado"], ["state", "calculado"], ["fup", "CHAR(1)"], ["win", "TINYINT"], ["next_date", "DATE"], ["close_reason", "VARCHAR(40)"],
+  ].map(([name, type]) => ({ name, type, null: true, comment: "" })),
+};
+
+/* ligações: [de, coluna, para, coluna, ponta "de", ponta "para", tipo, rótulo]
+   pontas: one = ||, zone = o| (zero ou um), many = o< (zero ou muitos) */
+const RELS = [
+  ["quotes", "quote_id", "quote_orders", "quote_id", "one", "many", "fk", "pedidos"],
+  ["quotes", "quote_id", "quote_product_groups", "quote_id", "one", "many", "fk", "valor por grupo"],
+  ["followups", "quote_id", "followup_done_days", "quote_id", "one", "many", "fk", "dias com Done"],
+  ["quotes", "quote_id", "followups", "quote_id", "zone", "zone", "lk", "follow-up"],
+  ["quotes", "quote_id", "activities", "quote_id", "zone", "many", "lk", "histórico"],
+  ["quote_orders", "sales_id", "sales", "sales_id", "many", "many", "lk", "mesmo Sales Id"],
+  ["users", "name", "sessions", "name", "one", "many", "lk", "logins"],
+  ["users", "name", "activities", "created_by", "zone", "many", "lk", "quem registrou"],
+];
+const FKCOLS = new Set(RELS.filter((r) => r[6] === "fk").map((r) => r[2] + "." + r[3]));
+const LKCOLS = new Set(RELS.filter((r) => r[6] === "lk").flatMap((r) => [r[0] + "." + r[1], r[2] + "." + r[3]]));
+
+const W = 1640, H = 900, ROW = 23, HEAD = 40;
+const DEFAULT_POS = {
+  quote_orders: [30, 30, 270], quote_product_groups: [30, 150, 270], sales: [30, 305, 270],
+  quotes: [420, 30, 300], v_quote_state: [420, 520, 300],
+  followups: [840, 30, 300], activities: [840, 400, 300],
+  followup_done_days: [1260, 30, 270], users: [1260, 170, 270], sessions: [1260, 375, 270],
+  day_goals: [30, 610, 270], settings: [30, 755, 270],
+};
+let pos = JSON.parse(JSON.stringify(DEFAULT_POS));
+try { const s = JSON.parse(localStorage.getItem("qfu_der_pos2") || "null"); if (s) Object.keys(pos).forEach((k) => s[k] && (pos[k] = s[k])); } catch {}
+const savePos = () => { try { localStorage.setItem("qfu_der_pos2", JSON.stringify(pos)); } catch {} };
+
+const el = (tag, attrs = {}, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const txt = (s, attrs, parent) => { const t = el("text", attrs, parent); t.textContent = s; return t; };
+const shortType = (t) => t.replace(" UNSIGNED", "⁺").replace("DECIMAL", "DEC");
+
+/* ===================== DER ===================== */
+const svg = document.getElementById("derSvg");
+svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+svg.setAttribute("width", W);
+svg.style.width = "100%";
+svg.style.minWidth = "1050px";
+svg.style.height = "auto";
+const gRels = el("g", {}, svg), gTbls = el("g", {}, svg);
+const boxH = (name) => HEAD + SCHEMA[name].cols.length * ROW + 6;
+const colY = (name, col) => {
+  const i = SCHEMA[name].cols.findIndex((c) => c.name === col);
+  return pos[name][1] + HEAD + i * ROW + ROW / 2 + 2;
+};
+
+function drawTable(name) {
+  const t = SCHEMA[name], [x, y, w] = pos[name], g = GROUPS[TBL_GROUP[name]];
+  const grp = el("g", { class: "tbl", "data-t": name, transform: `translate(${x},${y})` }, gTbls);
+  const h = boxH(name);
+  el("rect", { x: 0, y: 2, width: w, height: h, rx: 10, fill: "rgba(16,24,40,.06)" }, grp);
+  el("rect", { x: 0, y: 0, width: w, height: h, rx: 10, fill: "#fff", stroke: t.view ? g.color : C.line, "stroke-width": t.view ? 1.4 : 1, "stroke-dasharray": t.view ? "6 4" : "" }, grp);
+  el("path", { d: `M0,10 a10,10 0 0 1 10,-10 h${w - 20} a10,10 0 0 1 10,10 v${HEAD - 10} h-${w} z`, fill: g.soft }, grp);
+  el("rect", { x: 0, y: 0, width: 5, height: HEAD, fill: g.color, rx: 2 }, grp);
+  txt(name, { x: 16, y: 25, "font-size": 15, "font-weight": 800, fill: C.ink }, grp);
+  if (t.view) txt("VISÃO", { x: w - 14, y: 25, "font-size": 10, "font-weight": 800, fill: g.color, "text-anchor": "end", "letter-spacing": ".6" }, grp);
+  t.cols.forEach((c, i) => {
+    const cy = HEAD + i * ROW;
+    if (i % 2 === 1) el("rect", { x: 1, y: cy, width: w - 2, height: ROW, fill: "#FAFBFC" }, grp);
+    const pk = t.pk.includes(c.name), fk = FKCOLS.has(name + "." + c.name), uq = (t.uq || []).some((u) => u.length === 1 && u[0] === c.name);
+    let tx = 14;
+    if (pk) { txt("🔑", { x: 12, y: cy + 16, "font-size": 11 }, grp); tx = 30; }
+    const nm = txt(c.name, { x: tx, y: cy + 16, "font-size": 12.5, "font-weight": pk ? 700 : 500, fill: C.ink, "font-family": "ui-monospace, Consolas, monospace" }, grp);
+    let bx = tx + c.name.length * 7.6 + 6;
+    const badge = (label, fill, color) => {
+      el("rect", { x: bx, y: cy + 5, width: label.length * 7 + 8, height: 14, rx: 3, fill }, grp);
+      txt(label, { x: bx + 4, y: cy + 15.5, "font-size": 9.5, "font-weight": 800, fill: color }, grp);
+      bx += label.length * 7 + 12;
+    };
+    if (fk) badge("FK", "#DDF1EC", "#15806B");
+    if (uq) badge("UQ", "#ECEAFB", "#5B52C9");
+    txt(shortType(c.type) + (c.null ? "" : ""), { x: w - 12, y: cy + 16, "font-size": 11, fill: C.sub, "text-anchor": "end", "font-family": "ui-monospace, Consolas, monospace" }, grp);
+  });
+  const multiUq = (t.uq || []).filter((u) => u.length > 1);
+  if (multiUq.length) {
+    // chave única de várias colunas: um traço violeta ao lado das colunas
+    multiUq.forEach((u) => u.forEach((col) => {
+      const i = t.cols.findIndex((c) => c.name === col);
+      el("rect", { x: w - 3, y: HEAD + i * ROW + 3, width: 3, height: ROW - 6, fill: "#5B52C9", rx: 1.5 }, grp);
+    }));
+  }
+  return grp;
+}
+
+// pontas das linhas (desenhadas a partir da borda da tabela, para fora)
+function endMark(g, x, y, dir, kind, color) {
+  const d = dir; // +1 = para a direita, -1 = para a esquerda
+  const L = (x1, y1, x2, y2) => el("line", { x1, y1, x2, y2, stroke: color, "stroke-width": 1.6 }, g);
+  const O = (cx) => el("circle", { cx, cy: y, r: 4, fill: "#fff", stroke: color, "stroke-width": 1.5 }, g);
+  L(x, y, x + d * 24, y);
+  if (kind === "one") { L(x + d * 8, y - 7, x + d * 8, y + 7); L(x + d * 13, y - 7, x + d * 13, y + 7); }
+  if (kind === "zone") { L(x + d * 8, y - 7, x + d * 8, y + 7); O(x + d * 17); }
+  if (kind === "many") { L(x + d * 12, y, x, y - 8); L(x + d * 12, y, x, y + 8); O(x + d * 18); }
+}
+
+function drawRels() {
+  gRels.innerHTML = "";
+  RELS.forEach(([a, ac, b, bc, ka, kb, kind, label]) => {
+    const [ax, , aw] = pos[a], [bx, , bw] = pos[b];
+    const ay = colY(a, ac), by = colY(b, bc);
+    let sa, sb; // lado de saída: +1 direita, -1 esquerda
+    if (ax + aw + 40 <= bx) { sa = 1; sb = -1; }
+    else if (bx + bw + 40 <= ax) { sa = -1; sb = 1; }
+    else { sa = 1; sb = 1; }
+    const ex = (sa === 1 ? ax + aw : ax), fx = (sb === 1 ? bx + bw : bx);
+    const p1 = ex + sa * 24, p2 = fx + sb * 24;
+    const mx = sa === sb ? Math.max(p1, p2) + 26 : (p1 + p2) / 2;
+    const color = kind === "fk" ? C.fk : C.lk;
+    const g = el("g", { class: "rel", "data-a": a, "data-b": b }, gRels);
+    el("path", { class: "ln", d: `M${p1},${ay} H${mx} V${by} H${p2}`, fill: "none", stroke: color, "stroke-width": kind === "fk" ? 1.8 : 1.5, "stroke-dasharray": kind === "fk" ? "" : "6 4" }, g);
+    endMark(g, ex, ay, sa, ka, color);
+    endMark(g, fx, by, sb, kb, color);
+    // rótulo no trecho vertical (ou no meio)
+    const ly = Math.abs(by - ay) > 30 ? (ay + by) / 2 : Math.min(ay, by) - 8;
+    const lx = mx;
+    const tw = label.length * 6.2 + 10;
+    el("rect", { x: lx - tw / 2, y: ly - 9, width: tw, height: 17, rx: 8, fill: "#fff", stroke: kind === "fk" ? "#BFE3D9" : "#D5DCE2" }, g);
+    txt(label, { x: lx, y: ly + 3.5, "font-size": 10.5, "font-weight": 600, fill: kind === "fk" ? C.fk : "#52606D", "text-anchor": "middle" }, g);
+  });
+}
+function drawAll() {
+  gTbls.innerHTML = "";
+  Object.keys(pos).forEach(drawTable);
+  drawRels();
+}
+drawAll();
+
+// destaque ao passar o mouse
+svg.addEventListener("mouseover", (e) => {
+  const t = e.target.closest(".tbl");
+  if (!t || dragging) return;
+  const n = t.dataset.t;
+  svg.classList.add("dim");
+  const rel = new Set([n]);
+  gRels.querySelectorAll(".rel").forEach((r) => {
+    const on = r.dataset.a === n || r.dataset.b === n;
+    r.classList.toggle("hi", on);
+    if (on) { rel.add(r.dataset.a); rel.add(r.dataset.b); }
+  });
+  gTbls.querySelectorAll(".tbl").forEach((x) => x.classList.toggle("hi", rel.has(x.dataset.t)));
+});
+svg.addEventListener("mouseleave", () => svg.classList.remove("dim"));
+svg.addEventListener("mouseout", (e) => { if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest(".tbl")) svg.classList.remove("dim"); });
+
+// arrastar
+let dragging = null;
+const pt = (e) => { const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(svg.getScreenCTM().inverse()); };
+svg.addEventListener("pointerdown", (e) => {
+  const t = e.target.closest(".tbl");
+  if (!t) return;
+  const n = t.dataset.t, p = pt(e);
+  dragging = { n, dx: p.x - pos[n][0], dy: p.y - pos[n][1], el: t };
+  t.classList.add("drag");
+  svg.classList.remove("dim");
+  svg.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+svg.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const p = pt(e), n = dragging.n;
+  pos[n][0] = Math.max(0, Math.min(W - pos[n][2], Math.round(p.x - dragging.dx)));
+  pos[n][1] = Math.max(0, Math.min(H - boxH(n), Math.round(p.y - dragging.dy)));
+  dragging.el.setAttribute("transform", `translate(${pos[n][0]},${pos[n][1]})`);
+  drawRels();
+});
+const endDrag = () => { if (dragging) { dragging.el.classList.remove("drag"); dragging = null; savePos(); } };
+svg.addEventListener("pointerup", endDrag);
+svg.addEventListener("pointercancel", endDrag);
+document.getElementById("reset").onclick = () => { pos = JSON.parse(JSON.stringify(DEFAULT_POS)); savePos(); drawAll(); };
+
+/* ===================== MER (conceitual) ===================== */
+const msvg = document.getElementById("merSvg");
+const MW = 1500, MH = 800;
+msvg.setAttribute("viewBox", `0 0 ${MW} ${MH}`);
+msvg.style.width = "100%"; msvg.style.minWidth = "1050px"; msvg.style.height = "auto";
+const ENT = {
+  PEDIDO: { x: 150, y: 120, g: "rep", attrs: ["_Sales Id_"] },
+  COTACAO: { label: "COTAÇÃO", x: 560, y: 120, g: "rep", attrs: ["_Quote ID_", "data, cliente, conta", "classificação, status", "valor (total e por linha)"] },
+  FOLLOWUP: { label: "FOLLOW-UP", x: 960, y: 120, g: "acomp", attrs: ["FUP (A–E), % Win", "próxima data, requisição", "fechada à mão + motivo"] },
+  DONE: { label: "DIA DE DONE", x: 1370, y: 120, g: "acomp", attrs: ["_dia_"] },
+  VENDA: { label: "VENDA (Booked)", x: 150, y: 430, g: "rep", attrs: ["dia, cliente", "classificação, linha", "valor, vendedor"] },
+  GRUPO: { label: "GRUPO DE PRODUTO", x: 380, y: 430, g: "rep", attrs: ["_nome_"] },
+  ATIVIDADE: { x: 1010, y: 430, g: "acomp", attrs: ["data e hora, tipo", "de → para, nota"] },
+  USUARIO: { label: "USUÁRIO", x: 760, y: 690, g: "acesso", attrs: ["_nome_", "papel (tela), senha"] },
+  SESSAO: { label: "SESSÃO", x: 1290, y: 690, g: "acesso", attrs: ["_código_", "validade"] },
+  META: { label: "META DO DIA", x: 150, y: 690, g: "conf", attrs: ["_dia_", "valor"] },
+  CONFIG: { label: "CONFIGURAÇÃO", x: 400, y: 690, g: "conf", attrs: ["_nome_", "valor"] },
+};
+// [entidade A, entidade B, nome, card perto de A, card perto de B, atributo do relacionamento]
+const MRELS = [
+  ["COTACAO", "PEDIDO", "gera", "(1,N)", "(0,N)"],
+  ["PEDIDO", "VENDA", "fatura", "(0,1)", "(0,N)"],
+  ["COTACAO", "GRUPO", "cota em", "(0,N)", "(0,N)", "valor"],
+  ["COTACAO", "FOLLOWUP", "acompanha", "(0,1)", "(0,1)"],
+  ["FOLLOWUP", "DONE", "tem", "(1,1)", "(0,N)"],
+  ["COTACAO", "ATIVIDADE", "histórico", "(0,1)", "(0,N)"],
+  ["USUARIO", "COTACAO", "atende", "(0,1)", "(0,N)", "externo / interno"],
+  ["USUARIO", "ATIVIDADE", "registra", "(0,1)", "(0,N)"],
+  ["USUARIO", "SESSAO", "abre", "(1,1)", "(0,N)"],
+];
+const EW = 190;
+const entH = (e) => 38 + e.attrs.length * 17 + 8;
+const gL = el("g", {}, msvg), gE = el("g", {}, msvg), gD = el("g", {}, msvg);
+// ponto na borda do retângulo da entidade, na direção de (tx, ty)
+function edge(e, tx, ty) {
+  const h = entH(e), dx = tx - e.x, dy = ty - e.y;
+  const sx = dx === 0 ? Infinity : (EW / 2) / Math.abs(dx), sy = dy === 0 ? Infinity : (h / 2) / Math.abs(dy);
+  const s = Math.min(sx, sy);
+  return [e.x + dx * s, e.y + dy * s];
+}
+MRELS.forEach(([a, b, name, ca, cb, attr]) => {
+  const A = ENT[a], B = ENT[b];
+  const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+  el("line", { x1: A.x, y1: A.y, x2: B.x, y2: B.y, stroke: "#8794A0", "stroke-width": 1.5 }, gL);
+  // losango
+  const dw = Math.max(92, name.length * 8.5 + 34), dh = 50;
+  const g = el("g", {}, gD);
+  el("polygon", { points: `${mx},${my - dh / 2} ${mx + dw / 2},${my} ${mx},${my + dh / 2} ${mx - dw / 2},${my}`, fill: "#fff", stroke: C.ink, "stroke-width": 1.5 }, g);
+  txt(name, { x: mx, y: my + 4.5, "font-size": 12.5, "font-weight": 700, fill: C.ink, "text-anchor": "middle" }, g);
+  if (attr) {
+    // ao lado do losango, longe das linhas
+    const rx = attr.length * 3.6 + 16;
+    const ax = mx + dw / 2 + rx + 22, ay = my + 30;
+    el("line", { x1: mx + dw / 4, y1: my + dh / 4, x2: ax - rx * 0.8, y2: ay - 6, stroke: "#8794A0", "stroke-width": 1.2 }, g);
+    el("ellipse", { cx: ax, cy: ay, rx, ry: 13, fill: "#fff", stroke: C.ink, "stroke-width": 1.2 }, g);
+    txt(attr, { x: ax, y: ay + 4, "font-size": 11, fill: C.ink, "text-anchor": "middle" }, g);
+  }
+  // cardinalidades perto de cada entidade
+  [[A, B, ca], [B, A, cb]].forEach(([E, O, card]) => {
+    const [px, py] = edge(E, O.x, O.y);
+    const len = Math.hypot(O.x - E.x, O.y - E.y), ux = (O.x - E.x) / len, uy = (O.y - E.y) / len;
+    const cx = px + ux * 24 - uy * 13, cy = py + uy * 24 + ux * 13;
+    const t = txt(card, { x: cx, y: cy + 4, "font-size": 12, "font-weight": 800, fill: "#15806B", "text-anchor": "middle" }, gD);
+    t.setAttribute("paint-order", "stroke"); t.setAttribute("stroke", "#fff"); t.setAttribute("stroke-width", "4");
+  });
+});
+Object.entries(ENT).forEach(([k, e]) => {
+  const g = el("g", {}, gE), G = GROUPS[e.g], h = entH(e), x = e.x - EW / 2, y = e.y - h / 2;
+  el("rect", { x, y: y + 2, width: EW, height: h, rx: 8, fill: "rgba(16,24,40,.06)" }, g);
+  el("rect", { x, y, width: EW, height: h, rx: 8, fill: "#fff", stroke: C.ink, "stroke-width": 1.5 }, g);
+  el("path", { d: `M${x},${y + 8} a8,8 0 0 1 8,-8 h${EW - 16} a8,8 0 0 1 8,8 v22 h-${EW} z`, fill: G.soft }, g);
+  el("line", { x1: x, y1: y + 30, x2: x + EW, y2: y + 30, stroke: C.ink, "stroke-width": 1 }, g);
+  txt(e.label || k, { x: e.x, y: y + 20, "font-size": 13, "font-weight": 800, fill: G.color, "text-anchor": "middle", "letter-spacing": ".3" }, g);
+  e.attrs.forEach((a, i) => {
+    const id = /^_.*_$/.test(a);
+    const t = txt(id ? a.slice(1, -1) : a, { x: e.x, y: y + 48 + i * 17, "font-size": 11.5, fill: id ? C.ink : C.sub, "font-weight": id ? 700 : 400, "text-anchor": "middle" }, g);
+    if (id) t.setAttribute("text-decoration", "underline");
+  });
+});
+
+/* ===================== Dicionário ===================== */
+const ORDER = ["quotes", "quote_orders", "quote_product_groups", "sales", "followups", "followup_done_days", "activities", "users", "sessions", "day_goals", "settings", "v_quote_state"];
+const EXTRA = {
+  activities: ["Somente inclusão: os gatilhos <code>tr_activities_no_update</code> e <code>tr_activities_no_delete</code> recusam qualquer alteração ou exclusão.", "<code>act_key</code> = SHA-256 do actKey do programa: o mesmo registro mandado duas vezes não entra de novo."],
+  followups: ["Sem FK para <code>quotes</code> de propósito: o follow-up continua mesmo se a cotação sair do Quote Report."],
+  users: ["A senha nunca fica em texto: só o sal e o hash (SHA-256 repetido 5000 vezes, o mesmo cálculo do programa)."],
+  sessions: ["O cookie do navegador guarda um código aleatório; aqui fica só o SHA-256 dele. Zerar a senha de alguém apaga as sessões dessa pessoa."],
+  settings: ["Chaves usadas: <code>daily_goal</code>, <code>data_version</code>, <code>rep_version</code>, <code>last_quote_report</code>, <code>quote_report_imported_at</code>, <code>quote_fill_at</code>, <code>last_sales_report</code>, <code>sales_report_imported_at</code>, <code>program_version</code>."],
+  sales: ["Linhas Booked somadas por pedido, dia, classificação, linha, cliente e vendedor (a chave única). O valor pode ser negativo (devolução)."],
+  v_quote_state: ["<code>report_state</code> = só pelo Quote Report; <code>state</code> = considerando também o fechamento à mão (<code>followups.closed_as</code>).", "Ganha (<code>won</code>) se o status tem “confirm” ou se a cotação tem pedido em <code>quote_orders</code>."],
+};
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const dict = document.getElementById("dict");
+ORDER.forEach((name) => {
+  const t = SCHEMA[name], G = GROUPS[TBL_GROUP[name]];
+  const fks = (t.fks || []).map((f) => `<li><b>FK</b> <code>${f.col}</code> → <code>${f.ref}.${f.refcol}</code> · ${f.rule.replace("ON DELETE CASCADE", "apaga junto").replace("ON UPDATE CASCADE", "e acompanha a mudança de código")}</li>`);
+  const inc = Object.entries(SCHEMA).flatMap(([tn, tt]) => (tt.fks || []).filter((f) => f.ref === name).map((f) => `<li><b>usada por</b> <code>${tn}.${f.col}</code> (FK: apagar aqui apaga lá também)</li>`));
+  const lks = RELS.filter((r) => r[6] === "lk" && (r[0] === name || r[2] === name)).map((r) => `<li><b>ligação lógica</b> <code>${r[0]}.${r[1]}</code> ↔ <code>${r[2]}.${r[3]}</code> (${r[7]})</li>`);
+  const uqs = (t.uq || []).map((u) => `<li><b>único</b> (${u.map((c) => `<code>${c}</code>`).join(", ")})</li>`);
+  const cks = (t.checks || []).map((c) => `<li><b>regra</b> <code>${esc(c)}</code></li>`);
+  const ext = (EXTRA[name] || []).map((x) => `<li>${x}</li>`);
+  const rows = t.cols.map((c) => {
+    const pk = t.pk.includes(c.name), fk = FKCOLS.has(name + "." + c.name), lk = LKCOLS.has(name + "." + c.name), uq = (t.uq || []).some((u) => u.length === 1 && u[0] === c.name);
+    const tags = (pk ? '<span class="k pk">PK</span>' : "") + (fk ? '<span class="k fk">FK</span>' : "") + (!fk && lk ? '<span class="k lk">lig.</span>' : "") + (uq ? '<span class="k uq">UQ</span>' : "");
+    const def = c.auto ? "auto" : c.default ? esc(c.default.replace(/^'(.*)'$/, "$1") || "''") : "";
+    return `<tr><td class="n">${c.name}${tags}</td><td class="t">${esc(c.type)}</td><td>${t.view ? "" : c.null ? "sim" : "não"}</td><td class="t">${def === "''" ? "vazio" : def}</td><td class="d">${esc(c.comment || "")}</td></tr>`;
+  }).join("");
+  const div = document.createElement("div");
+  div.className = "card dt";
+  div.innerHTML = `<h3><code>${name}</code><span class="chip" style="background:${G.soft};color:${G.color}">${t.view ? "VISÃO · " : ""}${G.label}</span></h3>
+    <div class="desc">${esc(t.comment || "")}</div>
+    <div class="scroll"><table class="cols"><thead><tr><th>Coluna</th><th>Tipo</th><th>Nulo</th><th>Padrão</th><th>Descrição</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${[...fks, ...inc, ...lks, ...uqs, ...cks, ...ext].length ? `<ul class="rules">${[...fks, ...inc, ...lks, ...uqs, ...cks, ...ext].join("")}</ul>` : ""}`;
+  dict.appendChild(div);
+});
+
+/* abas */
+document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => {
+  document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll("section").forEach((s) => s.classList.toggle("on", s.id === b.dataset.tab));
+}));
+</script>
+</body>
+</html>

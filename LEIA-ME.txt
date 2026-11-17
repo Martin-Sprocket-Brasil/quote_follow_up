@@ -4,12 +4,28 @@ QUOTE FOLLOW UP — como editar e compilar (Windows)
 O QUE TEM NESTA PASTA
   app.jsx      -> a interface (voce edita aqui)
   core.js      -> as regras: leitura dos relatorios, calculos, agenda
+  i18n.js      -> troca de idioma (ingles / portugues)
+  i18n-pt.js   -> as traducoes para o portugues (texto em ingles -> texto em portugues)
   entry.jsx    -> ponto de entrada (nao precisa mexer)
   styles.css   -> estilo base da pagina (nao precisa mexer)
   package.json -> lista das bibliotecas (nao precisa mexer)
   build.js     -> script que compila (nao precisa mexer)
   build.bat    -> CLIQUE AQUI para compilar
   LEIA-ME.txt  -> este arquivo
+  README.md    -> manual completo do programa
+  QuoteFollowUp.html / index.html -> o programa ja compilado (abrir no Chrome/Edge)
+
+  BANCO DE DADOS (MariaDB) - veja BANCO-DE-DADOS.md
+  schema.sql          -> cria o banco e as tabelas (mariadb -u root -p < schema.sql)
+  import-xlsx.mjs     -> le as planilhas da pasta de dados e gera o import.sql
+  importar-banco.bat  -> CLIQUE AQUI para gerar o import.sql
+  .gitignore          -> impede que planilhas, import.sql e a senha do banco subam para o GitHub
+
+  SERVIDOR (celular, varias pessoas ao mesmo tempo) - veja SERVIDOR.md
+  server.mjs                  -> o servidor: entrega a pagina, faz o login e grava no banco
+  server.config.example.json  -> modelo da configuracao (o iniciar-servidor.bat cria o server.config.json)
+  iniciar-servidor.bat        -> CLIQUE AQUI para ligar o servidor (depois: http://localhost:8080)
+  icon-192.png, icon-512.png, apple-touch-icon.png -> icone do "Adicionar a tela inicial" no celular
 
 PASSO 1 — Instalar o Node.js (so na primeira vez)
   - Entre em  https://nodejs.org

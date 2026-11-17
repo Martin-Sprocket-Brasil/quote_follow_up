@@ -14,6 +14,23 @@ Tudo roda no navegador, sem servidor. Os arquivos não saem do computador.
 
 ---
 
+## Telas de cada papel
+
+| Papel | Abas |
+|---|---|
+| Vendedor externo (Sales Person) e vendedor interno (Quoted By) | **Today** (follow-ups do dia, da maior prioridade para a menor) · **Quotes** (as cotações dele) · **Calendar** (o plano dos dias e a meta) |
+| Gerência | **Overview** · **Quotes** · **Team** (FUP por vendedor) · **Goal** · **Analysis** · **Data** (no celular, fica no menu do usuário) |
+
+**Overview (gerência):** a meta do mês (vendido × meta, e se está à frente ou atrás do ritmo), o que precisa de atenção (follow-ups atrasados, de hoje e cotações sem FUP — tocar abre a lista já filtrada), a carteira do período (em aberto, ganho, taxa de conversão, perdido), as cotações em aberto de maior prioridade e a equipe hoje.
+
+**Prioridade (0 a 100):** 70% do % Win + 30% do Thermometer (a mesma conta do Calendar; mude os pesos em `PRIO_WIN` / `PRIO_TEMP` no `core.js`). Aparece em cada cotação, com o Thermometer, e a lista vem da maior para a menor. No computador é uma coluna que dá para ordenar.
+
+**Filtros:** os rápidos ficam à vista (Atrasados, Para hoje, Prioridade alta, Quente ou Morno, Sem FUP; dá para ligar vários) e cada filtro ligado vira um chip com × em cima da lista. No celular, o botão ao lado da busca abre a folha com ordem, período (Este mês, Mês passado, Este ano fiscal…), classificação, linha, vendedor, FUP, % Win, Thermometer e cliente. Os filtros continuam ao trocar de aba.
+
+**Idioma:** English ou Português no menu do usuário (e na tela de entrada). Fica salvo no navegador; sem escolha, segue o idioma do aparelho. As traduções estão no `i18n-pt.js` (texto em inglês → texto em português): para mudar uma, troque só o lado direito e rode o `build.bat`. Os valores gravados (motivos de fechamento, status) continuam em inglês no banco; só a tela traduz.
+
+**Celular:** pelo servidor, dá para instalar na tela inicial (Chrome: menu ⋮ → *Adicionar à tela inicial*; iPhone/Safari: Compartilhar → *Adicionar à Tela de Início*). Abre em tela cheia, com ícone próprio.
+
 ## Colunas da tabela
 
 | Coluna | Origem | Regra |
@@ -180,6 +197,12 @@ Dia que já passou mostra só o vendido contra a meta; o plano começa hoje.
 O cabeçalho pode estar em qualquer uma das 30 primeiras linhas. Datas em texto são reconhecidas como mês/dia/ano ou dia/mês/ano, conforme o próprio arquivo. Se você usar o botão errado, o programa percebe pelo conteúdo e importa no lugar certo.
 
 ---
+
+## Com o servidor (MariaDB): celular e várias pessoas ao mesmo tempo
+
+Aberto pelo servidor (`node server.mjs`, direto ou pelo túnel Cloudflare), o programa usa o banco MariaDB em vez da pasta. Não tem botão Save: cada mudança vai sozinha em cerca de 1 segundo, e o que os outros mudam aparece em até 20 segundos. O login é conferido pelo servidor, com as mesmas senhas. Como instalar: `SERVIDOR.md`.
+
+Aberto como arquivo, o programa continua usando a pasta, como descrito abaixo.
 
 ## Onde ficam os dados: a pasta com os arquivos de dados
 
