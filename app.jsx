@@ -171,6 +171,11 @@ import {
   KeyRound,
   ShieldCheck,
   LogOut,
+  MapPin,
+  Headphones,
+  SlidersHorizontal,
+  UserPlus,
+  Ban,
 } from "lucide-react";
 
 /* ---------- paleta (mesma do Customer portfolio do pulz) ---------- */
@@ -217,6 +222,70 @@ const pill = (txt, fg, bg, extra) => (
   <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, color: fg, background: bg, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap", ...extra }}>{txt}</span>
 );
 const ST_PILL = { won: ["Won", "#1F8A5B", "#DDF3E8"], lost: ["Lost", X.redDk, X.redSoft], open: ["Open", X.amber, X.amberSoft], cancelled: ["Cancelled", "#64748B", "#EEF2F5"] };
+
+/* ---------- mobile first ----------
+   A tela é pensada primeiro para o celular (uma coluna, cartões no lugar das tabelas, abas embaixo) e
+   cresce para o computador a partir de 761 px. useMobile() = tela estreita (celular ou janela pequena). */
+const MOBILE_Q = "(max-width: 760px)";
+function useMedia(q) {
+  const get = () => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia(q).matches : false);
+  const [m, setM] = useState(get);
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia(q);
+    const f = () => setM(mq.matches);
+    f();
+    if (mq.addEventListener) mq.addEventListener("change", f);
+    else mq.addListener(f);
+    return () => (mq.removeEventListener ? mq.removeEventListener("change", f) : mq.removeListener(f));
+  }, [q]);
+  return m;
+}
+const useMobile = () => useMedia(MOBILE_Q);
+// estilos globais (mobile first: o padrão é o celular; o @media acrescenta o computador)
+const GLOBAL_CSS = `
+/* campos com largura 100% contam o padding dentro da largura (senão passam da tela do celular) */
+input:not([type="checkbox"]):not([type="radio"]), textarea, select { box-sizing: border-box; }
+.qp-shell { padding: 10px 12px 96px; gap: 12px; }
+.qp-hscroll { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.qp-hscroll::-webkit-scrollbar { display: none; }
+.qp-card-btn { -webkit-tap-highlight-color: transparent; }
+.qp-card-btn:active { background: #F4FBF9 !important; }
+@keyframes qpspin { to { transform: rotate(360deg); } }
+.qp-spin { animation: qpspin 1s linear infinite; }
+@media (min-width: 761px) {
+  .qp-shell { padding: 18px 24px 40px; gap: 14px; }
+}`;
+
+/* ---------- papéis ----------
+   O Admin escolhe o papel de cada usuário (aba Data da gerência). Cada papel tem a sua tela:
+   • outside = vendedor externo (coluna Sales Person): Hoje e Minhas cotações, pensado para o celular;
+   • inside  = vendedor interno (coluna Quoted By): Carteira e Calendário com o plano do dia;
+   • manager = gerência: Análise, FUP por vendedor, meta diária, relatórios e usuários (todos os vendedores).
+   Sem papel (usuário novo ou o antigo "seller"), a pessoa entra mas só vê o aviso para pedir o acesso. */
+const ROLES = {
+  outside: { label: "Outside sales", icon: MapPin, fg: X.violet, bg: X.violetSoft, col: "sp", colTxt: "Sales Person" },
+  inside: { label: "Inside sales", icon: Headphones, fg: X.tealDk, bg: X.tealSoft, col: "qb", colTxt: "Quoted By" },
+  manager: { label: "Management", icon: ShieldCheck, fg: "#2F6FDB", bg: "#E6EEFB", col: "", colTxt: "" },
+};
+const ROLE_KEYS = ["outside", "inside", "manager"];
+const ROLE_TABS = {
+  outside: [
+    ["today", "Today", CalendarCheck],
+    ["mine", "Quotes", ListIcon],
+  ],
+  inside: [
+    ["today", "Today", CalendarCheck],
+    ["portfolio", "Quotes", ListIcon],
+    ["calendar", "Calendar", CalendarDays],
+  ],
+  manager: [
+    ["analysis", "Analysis", PieChart],
+    ["sellers", "Salespeople", Users],
+    ["goal", "Goal", Target],
+    ["data", "Data", Database],
+  ],
+};
 const TEMP_ICON = { HOT: Flame, WARM: Sun, COOL: Wind, COLD: Snowflake };
 
 const FupPill = ({ v, short }) => (FUP[v] ? pill(short ? v : `${v} · ${FUP[v].label}`, FUP[v].color, FUP[v].bg, { fontWeight: 700 }) : null);
@@ -346,14 +415,21 @@ function usePop(width = 200, maxH = 340) {
     const close = (e) => {
       const t = e && e.target;
       if (t && ((menu.current && menu.current.contains(t)) || (anchor.current && anchor.current.contains(t)))) return;
+      // a página rola sozinha quando o teclado do celular abre para a busca do menu: não fecha
+      if (e && e.type === "scroll" && menu.current && menu.current.contains(document.activeElement)) return;
       setPos(null);
     };
+    // no celular o teclado que abre muda só a altura da janela: isso não fecha o menu
+    const w0 = window.innerWidth;
+    const onResize = () => window.innerWidth !== w0 && setPos(null);
     window.addEventListener("mousedown", close);
-    window.addEventListener("resize", close);
+    window.addEventListener("touchstart", close, { passive: true });
+    window.addEventListener("resize", onResize);
     window.addEventListener("scroll", close, true);
     return () => {
       window.removeEventListener("mousedown", close);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("touchstart", close);
+      window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", close, true);
     };
   }, [pos]);
@@ -361,9 +437,12 @@ function usePop(width = 200, maxH = 340) {
     e.stopPropagation();
     if (pos) return setPos(null);
     const rc = anchor.current.getBoundingClientRect();
-    const x = Math.max(8, Math.min(rc.left, window.innerWidth - width - 8));
+    // no celular o menu nunca passa da largura da tela
+    const w = Math.min(width, window.innerWidth - 16);
+    const x = Math.max(8, Math.min(rc.left, window.innerWidth - w - 8));
     const up = rc.bottom + Math.min(280, maxH) > window.innerHeight && rc.top > 300;
-    setPos(up ? { x, bottom: window.innerHeight - rc.top + 6 } : { x, top: rc.bottom + 6 });
+    const h = Math.min(maxH, Math.max(160, (up ? rc.top : window.innerHeight - rc.bottom) - 16));
+    setPos(up ? { x, w, h, bottom: window.innerHeight - rc.top + 6 } : { x, w, h, top: rc.bottom + 6 });
   };
   const render = (children) =>
     pos &&
@@ -371,7 +450,7 @@ function usePop(width = 200, maxH = 340) {
       <div
         ref={menu}
         onClick={(e) => e.stopPropagation()}
-        style={{ position: "fixed", left: pos.x, top: pos.top, bottom: pos.bottom, width, zIndex: 1000, ...card, borderRadius: 10, padding: 5, boxShadow: "0 10px 30px rgba(16,24,40,.16)", maxHeight: maxH, overflow: "auto" }}
+        style={{ position: "fixed", left: pos.x, top: pos.top, bottom: pos.bottom, width: pos.w || width, zIndex: 2100, ...card, borderRadius: 10, padding: 5, boxShadow: "0 10px 30px rgba(16,24,40,.16)", maxHeight: pos.h || maxH, overflow: "auto" }}
       >
         {children}
       </div>,
@@ -459,7 +538,8 @@ function ThermoCell({ t }) {
 /* Filtro de coluna com várias escolhas. */
 /* Filtro de coluna: o próprio título da coluna abre a lista (várias escolhas). Com muitas opções
    (clientes), aparece uma busca no topo. O número ao lado do funil = quantas opções estão marcadas. */
-function ColFilter({ label, options, selected, onChange, width = 240, iconOnly }) {
+/* row = uma linha inteira (nome à esquerda, "All" / "2 selected" à direita), usada na folha de filtros do celular */
+function ColFilter({ label, options, selected, onChange, width = 240, iconOnly, row }) {
   const p = usePop(width);
   const [q, setQ] = useState("");
   const on = selected.length > 0;
@@ -475,11 +555,25 @@ function ColFilter({ label, options, selected, onChange, width = 240, iconOnly }
           p.toggle(e);
         }}
         title={`Filter by ${label}`}
-        style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer", padding: "3px 6px", margin: "-3px -6px", borderRadius: 6, background: on ? X.tealSoft : "transparent" }}
+        style={
+          row
+            ? { display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "13px 2px", cursor: "pointer", borderBottom: `1px solid ${X.line}` }
+            : { display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer", padding: "3px 6px", margin: "-3px -6px", borderRadius: 6, background: on ? X.tealSoft : "transparent" }
+        }
       >
-        {!iconOnly && label}
-        <Filter size={11.5} color={on ? X.tealDk : "#9AA5B1"} />
-        {on && <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: X.teal, borderRadius: 999, padding: "0 5px", lineHeight: "15px" }}>{selected.length}</span>}
+        {row ? (
+          <>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: X.ink }}>{label}</span>
+            <span style={{ fontSize: 13, color: on ? X.tealDk : X.sub, fontWeight: on ? 700 : 500 }}>{on ? `${selected.length} selected` : "All"}</span>
+            <ChevronRight size={16} color="#A0AEC0" />
+          </>
+        ) : (
+          <>
+            {!iconOnly && label}
+            <Filter size={11.5} color={on ? X.tealDk : "#9AA5B1"} />
+            {on && <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: X.teal, borderRadius: 999, padding: "0 5px", lineHeight: "15px" }}>{selected.length}</span>}
+          </>
+        )}
       </span>
       {p.render(
         <>
@@ -510,15 +604,89 @@ function ColFilter({ label, options, selected, onChange, width = 240, iconOnly }
   );
 }
 
-function Tile({ icon: Ic, label, value, caption, color = X.ink, tint = X.tealSoft, ink = X.tealDk, title }) {
+/* ===== folha (sheet) =====
+   Tudo o que não precisa ficar à vista (filtros, ordem, exportar) fica numa folha que sobe de baixo no celular
+   (no computador, uma janela no centro). A tela fica só com a lista e a ação principal. */
+function Sheet({ open, title, onClose, children, footer }) {
+  const mob = useMobile();
+  useEffect(() => {
+    if (!open) return;
+    const k = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    const ov = document.body.style.overflow;
+    document.body.style.overflow = "hidden"; // a página de trás não rola junto
+    return () => {
+      window.removeEventListener("keydown", k);
+      document.body.style.overflow = ov;
+    };
+  }, [open, onClose]);
+  if (!open) return null;
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1600, background: "rgba(15,23,42,.38)", display: "flex", alignItems: mob ? "flex-end" : "center", justifyContent: "center" }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#fff", width: mob ? "100%" : "min(480px, 94vw)", maxHeight: "88vh", borderRadius: mob ? "20px 20px 0 0" : 16, display: "flex", flexDirection: "column", boxShadow: "0 -10px 40px rgba(15,23,42,.25)", paddingBottom: mob ? "env(safe-area-inset-bottom)" : 0 }}
+      >
+        {mob && <div style={{ width: 40, height: 4, borderRadius: 9, background: "#D5DCE3", margin: "8px auto 0", flexShrink: 0 }} />}
+        <div style={{ display: "flex", alignItems: "center", padding: "10px 16px 6px", flexShrink: 0 }}>
+          <div style={{ fontSize: 17, fontWeight: 800, flex: 1 }}>{title}</div>
+          <button onClick={onClose} title="Close" style={{ ...btn, width: 36, height: 36, padding: 0, justifyContent: "center", borderRadius: 999, border: "none", background: X.head }}>
+            <XIcon size={17} />
+          </button>
+        </div>
+        <div style={{ overflowY: "auto", padding: "6px 16px 18px", display: "flex", flexDirection: "column", gap: 18 }}>{children}</div>
+        {footer && <div style={{ padding: "10px 16px 14px", borderTop: `1px solid ${X.line}`, display: "flex", gap: 8, flexShrink: 0 }}>{footer}</div>}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+function SheetField({ label, children }) {
   return (
-    <div title={title} style={{ ...card, padding: "13px 15px", display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
-      <span style={{ width: 36, height: 36, borderRadius: 10, background: tint, color: ink, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <Ic size={18} />
-      </span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+/* escolha única em botões (no celular é mais rápido que um select) */
+function Chips({ value, options, onChange }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+      {options.map(([v, l]) => {
+        const on = value === v;
+        return (
+          <button
+            key={v || "all"}
+            onClick={() => onChange(v)}
+            style={{ border: `1px solid ${on ? X.teal : X.line}`, background: on ? X.teal : "#fff", color: on ? "#fff" : X.ink, borderRadius: 999, padding: "9px 14px", fontSize: 13, fontWeight: on ? 700 : 500, cursor: "pointer" }}
+          >
+            {l}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+/* botão redondo de ícone (topo do celular) */
+const iconBtn = (extra) => ({ ...btn, width: 40, height: 40, padding: 0, justifyContent: "center", borderRadius: 12, position: "relative", flexShrink: 0, ...extra });
+const dotBadge = (n) =>
+  n > 0 ? (
+    <span style={{ position: "absolute", top: -4, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: X.teal, color: "#fff", fontSize: 10.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff" }}>{n}</span>
+  ) : null;
+
+function Tile({ icon: Ic, label, value, caption, color = X.ink, tint = X.tealSoft, ink = X.tealDk, title }) {
+  const mob = useMobile(); // celular: sem o ícone, para sobrar espaço para o número
+  return (
+    <div title={title} style={{ ...card, padding: mob ? "10px 11px" : "13px 15px", display: "flex", gap: 12, alignItems: "center", minWidth: 0, ...(mob ? { borderTop: `3px solid ${tint}` } : null) }}>
+      {!mob && (
+        <span style={{ width: 36, height: 36, borderRadius: 10, background: tint, color: ink, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Ic size={18} />
+        </span>
+      )}
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35, whiteSpace: "nowrap" }}>{label}</div>
-        <div style={{ fontSize: 18, fontWeight: 800, color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", letterSpacing: -0.3 }}>{value}</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", letterSpacing: -0.3, overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
         {caption && <div style={{ fontSize: 11.5, color: X.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{caption}</div>}
       </div>
     </div>
@@ -704,6 +872,7 @@ function StepHead({ n, title, sub, ok }) {
   );
 }
 function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq, onAskClose, onReopen, onWhy, focusDone, compact, m, user, onUser, headRight }) {
+  const mob = useMobile(); // celular: tudo numa coluna só, com uma rolagem para a tela inteira
   const [txt, setTxt] = useState("");
   // requisição do cliente (ex.: "RODRIGO - POLIAS"): campo da cotação, vai para o relatório de FUP
   const curReq = (m && m.req) || "";
@@ -722,6 +891,8 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
     }
   }, [focusDone]);
   const [hf, setHf] = useState("all"); // filtro do histórico: all | note | follow | report
+  const [showDet, setShowDet] = useState(false); // celular: "Details" recolhido
+  const [showHist, setShowHist] = useState(false); // celular: "History" recolhido
   if (!q) return <div style={{ padding: 16, color: X.sub }}>Quote not found in the stored data.</div>;
   // situação considerando o fechamento à mão (FUP → Cancelled / Lost)
   const st = quoteStateM(q, (m || {}).close);
@@ -798,7 +969,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
     borderLeft: open ? `4px solid ${ok ? X.teal : "#F0A43A"}` : "none",
     background: open ? (ok ? "#F6FBFA" : "#FFFBF5") : "transparent",
   });
-  const subBtn = (on) => ({ ...btn, flex: "1 1 160px", justifyContent: "center", height: 32, fontSize: 12, color: on ? X.ink : "#A0AEC0", cursor: on ? "pointer" : "not-allowed", background: "#fff" });
+  const subBtn = (on) => ({ ...btn, flex: mob ? "1 1 0" : "1 1 160px", minWidth: 0, justifyContent: "center", height: mob ? 38 : 32, fontSize: 12, color: on ? X.ink : "#A0AEC0", cursor: on ? "pointer" : "not-allowed", background: "#fff" });
   // vendido: valor Booked dos pedidos no Sales Report (sem eles, o Sales Amt da cotação)
   const soldV = st === "won" ? ((q.so || []).some((id) => soMap[id]) ? (q.so || []).reduce((t, id) => t + ((soMap[id] && soMap[id].v) || 0), 0) : q.sa || q.a) : null;
   // vendedores: interno (Quoted By) e externo (Sales Person); a mesma pessoa nas duas colunas aparece uma vez
@@ -812,7 +983,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
      ao lado do Activities / History (direita), cada lado com a própria rolagem ---------- */
   const factLbl = { fontSize: 10.5, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.45, whiteSpace: "nowrap" };
   const fact = (label, body, sub, extra) => (
-    <div style={{ padding: "11px 16px", borderRight: `1px solid ${X.line}`, minWidth: 0, display: "flex", flexDirection: "column", gap: 6, ...extra }}>
+    <div style={{ padding: mob ? "10px 14px" : "11px 16px", borderRight: `1px solid ${X.line}`, ...(mob ? { borderBottom: `1px solid ${X.line}` } : null), minWidth: 0, display: "flex", flexDirection: "column", gap: 6, ...extra, ...(mob && extra && extra.paddingLeft ? { paddingLeft: 14 } : null) }}>
       <div style={factLbl}>{label}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "wrap", fontSize: 13 }}>{body}</div>
       {sub ? <div style={{ fontSize: 11, color: X.sub, marginTop: -2 }}>{sub}</div> : null}
@@ -826,11 +997,11 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
         {ok ? <Check size={13} strokeWidth={3} /> : n}
       </span>
       <span style={{ fontSize: 13.5, fontWeight: 700, color: X.ink, whiteSpace: "nowrap" }}>{title}</span>
-      {hint ? <span style={{ fontSize: 12, color: X.sub, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hint}</span> : null}
+      {hint ? <span style={{ fontSize: 12, color: X.sub, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: mob ? "normal" : "nowrap" }}>{hint}</span> : null}
     </div>
   );
   const nDone = [hasNote, ndOk, winOk].filter(Boolean).length;
-  const sect = { padding: "14px 18px", borderTop: `1px solid ${X.line}`, display: "flex", flexDirection: "column", gap: 10 };
+  const sect = { padding: mob ? "12px 12px" : "14px 18px", borderTop: `1px solid ${X.line}`, display: "flex", flexDirection: "column", gap: 10 };
   const panelCard = { background: "#fff", border: `1px solid ${X.line}`, borderRadius: 14, boxShadow: "0 1px 3px rgba(16,24,40,.05)" };
   const noteBox = (
     <textarea
@@ -857,19 +1028,107 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
       }}
     />
   );
+  const factsStrip = (
+    <div style={{ display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fit, minmax(150px, 1fr))", background: "#fff", borderBottom: `1px solid ${X.line}`, flexShrink: 0 }}>
+      {fact("FUP", mm.fup ? <FupPill v={mm.fup} /> : muted("Not set"), null, { paddingLeft: 22 })}
+      {fact(
+        "Next follow-up",
+        next ? <b style={{ color: nextLate ? X.redDk : X.ink }}>{fmtDate(next)}</b> : muted(st === "open" ? "—" : "closed"),
+        next ? <span style={{ color: nextLate ? X.redDk : nextIn === 0 ? X.amber : X.sub, fontWeight: nextLate ? 700 : 500 }}>{nextIn === 0 ? "today" : nextLate ? `${-nextIn} day${nextIn === -1 ? "" : "s"} late` : `in ${nextIn} day${nextIn === 1 ? "" : "s"}`}</span> : null,
+        nextLate ? { background: "#FFF7F7" } : null,
+      )}
+      {fact("% Win", mm.win ? <WinPill v={mm.win} /> : muted("Not set"))}
+      {fact("Thermometer", thermo ? <ThermoCell t={thermo} /> : muted("—"))}
+      {fact(
+        "Salespeople",
+        people.length ? (
+          people.map((p, i) => (
+            <span key={i} title={`${p.raw} · ${p.role}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
+              <span style={{ width: 24, height: 24, borderRadius: 999, background: p.bg, color: p.fg, fontSize: 10, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials(p.name)}</span>
+              <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+            </span>
+          ))
+        ) : (
+          muted("—")
+        ),
+        people.length === 1 ? people[0].role.split(" · ")[0] : null,
+        { gridColumn: "span 2" },
+      )}
+      {fact(
+        "Orders (SO)",
+        q.so && q.so.length ? (
+          q.so.map((id) => (
+            <span key={id} title={soMap[id] ? `booked ${fmtDate(soMap[id].d)} · ${money(soMap[id].v)}` : "not in the Sales Report yet"} style={{ fontWeight: 700, fontSize: 12.5 }}>
+              {id}
+            </span>
+          ))
+        ) : (
+          muted(st === "won" ? "no Sales Id" : "No order yet")
+        ),
+        q.so && q.so.length ? (q.so.some((id) => soMap[id]) ? <span style={{ color: X.green, fontWeight: 700 }}>booked {moneyShort(q.so.reduce((t, id) => t + ((soMap[id] && soMap[id].v) || 0), 0))}</span> : "not in the Sales Report yet") : null,
+        { borderRight: "none" },
+      )}
+    </div>
+  );
+  const reqBox = onReq && (
+    <div style={{ ...(mob ? { padding: "12px 14px", borderTop: `1px solid ${X.line}` } : { ...panelCard, padding: "12px 16px" }), display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <ClipboardList size={16} color={X.violet} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: X.ink }}>Customer requisition</div>
+        <div style={{ fontSize: 11, color: X.sub }}>who asked and what · goes to the FUP report</div>
+      </div>
+      <input
+        value={req}
+        onChange={(e) => setReq(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && req.trim() !== curReq && onReq(q.id, q.c, req.trim())}
+        placeholder="e.g. RODRIGO - POLIAS"
+        style={{ ...inp, height: 32, fontSize: 12.5, flex: "1 1 180px", minWidth: 0, borderRadius: 9 }}
+      />
+      {req.trim() !== curReq && (
+        <>
+          <button onClick={() => onReq(q.id, q.c, req.trim())} style={{ ...btn, height: 32, fontSize: 12, background: X.teal, color: "#fff", borderColor: X.teal }}>
+            <Check size={13} /> Save
+          </button>
+          <button onClick={() => setReq(curReq)} title="Undo" style={{ ...btn, height: 32, fontSize: 12, padding: "0 8px" }}>
+            <XIcon size={13} />
+          </button>
+        </>
+      )}
+    </div>
+  );
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, background: X.bg }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, background: X.bg, ...(mob ? { overflowY: "auto", WebkitOverflowScrolling: "touch" } : null) }}>
       {/* ---------- cabeçalho ---------- */}
-      <div style={{ background: "#fff", padding: "18px 22px 16px", display: "flex", gap: 20, alignItems: "flex-start", borderBottom: `1px solid ${X.line}` }}>
+      {mob ? (
+        /* celular: QT e situação, o cliente, o valor e quando é o próximo follow-up */
+        <div style={{ background: "#fff", padding: "10px 14px 12px", borderBottom: `1px solid ${X.line}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: X.sub }}>{q.id}</span>
+            {pill(s[0] + (byHand ? " · by hand" : ""), s[1], s[2], { fontSize: 11 })}
+            {headRight ? <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>{headRight}</span> : null}
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: X.ink, marginTop: 6, lineHeight: 1.25 }}>{q.c}</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.4, fontVariantNumeric: "tabular-nums", color: st === "won" ? X.green : st === "lost" ? X.redDk : X.ink }}>{money(st === "won" && soldV != null ? soldV : q.a)}</span>
+            {next ? (
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: nextLate ? X.redDk : nextIn === 0 ? X.amber : X.sub }}>
+                {nextLate ? `follow-up ${-nextIn} day${nextIn === -1 ? "" : "s"} late` : nextIn === 0 ? "follow-up today" : `next follow-up ${fmtDay(next)}`}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+      <div style={{ background: "#fff", padding: mob ? "12px 14px" : "18px 22px 16px", display: "flex", gap: mob ? 8 : 20, alignItems: "flex-start", borderBottom: `1px solid ${X.line}`, flexWrap: mob ? "wrap" : "nowrap", flexShrink: 0 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5, color: X.ink }}>{q.id}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: mob ? 7 : 10, flexWrap: "wrap" }}>
+            <span style={{ fontSize: mob ? 19 : 22, fontWeight: 800, letterSpacing: -0.5, color: X.ink }}>{q.id}</span>
             {pill(s[0] + (byHand ? " · by hand" : ""), s[1], s[2], { fontSize: 11.5, padding: "3px 10px" })}
             {lines.map((k) => (
               <span key={k} style={{ fontSize: 11, fontWeight: 800, color: LINE_COLOR[k][0], background: LINE_COLOR[k][1], padding: "3px 8px", borderRadius: 6 }}>
                 {k}
               </span>
             ))}
+            {mob && headRight ? <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>{headRight}</span> : null}
           </div>
           <div style={{ fontSize: 14.5, fontWeight: 600, color: X.ink, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={q.c}>
             {q.c}
@@ -879,62 +1138,23 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
             {q.conta || q.cls ? " · " : ""}created {fmtDate(q.d)} · {age === 0 ? "today" : `${age} day${age === 1 ? "" : "s"} ago`}
           </div>
         </div>
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div style={mob ? { width: "100%", display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" } : { textAlign: "right", flexShrink: 0 }}>
           <div style={factLbl}>{st === "won" ? "Sold" : st === "lost" ? "Lost" : "Quoted"}</div>
-          <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.6, fontVariantNumeric: "tabular-nums", marginTop: 2, color: st === "won" ? X.green : st === "lost" ? X.redDk : X.ink }}>
+          <div style={{ fontSize: mob ? 21 : 26, fontWeight: 800, letterSpacing: -0.6, fontVariantNumeric: "tabular-nums", marginTop: 2, color: st === "won" ? X.green : st === "lost" ? X.redDk : X.ink }}>
             {money(st === "won" && soldV != null ? soldV : q.a)}
           </div>
           {st === "won" && soldV != null && Math.abs(soldV - q.a) > 0.005 ? <div style={{ fontSize: 11.5, color: X.sub }}>quoted {money(q.a)}</div> : null}
         </div>
-        {headRight ? <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, paddingLeft: 6 }}>{headRight}</div> : null}
+        {headRight && !mob ? <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, paddingLeft: 6 }}>{headRight}</div> : null}
       </div>
+      )}
 
-      {/* ---------- faixa com os dados da cotação ---------- */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", background: "#fff", borderBottom: `1px solid ${X.line}` }}>
-        {fact("FUP", mm.fup ? <FupPill v={mm.fup} /> : muted("Not set"), null, { paddingLeft: 22 })}
-        {fact(
-          "Next follow-up",
-          next ? <b style={{ color: nextLate ? X.redDk : X.ink }}>{fmtDate(next)}</b> : muted(st === "open" ? "—" : "closed"),
-          next ? <span style={{ color: nextLate ? X.redDk : nextIn === 0 ? X.amber : X.sub, fontWeight: nextLate ? 700 : 500 }}>{nextIn === 0 ? "today" : nextLate ? `${-nextIn} day${nextIn === -1 ? "" : "s"} late` : `in ${nextIn} day${nextIn === 1 ? "" : "s"}`}</span> : null,
-          nextLate ? { background: "#FFF7F7" } : null,
-        )}
-        {fact("% Win", mm.win ? <WinPill v={mm.win} /> : muted("Not set"))}
-        {fact("Thermometer", thermo ? <ThermoCell t={thermo} /> : muted("—"))}
-        {fact(
-          "Salespeople",
-          people.length ? (
-            people.map((p, i) => (
-              <span key={i} title={`${p.raw} · ${p.role}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
-                <span style={{ width: 24, height: 24, borderRadius: 999, background: p.bg, color: p.fg, fontSize: 10, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{initials(p.name)}</span>
-                <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-              </span>
-            ))
-          ) : (
-            muted("—")
-          ),
-          people.length === 1 ? people[0].role.split(" · ")[0] : null,
-          { gridColumn: "span 2" },
-        )}
-        {fact(
-          "Orders (SO)",
-          q.so && q.so.length ? (
-            q.so.map((id) => (
-              <span key={id} title={soMap[id] ? `booked ${fmtDate(soMap[id].d)} · ${money(soMap[id].v)}` : "not in the Sales Report yet"} style={{ fontWeight: 700, fontSize: 12.5 }}>
-                {id}
-              </span>
-            ))
-          ) : (
-            muted(st === "won" ? "no Sales Id" : "No order yet")
-          ),
-          q.so && q.so.length ? (q.so.some((id) => soMap[id]) ? <span style={{ color: X.green, fontWeight: 700 }}>booked {moneyShort(q.so.reduce((t, id) => t + ((soMap[id] && soMap[id].v) || 0), 0))}</span> : "not in the Sales Report yet") : null,
-          { borderRight: "none" },
-        )}
-      </div>
+      {!mob && factsStrip}
 
       {/* ---------- corpo: registro (esquerda) e histórico (direita) ---------- */}
-      <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, padding: 16 }}>
+      <div style={mob ? { display: "flex", flexDirection: "column", gap: 12, padding: "12px 10px 24px" } : { flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, padding: 16 }}>
         {/* registro do follow-up */}
-        <div style={{ minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 2 }} onClick={(e) => e.stopPropagation()}>
+        <div style={mob ? { display: "flex", flexDirection: "column", gap: 12 } : { minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 2 }} onClick={(e) => e.stopPropagation()}>
           {(st === "lost" || st === "cancelled") && onAskClose && (
             <div style={{ ...panelCard, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 10, borderLeft: `4px solid ${CLOSE_COLOR[st][0]}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -973,7 +1193,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
               </span>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: X.ink }}>{open ? "Register a follow-up" : "Add a note"}</div>
-                <div style={{ fontSize: 12, color: X.sub }}>{open ? "Note, next date and % Win — the three are needed to mark Done" : `This quote is ${s[0].toLowerCase()}: only notes can be added`}</div>
+                {(!mob || !open) && <div style={{ fontSize: 12, color: X.sub }}>{open ? "Note, next date and % Win — the three are needed to mark Done" : `This quote is ${s[0].toLowerCase()}: only notes can be added`}</div>}
               </div>
               {open && (
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5 }} title={`${nDone} of 3 steps filled in`}>
@@ -1118,29 +1338,29 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
               </>
             )}
           </div>
-          {/* requisição do cliente: quem pediu e o quê (sai no relatório de FUP) */}
-          {onReq && (
-            <div style={{ ...panelCard, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <ClipboardList size={16} color={X.violet} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: X.ink }}>Customer requisition</div>
-                <div style={{ fontSize: 11, color: X.sub }}>who asked and what · goes to the FUP report</div>
+          {!mob && reqBox}
+          {/* celular: os dados da cotação e a requisição ficam recolhidos em "Details" */}
+          {mob && (
+            <div style={{ ...panelCard, overflow: "hidden" }}>
+              <div onClick={() => setShowDet((v) => !v)} className="qp-card-btn" style={{ display: "flex", alignItems: "center", gap: 9, padding: "13px 14px", cursor: "pointer" }}>
+                <Info size={16} color={X.ink} />
+                <span style={{ fontWeight: 800, fontSize: 14.5 }}>Details</span>
+                <span style={{ fontSize: 12, color: X.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>FUP, % Win, salespeople, orders</span>
+                <ChevronDown size={17} color={X.sub} style={{ marginLeft: "auto", flexShrink: 0, transform: showDet ? "rotate(180deg)" : "none", transition: "transform .14s" }} />
               </div>
-              <input
-                value={req}
-                onChange={(e) => setReq(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && req.trim() !== curReq && onReq(q.id, q.c, req.trim())}
-                placeholder="e.g. RODRIGO - POLIAS"
-                style={{ ...inp, height: 32, fontSize: 12.5, flex: "1 1 180px", minWidth: 0, borderRadius: 9 }}
-              />
-              {req.trim() !== curReq && (
+              {showDet && (
                 <>
-                  <button onClick={() => onReq(q.id, q.c, req.trim())} style={{ ...btn, height: 32, fontSize: 12, background: X.teal, color: "#fff", borderColor: X.teal }}>
-                    <Check size={13} /> Save
-                  </button>
-                  <button onClick={() => setReq(curReq)} title="Undo" style={{ ...btn, height: 32, fontSize: 12, padding: "0 8px" }}>
-                    <XIcon size={13} />
-                  </button>
+                  <div style={{ borderTop: `1px solid ${X.line}` }}>{factsStrip}</div>
+                  <div style={{ padding: "10px 14px", fontSize: 12, color: X.sub, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    {lines.map((k) => (
+                      <span key={k} style={{ fontSize: 11, fontWeight: 800, color: LINE_COLOR[k][0], background: LINE_COLOR[k][1], padding: "2px 7px", borderRadius: 6 }}>
+                        {k}
+                      </span>
+                    ))}
+                    {[q.conta, q.cls].filter(Boolean).join(" · ")}
+                    {q.conta || q.cls ? " · " : ""}created {fmtDate(q.d)} · {age === 0 ? "today" : `${age} day${age === 1 ? "" : "s"} ago`}
+                  </div>
+                  {reqBox}
                 </>
               )}
             </div>
@@ -1148,11 +1368,18 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
         </div>
 
         {/* Activities / History */}
-        <div style={{ ...panelCard, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "13px 16px", borderBottom: `1px solid ${X.line}`, flexWrap: "wrap" }}>
-            <Clock size={17} color={X.ink} />
-            <span style={{ fontWeight: 800, fontSize: 14.5 }}>Activities / History</span>
-            <div style={{ marginLeft: "auto", display: "inline-flex", gap: 3, background: "#EEF2F5", borderRadius: 9, padding: 3 }}>
+        <div style={{ ...panelCard, minHeight: 0, display: "flex", flexDirection: "column", overflow: mob ? "visible" : "hidden" }}>
+          <div
+            onClick={mob ? () => setShowHist((v) => !v) : undefined}
+            className={mob ? "qp-card-btn" : undefined}
+            style={{ display: "flex", alignItems: "center", gap: 9, padding: mob ? "13px 14px" : "13px 16px", borderBottom: !mob || showHist ? `1px solid ${X.line}` : "none", flexWrap: "wrap", cursor: mob ? "pointer" : "default" }}
+          >
+            <Clock size={mob ? 16 : 17} color={X.ink} />
+            <span style={{ fontWeight: 800, fontSize: 14.5 }}>{mob ? "History" : "Activities / History"}</span>
+            {mob && <span style={{ fontSize: 12, fontWeight: 700, color: X.sub, background: X.head, borderRadius: 999, padding: "1px 8px" }}>{list.length}</span>}
+            {mob && <ChevronDown size={17} color={X.sub} style={{ marginLeft: "auto", transform: showHist ? "rotate(180deg)" : "none", transition: "transform .14s" }} />}
+            {(!mob || showHist) && (
+            <div onClick={(e) => e.stopPropagation()} className="qp-hscroll" style={{ marginLeft: mob ? 0 : "auto", display: "inline-flex", gap: 3, background: "#EEF2F5", borderRadius: 9, padding: 3, ...(mob ? { width: "100%" } : null) }}>
               {HIST_FILTERS.map(([k, l]) => {
                 const on = hf === k;
                 const n = k === "all" ? list.length : list.filter((a) => histGroup(a) === k).length;
@@ -1170,8 +1397,10 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                 );
               })}
             </div>
+            )}
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 16px 10px" }}>
+          {(!mob || showHist) && (
+          <div style={mob ? { padding: "4px 12px 10px" } : { flex: 1, minHeight: 0, overflow: "auto", padding: "4px 16px 10px" }}>
             {!shownH.length && <div style={{ fontSize: 12.5, color: X.sub, padding: "16px 0" }}>Nothing of this type yet.</div>}
             {dayGroups.map(([day, items]) => (
               <div key={day}>
@@ -1225,6 +1454,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
               </div>
             ))}
           </div>
+          )}
         </div>
       </div>
     </div>
@@ -1335,6 +1565,7 @@ function CloseDialog({ ask, onConfirm, onReopen, onCancel }) {
 /* Painel lateral da cotação (abre por cima da tela, do lado direito). nav = { i, n, go(delta) } quando veio
    da tabela: setas para a cotação anterior / próxima da lista (também com Alt+↑ / Alt+↓). */
 function QuoteDrawer({ q, m, sales, acts, thermo, onNote, onDone, onResched, onReq, onAskClose, onReopen, onWhy, focusDone, onClose, user, onUser, nav }) {
+  const mob = useMobile(); // celular: o painel ocupa a tela inteira
   useEffect(() => {
     const k = (e) => {
       if (e.key === "Escape") onClose();
@@ -1348,7 +1579,7 @@ function QuoteDrawer({ q, m, sales, acts, thermo, onNote, onDone, onResched, onR
   }, [onClose, nav]);
   return createPortal(
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.28)", zIndex: 1500, display: "flex", justifyContent: "flex-end" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(1180px, 96vw)", height: "100%", background: X.bg, boxShadow: "-10px 0 30px rgba(16,24,40,.18)", display: "flex", flexDirection: "column" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: mob ? "100vw" : "min(1180px, 96vw)", height: "100%", background: X.bg, boxShadow: "-10px 0 30px rgba(16,24,40,.18)", display: "flex", flexDirection: "column" }}>
         <QuoteRecord
           key={q ? q.id : ""}
           q={q}
@@ -1374,8 +1605,8 @@ function QuoteDrawer({ q, m, sales, acts, thermo, onNote, onDone, onResched, onR
                   <button onClick={() => nav.go(-1)} disabled={nav.i <= 0} style={{ ...btn, padding: "0 9px", opacity: nav.i <= 0 ? 0.4 : 1 }} title="Previous quote of the table (Alt+↑)">
                     <ChevronLeft size={16} />
                   </button>
-                  <span style={{ fontSize: 12, color: X.sub, whiteSpace: "nowrap", minWidth: 64, textAlign: "center" }}>
-                    {nav.i + 1} of {nav.n.toLocaleString("pt-BR")}
+                  <span style={{ fontSize: 12, color: X.sub, whiteSpace: "nowrap", minWidth: mob ? 0 : 64, textAlign: "center" }}>
+                    {nav.i + 1}{mob ? "/" : " of "}{nav.n.toLocaleString("pt-BR")}
                   </span>
                   <button onClick={() => nav.go(1)} disabled={nav.i >= nav.n - 1} style={{ ...btn, padding: "0 9px", opacity: nav.i >= nav.n - 1 ? 0.4 : 1 }} title="Next quote of the table (Alt+↓)">
                     <ChevronRight size={16} />
@@ -1422,11 +1653,13 @@ const STATUS_TABS = [
 ];
 const ROW_CAP = 400; // linhas desenhadas de uma vez; o resto vem no "Show all"
 
-function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodLabel, thermo, qIndex, sales, acts, onNote, onDone, onResched, onReq, user, onUser, notesBy, openQ, onOpenQuote }) {
+/* cards = cartões no lugar da tabela (celular e a tela do vendedor externo); mesma busca, abas e filtros */
+function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodLabel, thermo, qIndex, sales, acts, onNote, onDone, onResched, onReq, user, onUser, notesBy, openQ, onOpenQuote, cards, title, filtersExtra, filtersExtraN }) {
   const [srch, setSrch] = useState("");
+  const [sheet, setSheet] = useState(false); // cartões: folha de filtros
   const [sort, setSort] = useState({ id: "c", dir: 1 }); // padrão: cliente A–Z (e a cotação mais nova primeiro)
   const [flt, setFlt] = useState({});
-  const [stF, setStF] = useState("");
+  const [stF, setStF] = useState(cards ? "open" : ""); // cartões: começa nas abertas (o que ainda dá para fechar)
   const [all, setAll] = useState(false);
   const enriched = useMemo(
     () =>
@@ -1486,7 +1719,8 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
   const cnt = (st) => shown.filter((r) => r.st === st).length;
   const tot = { quoted: sum("quoted"), open: sum("open"), lostV: sum("lostV"), sold: sum("sold"), qt: shown.length, openN: cnt("open"), won: cnt("won"), lost: cnt("lost") };
   const fltOn = Object.values(flt).some((v) => v && v.length) || !!stF;
-  const vis = all ? shown : shown.slice(0, ROW_CAP);
+  // cartões: menos de uma vez (no celular cada cartão é maior que uma linha da tabela)
+  const vis = all ? shown : shown.slice(0, cards ? 60 : ROW_CAP);
 
   const exportXlsx = () => {
     const data = shown.map((r) => ({
@@ -1521,6 +1755,182 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
     XLSX.utils.book_append_sheet(wb, ws, "Quotes");
     XLSX.writeFile(wb, `Quotes ${today}.xlsx`);
   };
+
+  /* ---------- cartões (mobile first) ----------
+     Na tela: busca, Open / Won / Lost / All e a lista. Ordem, filtros por coluna, período, classificação,
+     linha e exportar ficam na folha de filtros (botão ao lado da busca). Cada cartão mostra só o essencial:
+     cliente, QT, data, valor e a situação (próximo follow-up, atrasado, ganho, perdido). Tocar abre a cotação. */
+  if (cards) {
+    const SORTS = [
+      ["c:1", "Customer A–Z"],
+      ["d:-1", "Newest"],
+      ["fup:-1", "Most urgent FUP"],
+      ["open:-1", "Biggest open"],
+      ["quoted:-1", "Biggest quoted"],
+      ["sold:-1", "Biggest sold"],
+    ];
+    const sortV = `${sort.id}:${sort.dir}`;
+    const ids = () => shown.map((x) => x.id);
+    const nCol = Object.values(flt).filter((v) => v && v.length).length;
+    const nAll = nCol + (filtersExtraN || 0);
+    const TABS = [
+      ["open", "Open"],
+      ["won", "Won"],
+      ["lost", "Lost"],
+      ["", "All"],
+    ];
+    const sumTxt = stF === "open" ? `${moneyShort(tot.open)} open` : stF === "won" ? `${moneyShort(tot.sold)} sold` : stF === "lost" ? `${moneyShort(tot.lostV)} lost` : stF === "cancelled" ? `${moneyShort(tot.quoted)} cancelled` : `${moneyShort(tot.quoted)} quoted`;
+    const situ = (r) => {
+      if (r.st === "won") return ["Won", X.green];
+      if (r.st === "lost") return [r.why ? `Lost · ${r.why}` : "Lost", X.redDk];
+      if (r.st === "cancelled") return [r.why ? `Cancelled · ${r.why}` : "Cancelled", "#64748B"];
+      if (!r.fup) return ["No FUP", X.amber];
+      if (r.next && r.next < today) return [`Overdue · ${fmtDay(r.next)}`, X.redDk];
+      if (r.next === today) return ["Follow-up today", X.amber];
+      return [r.next ? `Next ${fmtDay(r.next)}` : FUP[r.fup].label, X.sub];
+    };
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* busca + filtros */}
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+            <Search size={16} style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: X.sub, pointerEvents: "none" }} />
+            <input value={srch} onChange={(e) => setSrch(e.target.value)} placeholder="Search customer or QT…" style={{ ...inp, width: "100%", height: 44, paddingLeft: 38, paddingRight: srch ? 38 : 10, fontSize: 15, borderRadius: 12 }} />
+            {srch && (
+              <button onClick={() => setSrch("")} title="Clear" style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", color: X.sub, cursor: "pointer", padding: 6 }}>
+                <XIcon size={16} />
+              </button>
+            )}
+          </div>
+          <button onClick={() => setSheet(true)} title="Filters, order and export" style={iconBtn({ width: 44, height: 44, ...(nAll ? { background: X.tealSoft, borderColor: "#9FD6C9", color: X.tealDk } : null) })}>
+            <SlidersHorizontal size={18} />
+            {dotBadge(nAll)}
+          </button>
+        </div>
+        {/* Open / Won / Lost / All */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 3, background: X.head, borderRadius: 12, padding: 3 }}>
+          {TABS.map(([k, l]) => {
+            const on = stF === k;
+            return (
+              <button
+                key={k || "all"}
+                onClick={() => setStF(k)}
+                style={{ border: "none", borderRadius: 9, padding: "8px 2px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 1, background: on ? "#fff" : "transparent", color: on ? X.tealDk : X.sub, boxShadow: on ? "0 1px 2px rgba(16,24,40,.1)" : "none" }}
+              >
+                <span style={{ fontSize: 13, fontWeight: on ? 800 : 600 }}>{l}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.8 }}>{(stCount[k] || 0).toLocaleString("pt-BR")}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize: 12.5, color: X.sub, padding: "0 2px", display: "flex", gap: 6, alignItems: "center" }}>
+          <span>
+            <b style={{ color: X.ink }}>{shown.length.toLocaleString("pt-BR")}</b> {shown.length === 1 ? "quote" : "quotes"} · {sumTxt}
+          </span>
+          {stF === "cancelled" && (
+            <button onClick={() => setStF("")} style={{ border: "none", background: "transparent", color: X.tealDk, fontWeight: 700, cursor: "pointer", fontSize: 12.5, marginLeft: "auto" }}>
+              back to All
+            </button>
+          )}
+        </div>
+        {/* cartões */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 320px), 1fr))", gap: 8 }}>
+          {vis.map((r) => {
+            const [sTxt, sCol] = situ(r);
+            const late = r.st === "open" && r.next && r.next < today;
+            const v = r.st === "won" ? r.sold : r.st === "lost" ? r.lostV : r.st === "open" ? r.open || r.quoted : r.quoted;
+            return (
+              <div
+                key={r.id}
+                className="qp-card-btn"
+                onClick={() => onOpenQuote(r.id, false, ids())}
+                style={{ ...card, padding: "12px 13px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", minWidth: 0, boxShadow: openQ === r.id ? `0 0 0 2px ${X.teal}` : "none", ...(late ? { borderLeft: `4px solid ${X.redDk}`, paddingLeft: 10 } : null) }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: X.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.c}>
+                    {r.c}
+                  </div>
+                  <div style={{ fontSize: 12, color: X.sub, marginTop: 3, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                    {r.id} · {fmtDay(r.d)}
+                    <NoteBadge info={notesBy[r.id]} />
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0, maxWidth: "48%" }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: r.st === "won" ? X.green : r.st === "lost" ? X.redDk : X.ink, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{money(v)}</div>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: sCol, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sTxt}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {!shown.length && <div style={{ padding: "36px 14px", textAlign: "center", color: X.sub, fontSize: 13.5 }}>{rows.length ? "No quote found." : "No quote in this period."}</div>}
+        {shown.length > vis.length && (
+          <button onClick={() => setAll(true)} style={{ ...btn, height: 44, justifyContent: "center", borderRadius: 12 }}>
+            Show all {shown.length.toLocaleString("pt-BR")}
+          </button>
+        )}
+
+        {/* folha: filtros, ordem e exportar */}
+        <Sheet
+          open={sheet}
+          title="Filters"
+          onClose={() => setSheet(false)}
+          footer={
+            <>
+              {(nCol > 0 || stF === "cancelled") && (
+                <button
+                  onClick={() => {
+                    setFlt({});
+                    if (stF === "cancelled") setStF("open");
+                  }}
+                  style={{ ...btn, height: 44, flex: 1, justifyContent: "center", borderRadius: 12 }}
+                >
+                  Clear
+                </button>
+              )}
+              <button onClick={() => setSheet(false)} style={{ ...btn, height: 44, flex: 2, justifyContent: "center", borderRadius: 12, background: X.teal, borderColor: X.teal, color: "#fff" }}>
+                Show {shown.length.toLocaleString("pt-BR")} {shown.length === 1 ? "quote" : "quotes"}
+              </button>
+            </>
+          }
+        >
+          <SheetField label="Order">
+            <Chips
+              value={sortV}
+              options={SORTS}
+              onChange={(v) => {
+                const [id, d] = v.split(":");
+                setSort({ id, dir: +d });
+              }}
+            />
+          </SheetField>
+          <SheetField label="Show only">
+            <div>
+              {["c", "fup", "win", "temp"].map((id) => {
+                const c = PCOLS.find((x) => x.id === id);
+                return <ColFilter key={id} row label={c.label} width={c.fw || 260} options={fltOpts(id)} selected={flt[id] || []} onChange={(v) => setFlt((f) => ({ ...f, [id]: v }))} />;
+              })}
+              <div
+                onClick={() => {
+                  setStF(stF === "cancelled" ? "" : "cancelled");
+                  setSheet(false);
+                }}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "13px 2px", cursor: "pointer", borderBottom: `1px solid ${X.line}` }}
+              >
+                <span style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>Cancelled quotes</span>
+                <span style={{ fontSize: 13, color: stF === "cancelled" ? X.tealDk : X.sub, fontWeight: stF === "cancelled" ? 700 : 500 }}>{stF === "cancelled" ? "showing" : (stCount.cancelled || 0).toLocaleString("pt-BR")}</span>
+                <ChevronRight size={16} color="#A0AEC0" />
+              </div>
+            </div>
+          </SheetField>
+          {filtersExtra}
+          <button onClick={exportXlsx} style={{ ...btn, height: 44, justifyContent: "center", borderRadius: 12 }}>
+            <Download size={16} /> Download this list (Excel)
+          </button>
+        </Sheet>
+      </div>
+    );
+  }
 
   const manualBg = "#EEF7F4";
   return (
@@ -2196,12 +2606,14 @@ function Donut({ parts, size = 120, stroke = 18, center, sub }) {
     </svg>
   );
 }
-function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, filtersTxt, sellerTxt, onOpenQuote, onClose, blocked }) {
+/* inline = página da gerência (aba Analysis), sem a janela por cima */
+function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, filtersTxt, sellerTxt, onOpenQuote, onClose, blocked, inline }) {
+  const mob = useMobile();
   const [by, setBy] = useState("n"); // n = QTs · v = valor
   const [cust, setCust] = useState(""); // cliente escolhido ("" = todos)
   const [sell, setSell] = useState(""); // vendedor (Sales Person) escolhido ("" = todos)
   useEffect(() => {
-    const k = (e) => e.key === "Escape" && !blocked && onClose();
+    const k = (e) => e.key === "Escape" && !blocked && !inline && onClose && onClose();
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [onClose, blocked]);
@@ -2306,9 +2718,9 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
           <span style={{ width: 10, height: 10, borderRadius: 3, background: ST_COL[kind][0] }} /> {CLOSE_LABEL[kind]} · reasons
           <span style={{ ...muted, marginLeft: "auto" }}>{R.n.toLocaleString("pt-BR")} QTs</span>
         </div>
-        <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: mob ? "wrap" : "nowrap", justifyContent: "center" }}>
           <Donut parts={CLOSE_REASONS[kind].map((k) => ({ k, v: R.m[k].x, color: REASON_COL[k] || "#94A3B8" }))} center={nR.toLocaleString("pt-BR")} sub="with reason" />
-          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ flex: "1 1 200px", minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
             {CLOSE_REASONS[kind].map((k) => {
               const sh = pctOf(R.m[k].x, R.t);
               return (
@@ -2388,22 +2800,24 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
       </div>
     );
   };
-  return createPortal(
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1400, background: "rgba(15,23,42,.32)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(1160px, 96vw)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", background: X.bg, borderRadius: 18, boxShadow: "0 30px 80px rgba(15,23,42,.35)", display: "flex", flexDirection: "column" }}>
+  const body = (
+      <div onClick={(e) => e.stopPropagation()} style={inline ? { ...card, overflow: "hidden", background: X.bg, display: "flex", flexDirection: "column" } : { width: "min(1160px, 96vw)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", background: X.bg, borderRadius: 18, boxShadow: "0 30px 80px rgba(15,23,42,.35)", display: "flex", flexDirection: "column" }}>
         {/* cabeçalho */}
-        <div style={{ position: "sticky", top: 0, zIndex: 2, background: "#fff", borderBottom: `1px solid ${X.line}`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", borderRadius: "18px 18px 0 0" }}>
+        <div style={{ position: inline ? "static" : "sticky", top: 0, zIndex: 2, background: "#fff", borderBottom: `1px solid ${X.line}`, padding: mob ? "12px 12px" : "14px 18px", display: "flex", alignItems: "center", gap: mob ? 8 : 12, flexWrap: "wrap", borderRadius: inline ? 0 : "18px 18px 0 0" }}>
+          {/* celular: o topo já diz "Analysis"; fica só a linha do recorte */}
+          {!mob && (
           <span style={{ width: 36, height: 36, borderRadius: 10, background: X.tealSoft, color: X.tealDk, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <PieChart size={19} />
           </span>
+          )}
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 16.5, fontWeight: 800, color: X.ink }}>Quote analysis</div>
-            <div style={{ ...muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {!mob && <div style={{ fontSize: 16.5, fontWeight: 800, color: X.ink }}>Quote analysis</div>}
+            <div style={{ ...muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: mob ? "normal" : "nowrap" }}>
               {periodTxt} · {sell || sellerTxt} · {filtersTxt}
             </div>
           </div>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <select value={sell} onChange={(e) => setSell(e.target.value)} style={{ ...inp, height: 34, maxWidth: 220, fontWeight: sell ? 700 : 500, borderColor: sell ? "#9FD6C9" : X.line, background: sell ? X.tealSoft : "#fff" }} title="Salesperson (Sales Person)">
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", ...(mob ? { width: "100%" } : null) }}>
+            <select value={sell} onChange={(e) => setSell(e.target.value)} style={{ ...inp, height: 34, maxWidth: mob ? "none" : 220, flex: mob ? "1 1 140px" : "none", minWidth: 0, fontWeight: sell ? 700 : 500, borderColor: sell ? "#9FD6C9" : X.line, background: sell ? X.tealSoft : "#fff" }} title="Salesperson (Sales Person)">
               <option value="">All salespeople</option>
               {sellers.map(([c, n]) => (
                 <option key={c} value={c}>
@@ -2411,7 +2825,7 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
                 </option>
               ))}
             </select>
-            <select value={cust} onChange={(e) => setCust(e.target.value)} style={{ ...inp, height: 34, maxWidth: 280, fontWeight: cust ? 700 : 500, borderColor: cust ? "#9FD6C9" : X.line, background: cust ? X.tealSoft : "#fff" }} title="Customer">
+            <select value={cust} onChange={(e) => setCust(e.target.value)} style={{ ...inp, height: 34, maxWidth: mob ? "none" : 280, flex: mob ? "1 1 140px" : "none", minWidth: 0, fontWeight: cust ? 700 : 500, borderColor: cust ? "#9FD6C9" : X.line, background: cust ? X.tealSoft : "#fff" }} title="Customer">
               <option value="">All customers</option>
               {customers.map(([c, n]) => (
                 <option key={c} value={c}>
@@ -2427,30 +2841,32 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
               by,
               setBy,
             )}
-            <button onClick={onClose} style={{ ...btn, padding: "0 10px", height: 34 }} title="Close (Esc)">
-              <XIcon size={16} />
-            </button>
+            {!inline && (
+              <button onClick={onClose} style={{ ...btn, padding: "0 10px", height: 34 }} title="Close (Esc)">
+                <XIcon size={16} />
+              </button>
+            )}
           </div>
         </div>
 
-        <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ padding: mob ? 10 : 18, display: "flex", flexDirection: "column", gap: mob ? 10 : 14 }}>
           {/* resultado: as 4 situações + o hit rate; embaixo, a barra com a divisão */}
           <div style={{ ...panel, gap: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fit, minmax(170px, 1fr))", gap: mob ? 8 : 12 }}>
               {ST_ORDER.map((k) => {
                 const o = st[k];
                 const [fg, bg] = ST_COL[k];
                 return (
                   <div key={k} style={{ borderRadius: 12, background: bg, padding: "12px 14px", minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: fg }}>{STATE_LABEL[k]}</div>
-                    <div style={{ fontSize: 30, fontWeight: 800, color: fg, letterSpacing: -0.8, lineHeight: 1.15 }}>{pct0(pctOf(o.x, tot))}</div>
+                    <div style={{ fontSize: mob ? 24 : 30, fontWeight: 800, color: fg, letterSpacing: -0.8, lineHeight: 1.15 }}>{pct0(pctOf(o.x, tot))}</div>
                     <div style={{ fontSize: 12, color: X.ink, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {o.n.toLocaleString("pt-BR")} QTs · {moneyShort(o.v)}
                     </div>
                   </div>
                 );
               })}
-              <div style={{ borderRadius: 12, border: `2px solid ${ST_COL.won[1]}`, background: "#fff", padding: "10px 14px", display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+              <div style={{ borderRadius: 12, border: `2px solid ${ST_COL.won[1]}`, background: "#fff", padding: "10px 14px", display: "flex", alignItems: "center", gap: 12, minWidth: 0, ...(mob ? { gridColumn: "1 / -1" } : null) }}>
                 <Donut parts={[{ k: "Hit rate", v: hit || 0, color: ST_COL.won[0] }, { k: "rest", v: 1 - (hit || 0), color: "#EEF2F5" }]} size={64} stroke={9} center="" sub="" />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: X.tealDk }}>Hit rate</div>
@@ -2465,13 +2881,13 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
           </div>
 
           {/* motivos */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 14 }}>
             {reasonPanel("lost")}
             {reasonPanel("cancelled")}
           </div>
 
           {/* top 10 */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 14 }}>
             {cust ? (
               <div style={{ ...panel, gap: 10 }}>
                 <div style={{ ...ttl, flexWrap: "wrap", rowGap: 6 }}>
@@ -2499,8 +2915,8 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
                 {!lostQts.length ? (
                   <div style={muted}>Nothing lost or cancelled.</div>
                 ) : (
-                  <div style={{ maxHeight: 360, overflowY: "auto", margin: "0 -6px" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "112px 70px 84px minmax(0, 1fr) 96px", gap: 10, padding: "0 6px 6px", fontSize: 10.5, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.3, position: "sticky", top: 0, background: "#fff", zIndex: 1, borderBottom: `1px solid ${X.line}` }}>
+                  <div style={{ maxHeight: 360, overflow: "auto", margin: "0 -6px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "112px 70px 84px minmax(0, 1fr) 96px", minWidth: 470, gap: 10, padding: "0 6px 6px", fontSize: 10.5, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.3, position: "sticky", top: 0, background: "#fff", zIndex: 1, borderBottom: `1px solid ${X.line}` }}>
                       <span>Quotation</span>
                       <span>Date</span>
                       <span>Status</span>
@@ -2513,7 +2929,7 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
                         onClick={() => onOpenQuote(r.id, false, lostQts.map((x) => x.id))}
                         className="qp-opt"
                         title="Open the quote"
-                        style={{ display: "grid", gridTemplateColumns: "112px 70px 84px minmax(0, 1fr) 96px", alignItems: "center", gap: 10, fontSize: 12.5, cursor: "pointer", padding: "7px 6px", borderBottom: `1px solid #F0F3F6` }}
+                        style={{ display: "grid", gridTemplateColumns: "112px 70px 84px minmax(0, 1fr) 96px", minWidth: 470, alignItems: "center", gap: 10, fontSize: 12.5, cursor: "pointer", padding: "7px 6px", borderBottom: `1px solid #F0F3F6` }}
                       >
                         <span style={{ fontWeight: 700, fontSize: 12, color: X.tealDk, background: X.tealSoft, borderRadius: 6, padding: "2px 7px", justifySelf: "start" }}>{r.id}</span>
                         <span style={{ color: X.sub, fontSize: 12 }}>{r.d ? `${r.d.slice(8, 10)}/${r.d.slice(5, 7)}/${r.d.slice(2, 4)}` : "—"}</span>
@@ -2544,6 +2960,11 @@ function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, fil
           </div>
         </div>
       </div>
+  );
+  if (inline) return body;
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1400, background: "rgba(15,23,42,.32)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: mob ? 0 : 20 }}>
+      {body}
     </div>,
     document.body,
   );
@@ -2740,8 +3161,227 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
       <span style={{ display: "block", height: h, width: Math.max(v > 0 ? 3 : 0, Math.min(1, v) * 100) + "%", background: color, borderRadius: 4 }} />
     </span>
   );
+  /* detalhes do vendedor (linhas, Product Groups e os follow-ups do período): na tabela e nos cartões do celular */
+  const mob = useMobile();
+  const [share, setShare] = useState(false); // celular: Excel / e-mail / PDF numa folha
+  // celular: ao abrir um vendedor, só a lista dos follow-ups dele (a pendência primeiro); linhas e grupos ficam no computador
+  const fupSort = (a, b) => (a.kind === b.kind ? (a.kind === "upd" ? (a.t < b.t ? -1 : 1) : a.dl < b.dl ? -1 : 1) : a.kind === "pend" ? -1 : 1);
+  const mobFups = (x) => (
+    <div>
+      {[...x.items].sort(fupSort).map((it) => {
+        const [txt, fg] = it.kind === "upd" ? [`Updated ${it.t.slice(11, 16)}${from !== to ? " · " + fmtDay(it.t.slice(0, 10)) : ""}`, it.late ? X.amber : X.green] : [it.overdue ? `Overdue · ${fmtDay(it.dl)}` : "To update", X.redDk];
+        return (
+          <div
+            key={it.id}
+            className="qp-opt"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenQuote(it.id, false, [...x.items].sort(fupSort).map((y) => y.id));
+            }}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 4px", borderTop: `1px solid ${X.line}`, cursor: "pointer", minWidth: 0, borderRadius: 0 }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.c}</div>
+              <div style={{ fontSize: 11.5, color: X.sub, marginTop: 2 }}>
+                {it.id} · {moneyShort(it.a)}
+              </div>
+            </div>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: fg, whiteSpace: "nowrap" }}>{txt}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+  const detailBlock = (x) => (
+      <div style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "minmax(300px, 0.95fr) minmax(320px, 1fr) minmax(420px, 1.45fr)", gap: 12, alignItems: "stretch" }}>
+        {/* linhas */}
+        <div style={box}>
+          <div style={head}>
+            <Layers size={18} color={X.ink} /> Lines <span style={headSub}>· {periodTxtMain}</span>
+          </div>
+          {detail && detail.lt > 0 ? (
+            /* grade que ocupa a altura toda do quadro: as três linhas (PT, CP, MH) dividem o espaço igualmente */
+            <div style={{ flex: 1, display: "grid", gridTemplateColumns: mob ? "60px 44px minmax(0, 1fr) minmax(0, 1.2fr)" : "104px 72px minmax(80px, 1fr) minmax(140px, 1.6fr)", gridTemplateRows: "auto repeat(3, minmax(52px, 1fr))", fontSize: 13 }}>
+              {["Product Line", "Quotes", "Value", "Share of line value"].map((h) => (
+                <div key={h} style={{ ...colH, display: "flex", alignItems: "flex-end" }}>
+                  {h}
+                </div>
+              ))}
+              {["PT", "CP", "MH"].map((k) => {
+                const sh = detail.lines[k] / detail.lt;
+                const lc = LINE_COLOR[k];
+                const cell = { ...rowB, display: "flex", alignItems: "center", minWidth: 0 };
+                return (
+                  <React.Fragment key={k}>
+                    <div style={cell}>
+                      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 48, height: 32, borderRadius: 999, fontSize: 14, fontWeight: 800, color: lc[0], background: lc[1] }}>{k}</span>
+                    </div>
+                    <div style={{ ...cell, fontSize: 15, fontWeight: 800, color: X.ink }}>{detail.lineN[k]}</div>
+                    <div style={{ ...cell, whiteSpace: "nowrap", color: X.ink }}>{moneyShort(detail.lines[k])}</div>
+                    <div style={{ ...cell, gap: 8, whiteSpace: "nowrap" }}>
+                      <span style={{ width: 40, fontWeight: 600, flexShrink: 0 }}>{pctTxt(sh)}</span>
+                      <span style={{ flex: 1, maxWidth: 200, height: 7, borderRadius: 4, background: X.track, overflow: "hidden" }}>
+                        <span style={{ display: "block", height: 7, width: Math.max(sh > 0 ? 3 : 0, sh * 100) + "%", background: lc[0], borderRadius: 4 }} />
+                      </span>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: X.sub }}>No quotes in the period of the screen.</div>
+          )}
+          {detail && (
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: X.sub }}>
+              <span style={{ width: 14, height: 6, borderRadius: 4, background: "#2F6FDB" }} /> Share of line value · {detail.n} quotes
+            </div>
+          )}
+        </div>
+        {/* Product Groups */}
+        <div style={box}>
+          <div style={head}>
+            <LayoutGrid size={18} color={X.ink} /> Product groups <span style={headSub}>· {periodTxtMain}</span>
+          </div>
+          {detail && detail.pgs.length ? (
+            <div style={{ maxHeight: 330, overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff" }}>Group</th>
+                    <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff", width: 70 }}>QTD</th>
+                    <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff", width: 84 }}>Value</th>
+                    <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff", width: 64 }}>%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.pgs.slice(0, 20).map(([k, o]) => {
+                    const sh = detail.pgT ? o.v / detail.pgT : 0;
+                    return (
+                      <tr key={k} style={rowB}>
+                        <td style={{ padding: "6px 8px 6px 0", maxWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: X.ink }} title={k}>
+                          {k}
+                        </td>
+                        <td style={{ color: X.sub, whiteSpace: "nowrap" }}>{o.n} QTs</td>
+                        <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{moneyShort(o.v)}</td>
+                        <td style={{ padding: "4px 0", lineHeight: 1.1 }}>
+                          <div style={{ fontWeight: 600, fontSize: 11.5, marginBottom: 2 }}>{pctTxt(sh)}</div>
+                          <MiniBar v={sh} color={X.teal} w={50} h={4} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {detail.pgs.length > 20 && <div style={{ fontSize: 11, color: X.sub, paddingTop: 6 }}>+ {detail.pgs.length - 20} more groups</div>}
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: X.sub }}>{detail && detail.n ? "The stored quotes have no Product Group yet: import the Quote Report again." : "No quotes in the period of the screen."}</div>
+          )}
+          {detail && detail.withPg > 0 && detail.withPg < detail.n && <div style={{ marginTop: "auto", fontSize: 11, color: X.sub }}>{detail.n - detail.withPg} quotes without Product Group (import the Quote Report again)</div>}
+        </div>
+        {/* follow-ups do período */}
+        <div style={box}>
+          <div style={head}>
+            <ListIcon size={18} color={X.ink} /> Follow-ups <span style={headSub}>· {periodTxt}</span>
+          </div>
+          <div style={{ maxHeight: 330, overflow: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead>
+                <tr>
+                  {[["Quotation ID", 116], ["Customer", null], ["Status", 150], ["Amount", 90]].map(([h, w]) => (
+                    <th key={h} style={{ ...colH, textAlign: h === "Amount" ? "right" : "left", width: w || undefined, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...x.items]
+                  .sort((a, b) => (a.kind === b.kind ? (a.kind === "upd" ? (a.t < b.t ? -1 : 1) : a.dl < b.dl ? -1 : 1) : a.kind === "pend" ? -1 : 1))
+                  .map((it) => {
+                    const [txt, fg, bg] =
+                      it.kind === "upd"
+                        ? [`Updated ${it.t.slice(11, 16)}${from !== to ? " · " + fmtDay(it.t.slice(0, 10)) : ""}`, it.late ? X.amber : X.green, it.late ? X.amberSoft : X.greenSoft]
+                        : [it.overdue ? `Overdue · ${fmtDay(it.dl)}` : `To update · ${fmtDay(it.dl)}`, X.redDk, X.redSoft];
+                    return (
+                      <tr key={it.id} style={rowB}>
+                        <td style={{ padding: "7px 0" }}>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenQuote(it.id);
+                            }}
+                            title="Open the quote"
+                            style={{ display: "inline-block", fontWeight: 700, fontSize: 12, color: X.tealDk, background: X.tealSoft, borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}
+                          >
+                            {it.id}
+                          </span>
+                        </td>
+                        <td style={{ maxWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#5B7083", paddingRight: 8 }} title={it.c}>
+                          {it.c}
+                        </td>
+                        <td>
+                          <span style={{ display: "inline-block", fontSize: 11.5, fontWeight: 600, color: fg, background: bg, borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap" }}>{txt}</span>
+                        </td>
+                        <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{moneyShort(it.a)}</td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+  );
   return (
     <div style={{ ...card, overflow: "hidden" }}>
+      {mob ? (
+        /* celular: o período num seletor, compartilhar num botão, e o total da equipe numa barra */
+        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10, borderBottom: `1px solid ${X.line}` }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            <select value={rk} onChange={(e) => setRk(e.target.value)} style={{ ...inp, flex: 1, minWidth: 0, height: 44, fontSize: 14, fontWeight: 600, borderRadius: 12 }}>
+              {RANGES.map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <button onClick={() => setShare(true)} disabled={!ok} title="Excel, e-mail or PDF" style={iconBtn({ width: 44, height: 44 })}>
+              <Download size={18} />
+            </button>
+          </div>
+          {rk === "custom" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input type="date" value={cf} onChange={(e) => setCf(e.target.value)} style={{ ...inp, height: 40, flex: 1, minWidth: 0 }} />
+              <span style={{ color: X.sub }}>to</span>
+              <input type="date" value={ct} onChange={(e) => setCt(e.target.value)} style={{ ...inp, height: 40, flex: 1, minWidth: 0 }} />
+            </div>
+          )}
+          {ok && rep.length > 0 && (
+            <div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                <span style={{ fontSize: 24, fontWeight: 800, color: X.tealDk }}>{tot.upd}</span>
+                <span style={{ fontSize: 13.5, color: X.sub, fontWeight: 600 }}>of {tot.total} updated</span>
+                <span style={{ marginLeft: "auto", fontSize: 12.5, fontWeight: 700, color: tot.pend ? X.redDk : X.green }}>{tot.pend ? `${tot.pend} to update` : "all updated"}</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 9, background: X.head, overflow: "hidden", marginTop: 7 }}>
+                <div style={{ width: `${tot.total ? (tot.upd / tot.total) * 100 : 0}%`, height: "100%", background: X.teal, borderRadius: 9 }} />
+              </div>
+            </div>
+          )}
+          {!ok && <div style={{ fontSize: 12.5, color: X.redDk }}>Choose a valid period</div>}
+          <Sheet open={share} title="Share the report" onClose={() => setShare(false)}>
+            <button onClick={() => { toExcel(); setShare(false); }} style={{ ...btn, height: 48, justifyContent: "flex-start", borderRadius: 12, fontSize: 14 }}>
+              <FileSpreadsheet size={18} /> Download as Excel
+            </button>
+            <button onClick={toMail} disabled={!rep.length} style={{ ...btn, height: 48, justifyContent: "flex-start", borderRadius: 12, fontSize: 14 }}>
+              <Copy size={18} /> {copied ? "Copied! Paste it in the e-mail" : "Copy for e-mail"}
+            </button>
+            <button onClick={() => { printPdf(); setShare(false); }} style={{ ...btn, height: 48, justifyContent: "flex-start", borderRadius: 12, fontSize: 14 }}>
+              <Printer size={18} /> PDF
+            </button>
+            <div style={{ fontSize: 12, color: X.sub }}>{periodTxt} · {filtersTxt}</div>
+          </Sheet>
+        </div>
+      ) : (
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, borderBottom: `1px solid ${X.line}` }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ width: 38, height: 38, borderRadius: 10, background: X.tealSoft, color: X.tealDk, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
@@ -2782,6 +3422,37 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
           <span style={{ marginLeft: 6, fontSize: 12.5, color: ok ? X.ink : X.redDk }}>{ok ? <b>{periodTxt}</b> : "Choose a valid period"}</span>
         </div>
       </div>
+      )}
+      {mob ? (
+        /* celular: um cartão por vendedor; tocar abre os detalhes embaixo */
+        <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+          {!rep.length && <div style={{ textAlign: "center", color: X.sub, padding: 24, fontSize: 12.5 }}>No follow-up due or done in this period with the current filters.</div>}
+          {rep.map((x) => {
+            const isOpen = open === x.name;
+            return (
+              <div key={x.name} style={{ border: `1px solid ${isOpen ? "#9FD6C9" : X.line}`, borderRadius: 12, background: isOpen ? "#F7FBFA" : "#fff", overflow: "hidden" }}>
+                <div className="qp-card-btn" onClick={() => setOpen(isOpen ? "" : x.name)} style={{ padding: "12px 13px", display: "flex", flexDirection: "column", gap: 7, cursor: "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+                    <b style={{ fontSize: 14.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{x.name || "(no salesperson)"}</b>
+                    <span style={{ marginLeft: "auto", fontSize: 12.5, color: X.sub, whiteSpace: "nowrap" }}>
+                      <b style={{ color: X.tealDk, fontSize: 15 }}>{x.upd}</b> / {x.total}
+                    </span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 9, background: X.head, overflow: "hidden" }}>
+                    <div style={{ width: `${x.total ? (x.upd / x.total) * 100 : 0}%`, height: "100%", background: X.teal, borderRadius: 9 }} />
+                  </div>
+                  <div style={{ display: "flex", gap: 10, fontSize: 12, fontWeight: 600 }}>
+                    <span style={{ color: x.pend ? X.redDk : X.green }}>{x.pend ? `${x.pend} to update` : "all updated"}</span>
+                    {x.late ? <span style={{ color: X.amber }}>{x.late} after {LATE_HOUR}h</span> : null}
+                    <ChevronDown size={15} color={X.sub} style={{ marginLeft: "auto", transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .14s" }} />
+                  </div>
+                </div>
+                {isOpen && <div style={{ padding: "0 10px 6px" }}>{mobFups(x)}</div>}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
       <div style={{ overflow: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 }}>
           <thead>
@@ -2827,143 +3498,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
                   {isOpen && (
                     <tr>
                       <td colSpan={8} style={{ padding: "12px 16px 16px 46px", background: "#F7FBFA", borderBottom: `1px solid ${X.line}` }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "minmax(300px, 0.95fr) minmax(320px, 1fr) minmax(420px, 1.45fr)", gap: 12, alignItems: "stretch" }}>
-                          {/* linhas */}
-                          <div style={box}>
-                            <div style={head}>
-                              <Layers size={18} color={X.ink} /> Lines <span style={headSub}>· {periodTxtMain}</span>
-                            </div>
-                            {detail && detail.lt > 0 ? (
-                              /* grade que ocupa a altura toda do quadro: as três linhas (PT, CP, MH) dividem o espaço igualmente */
-                              <div style={{ flex: 1, display: "grid", gridTemplateColumns: "104px 72px minmax(80px, 1fr) minmax(140px, 1.6fr)", gridTemplateRows: "auto repeat(3, minmax(52px, 1fr))", fontSize: 13 }}>
-                                {["Product Line", "Quotes", "Value", "Share of line value"].map((h) => (
-                                  <div key={h} style={{ ...colH, display: "flex", alignItems: "flex-end" }}>
-                                    {h}
-                                  </div>
-                                ))}
-                                {["PT", "CP", "MH"].map((k) => {
-                                  const sh = detail.lines[k] / detail.lt;
-                                  const lc = LINE_COLOR[k];
-                                  const cell = { ...rowB, display: "flex", alignItems: "center", minWidth: 0 };
-                                  return (
-                                    <React.Fragment key={k}>
-                                      <div style={cell}>
-                                        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 48, height: 32, borderRadius: 999, fontSize: 14, fontWeight: 800, color: lc[0], background: lc[1] }}>{k}</span>
-                                      </div>
-                                      <div style={{ ...cell, fontSize: 15, fontWeight: 800, color: X.ink }}>{detail.lineN[k]}</div>
-                                      <div style={{ ...cell, whiteSpace: "nowrap", color: X.ink }}>{moneyShort(detail.lines[k])}</div>
-                                      <div style={{ ...cell, gap: 8, whiteSpace: "nowrap" }}>
-                                        <span style={{ width: 40, fontWeight: 600, flexShrink: 0 }}>{pctTxt(sh)}</span>
-                                        <span style={{ flex: 1, maxWidth: 200, height: 7, borderRadius: 4, background: X.track, overflow: "hidden" }}>
-                                          <span style={{ display: "block", height: 7, width: Math.max(sh > 0 ? 3 : 0, sh * 100) + "%", background: lc[0], borderRadius: 4 }} />
-                                        </span>
-                                      </div>
-                                    </React.Fragment>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div style={{ fontSize: 12, color: X.sub }}>No quotes in the period of the screen.</div>
-                            )}
-                            {detail && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: X.sub }}>
-                                <span style={{ width: 14, height: 6, borderRadius: 4, background: "#2F6FDB" }} /> Share of line value · {detail.n} quotes
-                              </div>
-                            )}
-                          </div>
-                          {/* Product Groups */}
-                          <div style={box}>
-                            <div style={head}>
-                              <LayoutGrid size={18} color={X.ink} /> Product groups <span style={headSub}>· {periodTxtMain}</span>
-                            </div>
-                            {detail && detail.pgs.length ? (
-                              <div style={{ maxHeight: 330, overflow: "auto" }}>
-                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-                                  <thead>
-                                    <tr>
-                                      <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff" }}>Group</th>
-                                      <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff", width: 70 }}>QTD</th>
-                                      <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff", width: 84 }}>Value</th>
-                                      <th style={{ ...colH, textAlign: "left", position: "sticky", top: 0, background: "#fff", width: 64 }}>%</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {detail.pgs.slice(0, 20).map(([k, o]) => {
-                                      const sh = detail.pgT ? o.v / detail.pgT : 0;
-                                      return (
-                                        <tr key={k} style={rowB}>
-                                          <td style={{ padding: "6px 8px 6px 0", maxWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: X.ink }} title={k}>
-                                            {k}
-                                          </td>
-                                          <td style={{ color: X.sub, whiteSpace: "nowrap" }}>{o.n} QTs</td>
-                                          <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{moneyShort(o.v)}</td>
-                                          <td style={{ padding: "4px 0", lineHeight: 1.1 }}>
-                                            <div style={{ fontWeight: 600, fontSize: 11.5, marginBottom: 2 }}>{pctTxt(sh)}</div>
-                                            <MiniBar v={sh} color={X.teal} w={50} h={4} />
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                                {detail.pgs.length > 20 && <div style={{ fontSize: 11, color: X.sub, paddingTop: 6 }}>+ {detail.pgs.length - 20} more groups</div>}
-                              </div>
-                            ) : (
-                              <div style={{ fontSize: 12, color: X.sub }}>{detail && detail.n ? "The stored quotes have no Product Group yet: import the Quote Report again." : "No quotes in the period of the screen."}</div>
-                            )}
-                            {detail && detail.withPg > 0 && detail.withPg < detail.n && <div style={{ marginTop: "auto", fontSize: 11, color: X.sub }}>{detail.n - detail.withPg} quotes without Product Group (import the Quote Report again)</div>}
-                          </div>
-                          {/* follow-ups do período */}
-                          <div style={box}>
-                            <div style={head}>
-                              <ListIcon size={18} color={X.ink} /> Follow-ups <span style={headSub}>· {periodTxt}</span>
-                            </div>
-                            <div style={{ maxHeight: 330, overflow: "auto" }}>
-                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-                                <thead>
-                                  <tr>
-                                    {[["Quotation ID", 116], ["Customer", null], ["Status", 150], ["Amount", 90]].map(([h, w]) => (
-                                      <th key={h} style={{ ...colH, textAlign: h === "Amount" ? "right" : "left", width: w || undefined, position: "sticky", top: 0, background: "#fff", zIndex: 1 }}>{h}</th>
-                                    ))}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {[...x.items]
-                                    .sort((a, b) => (a.kind === b.kind ? (a.kind === "upd" ? (a.t < b.t ? -1 : 1) : a.dl < b.dl ? -1 : 1) : a.kind === "pend" ? -1 : 1))
-                                    .map((it) => {
-                                      const [txt, fg, bg] =
-                                        it.kind === "upd"
-                                          ? [`Updated ${it.t.slice(11, 16)}${from !== to ? " · " + fmtDay(it.t.slice(0, 10)) : ""}`, it.late ? X.amber : X.green, it.late ? X.amberSoft : X.greenSoft]
-                                          : [it.overdue ? `Overdue · ${fmtDay(it.dl)}` : `To update · ${fmtDay(it.dl)}`, X.redDk, X.redSoft];
-                                      return (
-                                        <tr key={it.id} style={rowB}>
-                                          <td style={{ padding: "7px 0" }}>
-                                            <span
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                onOpenQuote(it.id);
-                                              }}
-                                              title="Open the quote"
-                                              style={{ display: "inline-block", fontWeight: 700, fontSize: 12, color: X.tealDk, background: X.tealSoft, borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}
-                                            >
-                                              {it.id}
-                                            </span>
-                                          </td>
-                                          <td style={{ maxWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#5B7083", paddingRight: 8 }} title={it.c}>
-                                            {it.c}
-                                          </td>
-                                          <td>
-                                            <span style={{ display: "inline-block", fontSize: 11.5, fontWeight: 600, color: fg, background: bg, borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap" }}>{txt}</span>
-                                          </td>
-                                          <td style={{ textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{moneyShort(it.a)}</td>
-                                        </tr>
-                                      );
-                                    })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </div>
+                        {detailBlock(x)}
                       </td>
                     </tr>
                   )}
@@ -2991,6 +3526,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
           )}
         </table>
       </div>
+      )}
     </div>
   );
 }
@@ -3014,6 +3550,7 @@ function WeekStat({ label, value, sub, ink, title }) {
   );
 }
 function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, meta, cands, notesBy, onOpenQuote, onDone }) {
+  const mob = useMobile(); // celular: um dia embaixo do outro
   const byId = useMemo(() => new Map(cands.map((c) => [c.id, c])), [cands]);
   // follow-ups feitos em cada dia da semana (o Done fica no histórico do FUP de cada cotação)
   const doneOn = useMemo(() => {
@@ -3058,7 +3595,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
         <WeekStat label="Done" value={nDone || "—"} sub="follow-ups marked Done this week" ink={X.tealDk} />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 8, alignItems: "stretch" }}>
+      <div style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "repeat(5, minmax(0, 1fr))", gap: 8, alignItems: "stretch" }}>
         {days.map((d) => {
           const evs = listOf(d);
           const done = doneOn[d];
@@ -3088,7 +3625,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
                 display: "flex",
                 flexDirection: "column",
                 minWidth: 0,
-                minHeight: 280,
+                minHeight: mob ? 0 : 280,
                 overflow: "hidden",
               }}
             >
@@ -3120,7 +3657,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
               </div>
 
               {/* cotações do dia: altura limitada, com barra de rolagem própria quando o dia tem muitas cotações */}
-              <div style={{ padding: 7, display: "flex", flexDirection: "column", gap: 6, flex: 1, maxHeight: WEEK_LIST_H, overflowY: "auto", scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
+              <div style={{ padding: 7, display: "flex", flexDirection: "column", gap: 6, flex: 1, maxHeight: mob ? "none" : WEEK_LIST_H, overflowY: mob ? "visible" : "auto", scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
                 {evs.map((e) => {
                   const f = FUP[e.fup];
                   const ov = e.kind === "overdue";
@@ -3208,11 +3745,199 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
   );
 }
 
-function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, meta, onMeta, onDone, onToggleExcl, onOpenQuote, dailyGoal, setDailyGoal, dayGoals, setDayGoals, excl, prefs, setPref, today }) {
+/* ===== Hoje (tela do vendedor externo, pensada para o celular) =====
+   No topo, o que fazer hoje: os follow-ups com prazo hoje e os atrasados (trazidos para hoje), cada um com o
+   botão Done (abre a cotação direto na nota + data + % Win). Depois, o que já foi feito hoje e os próximos dias
+   úteis. Usa o mesmo plano do Calendar, só que sem meta: entram apenas os prazos do FUP. */
+function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onOpenQuote, onGoMine }) {
+  const maxAge = prefs.maxAge ?? 365;
+  const cands = useMemo(() => openCandidates(quotes, cls, maxAge, (id) => meta[id], today, thermo), [quotes, cls, maxAge, meta, today, thermo]);
+  const exclSet = useMemo(() => new Set(excl || []), [excl]);
+  const horizon = useMemo(() => addBusinessDays(today, 7), [today]);
+  const plan = useMemo(() => planDays(cands, { today, horizon, goalOf: () => 0, bookedToday: 0, strategy: "priority", excluded: exclSet }), [cands, today, horizon, exclSet]);
+  const byDay = (plan && plan.byDay) || {};
+  const keys = Object.keys(byDay)
+    .filter((d) => d >= today)
+    .sort();
+  const first = keys[0] || today;
+  const listOf = (d) => ((byDay[d] && byDay[d].list) || []).filter((e) => e.kind !== "fill");
+  const todo = listOf(first);
+  const nOver = todo.filter((e) => e.kind === "overdue").length;
+  const todoV = todo.reduce((s, e) => s + (e.v || 0), 0);
+  const inScope = useMemo(() => new Set((quotes || []).map((q) => q.id)), [quotes]);
+  const byId = useMemo(() => new Map(cands.map((c) => [c.id, c])), [cands]);
+  // follow-ups feitos hoje (o Done fica no histórico do FUP de cada cotação), só das cotações desta pessoa
+  const doneToday = useMemo(() => {
+    const out = [];
+    for (const id in meta) {
+      const x = meta[id];
+      if (!x || !inScope.has(id) || !(x.log || []).includes(today)) continue;
+      const c = byId.get(id) || {};
+      out.push({ id, c: c.c || x.name || "", v: c.v, next: x.fup ? nextFup(x) : "" });
+    }
+    return out;
+  }, [meta, today, byId, inScope]);
+  const noFup = cands.filter((c) => !c.fup).length;
+  const ahead = keys.slice(1, 6).map((d) => ({ d, list: listOf(d) }));
+  const [openDay, setOpenDay] = useState("");
+  const hol = holidayOf(first);
+
+  const [showDone, setShowDone] = useState(false);
+  const total = todo.length + doneToday.length;
+  const pct = total ? doneToday.length / total : 0;
+  const ids = todo.map((e) => e.id);
+  const secT = { fontSize: 12, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4, padding: "6px 2px 0" };
+  const why = (e) => {
+    const f = FUP[e.fup];
+    if (e.kind === "overdue") return [`Overdue since ${fmtDay(e.dl)}`, X.redDk];
+    if (e.kind === "again" || (e.fup === "B" && fupPending(e.meta || {}).length <= 1)) return ["2nd follow-up of the week", f ? f.color : X.sub];
+    return [f ? f.label : "", f ? f.color : X.sub];
+  };
+  const fold = (on, label, n, onClick) => (
+    <div onClick={onClick} className="qp-card-btn" style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 2px", cursor: "pointer", fontSize: 13.5, fontWeight: 700, color: X.ink }}>
+      {label}
+      <span style={{ fontSize: 12, fontWeight: 700, color: X.sub, background: X.head, borderRadius: 999, padding: "1px 8px" }}>{n}</span>
+      <ChevronDown size={16} color={X.sub} style={{ marginLeft: "auto", transform: on ? "rotate(180deg)" : "none", transition: "transform .14s" }} />
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* o dia numa linha: quantos faltam, quantos já foram */}
+      <div style={{ ...card, padding: "14px 14px 12px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+          <span style={{ fontSize: 28, fontWeight: 800, letterSpacing: -0.6, lineHeight: 1 }}>{todo.length}</span>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>to do {first === today ? "today" : "next"}</span>
+          <span style={{ marginLeft: "auto", fontSize: 12.5, color: X.sub, whiteSpace: "nowrap" }}>
+            {dowName(first).slice(0, 3)}, {fmtDay(first)}
+          </span>
+        </div>
+        <div style={{ height: 8, borderRadius: 9, background: X.head, margin: "11px 0 9px", overflow: "hidden" }}>
+          <div style={{ width: `${pct * 100}%`, height: "100%", background: X.teal, borderRadius: 9, transition: "width .3s" }} />
+        </div>
+        <div style={{ display: "flex", gap: 14, fontSize: 12.5, color: X.sub, flexWrap: "wrap" }}>
+          <span>
+            <b style={{ color: X.tealDk }}>{doneToday.length}</b> done
+          </span>
+          {nOver > 0 && (
+            <span>
+              <b style={{ color: X.redDk }}>{nOver}</b> overdue
+            </span>
+          )}
+          {hol && <span>{hol.name}</span>}
+          {todo.length > 0 && <span style={{ marginLeft: "auto", fontWeight: 600 }}>{moneyShort(todoV)} in quotes</span>}
+        </div>
+      </div>
+
+      {/* a lista do dia: tocar abre a cotação; Done registra o follow-up */}
+      {!todo.length ? (
+        <div style={{ padding: "34px 14px", textAlign: "center", color: X.sub, fontSize: 14 }}>
+          <CheckCircle2 size={34} color={X.teal} style={{ display: "block", margin: "0 auto 8px" }} />
+          <b style={{ color: X.ink }}>{doneToday.length ? "All done for today" : "Nothing due today"}</b>
+        </div>
+      ) : (
+        todo.map((e) => {
+          const ov = e.kind === "overdue";
+          const [wTxt, wCol] = why(e);
+          return (
+            <div
+              key={e.id + e.kind}
+              className="qp-card-btn"
+              onClick={() => onOpenQuote(e.id, false, ids)}
+              style={{ ...card, boxShadow: "none", padding: "12px 10px 12px 13px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", minWidth: 0, ...(ov ? { borderLeft: `4px solid ${X.redDk}`, paddingLeft: 10 } : null) }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.c}>
+                  {e.c}
+                </div>
+                <div style={{ fontSize: 12, color: X.sub, marginTop: 3, display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
+                  {e.id} · <b style={{ color: X.ink }}>{money(e.v)}</b>
+                  <NoteBadge info={notesBy && notesBy[e.id]} />
+                </div>
+                {wTxt && <div style={{ fontSize: 11.5, fontWeight: 700, color: wCol, marginTop: 3 }}>{wTxt}</div>}
+              </div>
+              {e.fup && (
+                <button
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    onOpenQuote(e.id, true);
+                  }}
+                  title="Register the follow-up: note, next date and % Win"
+                  style={{ ...btn, height: 42, padding: "0 14px", borderRadius: 12, background: X.teal, borderColor: X.teal, color: "#fff", fontWeight: 700, fontSize: 13.5, flexShrink: 0 }}
+                >
+                  <Check size={16} /> Done
+                </button>
+              )}
+            </div>
+          );
+        })
+      )}
+
+      {noFup > 0 && (
+        <div onClick={onGoMine} className="qp-card-btn" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 2px", fontSize: 12.5, color: X.amber, cursor: onGoMine ? "pointer" : "default" }}>
+          <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>
+            {noFup.toLocaleString("pt-BR")} open quote{noFup === 1 ? " has" : "s have"} no FUP and never show up here
+          </span>
+          {onGoMine && <ChevronRight size={15} />}
+        </div>
+      )}
+
+      {/* feitos hoje (recolhido) */}
+      {doneToday.length > 0 && (
+        <div style={{ borderTop: `1px solid ${X.line}` }}>
+          {fold(showDone, "Done today", doneToday.length, () => setShowDone((v) => !v))}
+          {showDone &&
+            doneToday.map((x) => (
+              <div key={x.id} className="qp-opt" onClick={() => onOpenQuote(x.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 4px", cursor: "pointer", fontSize: 13, minWidth: 0 }}>
+                <CheckCircle2 size={16} color={X.teal} style={{ flexShrink: 0 }} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{x.c || x.id}</span>
+                {x.next && <span style={{ fontSize: 12, color: X.sub, whiteSpace: "nowrap" }}>next {fmtDay(x.next)}</span>}
+              </div>
+            ))}
+        </div>
+      )}
+
+      {/* próximos dias (cada dia abre a sua lista) */}
+      {ahead.some((x) => x.list.length) && (
+        <div style={{ borderTop: `1px solid ${X.line}` }}>
+          <div style={secT}>Next days</div>
+          {ahead.map(({ d, list }) => {
+            if (!list.length) return null;
+            const on = openDay === d;
+            return (
+              <div key={d}>
+                {fold(
+                  on,
+                  <span>
+                    {dowName(d).slice(0, 3)} {fmtDay(d)} <span style={{ fontWeight: 500, color: X.sub }}>· {moneyShort(list.reduce((s, e) => s + (e.v || 0), 0))}</span>
+                  </span>,
+                  list.length,
+                  () => setOpenDay(on ? "" : d),
+                )}
+                {on &&
+                  list.map((e) => (
+                    <div key={e.id + e.kind} className="qp-opt" onClick={() => onOpenQuote(e.id, false, list.map((x) => x.id))} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 4px", cursor: "pointer", fontSize: 13, minWidth: 0 }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{e.c}</span>
+                      <b style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{moneyShort(e.v)}</b>
+                    </div>
+                  ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* goalEdit = pode mudar a meta (gerência); o vendedor interno vê a meta, mas não muda */
+function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, meta, onMeta, onDone, onToggleExcl, onOpenQuote, dailyGoal, setDailyGoal, dayGoals, setDayGoals, excl, prefs, setPref, today, goalEdit = true }) {
   const [ym, setYm] = useState(today.slice(0, 7));
   const [sel, setSel] = useState(""); // dia clicado; sem dia, o plano não aparece
   // visão do calendário: mensal (padrão) ou semanal (segunda a sexta)
   const weekly = prefs.calView === "week";
+  const mob = useMobile(); // celular: mês compacto (só o número de follow-ups em cada dia) e o plano embaixo
+  const [editGoal, setEditGoal] = useState(false); // celular: o campo da meta só aparece ao tocar em "Change"
   const mondayOf = (d) => addDays(d, -((dowOf(d) + 6) % 7));
   const [wk, setWk] = useState(() => mondayOf(today)); // segunda-feira da semana mostrada
   const planRef = useRef(null);
@@ -3313,6 +4038,40 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
   return (
     <>
       {/* ---------- meta diária ---------- */}
+      {mob ? (
+        /* celular: a meta numa barra (vendido hoje × meta), o resto fica no computador */
+        <div style={{ ...card, padding: "14px 14px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>Today's goal</span>
+            {withGoal.length > 0 && (
+              <span style={{ marginLeft: "auto", fontSize: 12, color: X.sub }}>
+                <b style={{ color: X.amber }}>{hitDays}</b> of {withGoal.length} days on target
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+            <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: X.green, fontVariantNumeric: "tabular-nums" }}>{partial ? "—" : moneyShort(bookedToday.v)}</span>
+            <span style={{ fontSize: 14, color: X.sub, fontWeight: 600 }}>of {goalToday ? moneyShort(goalToday) : "no goal"}</span>
+            {goalEdit && (
+              <button onClick={() => setEditGoal((v) => !v)} style={{ marginLeft: "auto", border: "none", background: "transparent", color: X.tealDk, fontWeight: 700, fontSize: 13, cursor: "pointer", padding: "4px 0" }}>
+                {editGoal ? "Close" : "Change goal"}
+              </button>
+            )}
+          </div>
+          <div style={{ height: 8, borderRadius: 9, background: X.head, overflow: "hidden" }}>
+            <div style={{ width: `${goalToday ? Math.min(100, (bookedToday.v / goalToday) * 100) : 0}%`, height: "100%", background: X.green, borderRadius: 9 }} />
+          </div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: !goalToday ? X.sub : missingToday ? X.redDk : X.green }}>
+            {!goalToday ? "No goal for today" : missingToday ? `${moneyShort(missingToday)} missing today · tap today in the calendar` : "Goal reached today"}
+          </div>
+          {editGoal && goalEdit && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>Goal per business day</div>
+              <MoneyInput value={dailyGoal} onCommit={(n) => setDailyGoal(n)} />
+            </div>
+          )}
+        </div>
+      ) : (
       <div style={{ ...card, padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ width: 38, height: 38, borderRadius: 10, background: X.tealSoft, color: X.tealDk, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
@@ -3331,10 +4090,17 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
             </div>
           </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1.1fr) repeat(auto-fit, minmax(170px, 1fr))", gap: 12, alignItems: "stretch" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, justifyContent: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : "minmax(220px, 1.1fr) repeat(auto-fit, minmax(170px, 1fr))", gap: mob ? 8 : 12, alignItems: "stretch" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, justifyContent: "center", ...(mob ? { gridColumn: "1 / -1" } : null) }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>Goal per business day</div>
-            <MoneyInput value={dailyGoal} onCommit={(n) => setDailyGoal(n)} />
+            {goalEdit ? (
+              <MoneyInput value={dailyGoal} onCommit={(n) => setDailyGoal(n)} />
+            ) : (
+              <div title="Set by the management" style={{ display: "flex", alignItems: "center", gap: 8, height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+                {dailyGoal ? money(dailyGoal) : "—"}
+                <Lock size={14} color={X.sub} style={{ marginLeft: "auto" }} />
+              </div>
+            )}
           </div>
           <Tile icon={Wallet} label="Booked today" value={partial ? "—" : moneyShort(bookedToday.v)} caption={goalToday ? `${((bookedToday.v / goalToday) * 100).toFixed(0)}% of today's goal` : "no goal today"} color={X.green} tint={X.greenSoft} ink={X.green} title={money(bookedToday.v)} />
           <Tile icon={Crosshair} label="Missing today" value={goalToday ? moneyShort(missingToday) : "—"} caption={goalToday ? (missingToday ? "to close in quotes" : "goal reached") : "no goal today"} color={missingToday ? X.redDk : X.green} tint={X.redSoft} ink={X.redDk} title={money(missingToday)} />
@@ -3354,10 +4120,11 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
           {msg}
         </div>
       </div>
+      )}
 
       {/* ---------- agenda de follow-up ---------- */}
-      <div style={{ ...card, minWidth: 0, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ ...card, minWidth: 0, padding: mob ? 10 : 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: mob ? 6 : 10, flexWrap: "wrap" }}>
           {/* mensal / semanal */}
           <div style={{ display: "inline-flex", gap: 3, background: X.head, borderRadius: 9, padding: 3 }}>
             {[
@@ -3380,7 +4147,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
           <button onClick={() => go(-1)} style={{ ...btn, padding: "0 9px", height: 32 }} title={weekly ? "Previous week" : "Previous month"}>
             <ChevronLeft size={16} />
           </button>
-          <div style={{ ...h2, minWidth: weekly ? 200 : 150, textAlign: "center" }}>
+          <div style={{ ...h2, minWidth: mob ? 0 : weekly ? 200 : 150, flex: mob ? 1 : "none", fontSize: mob ? 15 : h2.fontSize, textAlign: "center", whiteSpace: "nowrap" }}>
             {weekly ? `${fmtDay(gStart)} – ${fmtDay(gEnd)} ${gEnd.slice(0, 4)}` : monthLabel(ym)}
           </div>
           <button onClick={() => go(1)} style={{ ...btn, padding: "0 9px", height: 32 }} title={weekly ? "Next week" : "Next month"}>
@@ -3395,14 +4162,16 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
             {monthCount} planned in the {weekly ? "week" : "month"}
           </span>
           {overdueN > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: X.redDk, background: X.redSoft, padding: "3px 10px", borderRadius: 999 }}>{overdueN} overdue</span>}
-          <span style={{ fontSize: 12, color: X.sub }}>{weekly ? "Click a day to see its plan · click a quote to open it" : "Click a day to see its plan · past days: booked / goal · today on: planned / goal"}</span>
-          <span style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {FUP_KEYS.map((k) => (
-              <span key={k} title={FUP[k].long}>
-                <FupPill v={k} />
-              </span>
-            ))}
-          </span>
+          {!mob && <span style={{ fontSize: 12, color: X.sub }}>{weekly ? "Click a day to see its plan · click a quote to open it" : "Click a day to see its plan · past days: booked / goal · today on: planned / goal"}</span>}
+          {!mob && (
+            <span style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {FUP_KEYS.map((k) => (
+                <span key={k} title={FUP[k].long}>
+                  <FupPill v={k} />
+                </span>
+              ))}
+            </span>
+          )}
         </div>
         {weekly ? (
           <WeekView days={days} plan={plan} today={today} sel={sel} pick={pick} goalOf={goalOf} dayBooked={dayBooked} partial={partial} meta={meta} cands={cands} notesBy={notesBy} onOpenQuote={onOpenQuote} onDone={onDone} />
@@ -3428,12 +4197,12 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
                 onClick={() => pick(d)}
                 title={isSel ? "Click again to close the plan of this day" : "Click to see the plan of this day"}
                 style={{
-                  minHeight: weekly ? 300 : 100,
+                  minHeight: weekly ? 300 : mob ? 50 : 100,
                   borderRadius: 8,
                   border: `1px solid ${isSel ? X.teal : X.line}`,
                   boxShadow: isSel ? `0 0 0 3px ${X.tealSoft}` : "none",
                   background: isSel ? "#F4FBF9" : !inM ? "#FAFBFC" : we ? "#F8FAFB" : "#fff",
-                  padding: 5,
+                  padding: mob ? 3 : 5,
                   cursor: "pointer",
                   display: "flex",
                   flexDirection: "column",
@@ -3460,10 +4229,19 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
                   >
                     {weekly ? fmtDay(d) : +d.slice(8)}
                   </span>
-                  {evs.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: X.sub }}>{evs.length}</span>}
+                  {evs.length > 0 && !mob && <span style={{ fontSize: 10, fontWeight: 700, color: X.sub }}>{evs.length}</span>}
                 </div>
-                {inM && <HolidayTag d={d} />}
-                {(weekly ? evs : evs.slice(0, 4)).map((e) => (
+                {inM && !mob && <HolidayTag d={d} />}
+                {/* celular: no lugar dos cartões, o número de follow-ups do dia (vermelho = tem atrasado) */}
+                {mob && inM && (evs.length > 0 || holidayOf(d)) && (
+                  <span style={{ marginTop: "auto", alignSelf: "center", display: "inline-flex", alignItems: "center", gap: 3 }}>
+                    {evs.length > 0 && (
+                      <span style={{ fontSize: 10.5, fontWeight: 800, minWidth: 18, textAlign: "center", padding: "1px 5px", borderRadius: 999, color: "#fff", background: evs.some((e) => e.kind === "overdue") ? X.redDk : X.teal }}>{evs.length}</span>
+                    )}
+                    {holidayOf(d) && <span title={holidayOf(d).name} style={{ width: 6, height: 6, borderRadius: 9, background: holidayOf(d).block ? X.redDk : "#F2B04C" }} />}
+                  </span>
+                )}
+                {(mob ? [] : weekly ? evs : evs.slice(0, 4)).map((e) => (
                   <div
                     key={e.id}
                     title={`${e.id} · ${e.c} · ${money(e.v)}${e.fup ? ` · FUP ${e.fup}` : ""}${e.win ? ` · ${e.win}%` : ""} · ${
@@ -3491,8 +4269,8 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.id}</span>
                   </div>
                 ))}
-                {!weekly && evs.length > 4 && <div style={{ fontSize: 10.5, color: X.sub, fontWeight: 600, paddingLeft: 3 }}>+{evs.length - 4} more</div>}
-                <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 1, paddingLeft: 3, fontSize: 10.5, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                {!weekly && !mob && evs.length > 4 && <div style={{ fontSize: 10.5, color: X.sub, fontWeight: 600, paddingLeft: 3 }}>+{evs.length - 4} more</div>}
+                <div style={{ marginTop: "auto", display: mob ? "none" : "flex", flexDirection: "column", gap: 1, paddingLeft: 3, fontSize: 10.5, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
                   {inM && dayBooked[d] != null && (goalOf(d) > 0 || dayBooked[d] > 0) && (!pd || dayBooked[d] > 0) && (
                     <span
                       title={`Booked ${money(dayBooked[d])}${goalOf(d) ? ` of ${money(goalOf(d))}` : ""}`}
@@ -3546,6 +4324,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
             prefs={prefs}
             setPref={setPref}
             onClose={() => setSel("")}
+            goalEdit={goalEdit}
           />
         </div>
       )}
@@ -3570,7 +4349,8 @@ const reasonsOf = (x, day) => {
   if (!x.win) out.push({ k: "nowin", t: "no % Win" });
   return out;
 };
-function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, sales, cls, line, cands, plan, strategy, exclSet, onMeta, onDone, onToggleExcl, onOpenQuote, dayGoals, setDayGoals, excl, prefs, setPref, onClose }) {
+function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, sales, cls, line, cands, plan, strategy, exclSet, onMeta, onDone, onToggleExcl, onOpenQuote, dayGoals, setDayGoals, excl, prefs, setPref, onClose, goalEdit = true }) {
+  const mob = useMobile(); // celular: as cotações do dia em cartões
   const [showAll, setShowAll] = useState(false);
   const bookedOn = useMemo(() => bookedRange(day, day, quotes, sales, cls, line), [day, quotes, sales, cls, line]);
   const past = day < today,
@@ -3715,17 +4495,19 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
   const scoreCol = (s) => (s >= 65 ? X.teal : s >= 40 ? "#F2B04C" : "#CBD5E1");
   return (
     <div style={{ ...card, overflow: "hidden", borderColor: "#BFE3D9" }}>
-      <div style={{ padding: "16px 16px 14px", display: "flex", flexDirection: "column", gap: 14, background: "linear-gradient(180deg, #F4FBF9, #fff)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ padding: mob ? "12px 12px 10px" : "16px 16px 14px", display: "flex", flexDirection: "column", gap: mob ? 10 : 14, background: "linear-gradient(180deg, #F4FBF9, #fff)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: mob ? "nowrap" : "wrap" }}>
+          {!mob && (
           <span style={{ width: 38, height: 38, borderRadius: 10, background: X.teal, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
             <ListChecks size={20} />
           </span>
-          <div>
-            <div style={h2}>
+          )}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...h2, ...(mob ? { fontSize: 16 } : null) }}>
               Plan for {isToday ? "today, " : ""}
               {dowName(day)}, {fmtDate(day)}
             </div>
-            <div style={{ fontSize: 12, color: X.sub, marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: X.sub, marginTop: 2, display: mob ? "none" : "block" }}>
               {AUTO_FILL ? "FUP = deadline of each quote · days without enough quotes pull in others by priority until the daily goal" : "Quotes with the FUP on this day · the others stay out of the plan"}
               {hol && hol.block ? ` · holiday: ${hol.name}` : we ? " · weekend" : hol ? ` · ${hol.name} (optional day off)` : ""}
             </div>
@@ -3734,9 +4516,16 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
             <XIcon size={16} />
           </button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1.1fr) repeat(auto-fit, minmax(160px, 1fr))", gap: 12, alignItems: "stretch" }}>
+        {/* celular: sem os quadros; a frase de baixo já diz o que falta no dia */}
+        <div style={{ display: mob ? "none" : "grid", gridTemplateColumns: "minmax(220px, 1.1fr) repeat(auto-fit, minmax(160px, 1fr))", gap: 12, alignItems: "stretch" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, justifyContent: "center" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>Goal of the day</div>
+            {!goalEdit ? (
+              <div title="Set by the management" style={{ display: "flex", alignItems: "center", gap: 8, height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+                {target ? money(target) : "—"}
+                <Lock size={14} color={X.sub} style={{ marginLeft: "auto" }} />
+              </div>
+            ) : (
             <MoneyInput
               value={target}
               onCommit={(n) =>
@@ -3748,7 +4537,8 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                 })
               }
             />
-            <div style={{ fontSize: 11.5, color: X.sub }}>
+            )}
+            {goalEdit && <div style={{ fontSize: 11.5, color: X.sub }}>
               {manual != null ? (
                 <span
                   onClick={() =>
@@ -3768,7 +4558,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
               ) : (
                 `${hol && hol.block ? "Holiday" : we ? "Weekend" : "No daily goal"} · type to set a goal for this day`
               )}
-            </div>
+            </div>}
           </div>
           <Tile icon={Wallet} label="Booked on the day" value={partial ? "—" : day > today ? "—" : moneyShort(bookedOn.v)} caption={partial ? "import the Sales Report again" : day > today ? "day still ahead" : "Sales Report"} color={X.green} tint={X.greenSoft} ink={X.green} title={money(bookedOn.v)} />
           <Tile icon={Crosshair} label="Missing on the day" value={pd ? moneyShort(pd.need) : past ? moneyShort(Math.max(0, target - bookedOn.v)) : "—"} caption={pd ? (pd.need ? "to close in quotes" : "covered") : past ? "day is over" : "—"} color={X.redDk} tint={X.redSoft} ink={X.redDk} />
@@ -3784,16 +4574,18 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
       {!past && (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", flexWrap: "wrap", borderTop: `1px solid ${X.line}` }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>Quotes to work on</div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>{mob ? `${list.length} quote${list.length === 1 ? "" : "s"} to work on` : "Quotes to work on"}</div>
             {pfOn && (
               <button onClick={() => { setPf({}); setPs(null); }} style={{ ...btn, height: 28, fontSize: 11.5, padding: "0 10px" }}>
                 <XIcon size={13} /> Clear filters and sorting
               </button>
             )}
+            {!mob && (
             <span style={{ fontSize: 11, fontWeight: 600, color: X.amber, background: X.amberSoft, padding: "3px 10px", borderRadius: 999 }}>
               {list.length} planned · {cands.length} open
             </span>
-            <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            )}
+            <div style={{ marginLeft: "auto", display: mob ? "none" : "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               {AUTO_FILL && <span style={{ fontSize: 11.5, color: X.sub }}>Pull in by</span>}
               {AUTO_FILL && <div style={{ display: "inline-flex", gap: 3, background: X.head, borderRadius: 9, padding: 3 }}>
                 {[
@@ -3822,6 +4614,54 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
               </button>
             </div>
           </div>
+          {mob ? (
+            /* celular: a mesma lista do Today (cliente, QT, valor, motivo, Done); FUP e % Win mudam dentro da cotação */
+            <div style={{ padding: "8px 10px 12px", display: "flex", flexDirection: "column", gap: 8, borderTop: `1px solid ${X.line}` }}>
+              {shownRows.map((r, i) => {
+                const other = r.kind === "other";
+                const late = r.kind === "overdue";
+                const rs = reasonsOf(r, day);
+                return (
+                  <React.Fragment key={r.id}>
+                    {other && !ps && (i === 0 || shownRows[i - 1].kind !== "other") && <div style={{ fontSize: 11.5, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4, padding: "10px 2px 2px" }}>Other open quotes</div>}
+                    <div
+                      className="qp-card-btn"
+                      onClick={() => onOpenQuote(r.id, false, shownRows.map((x) => x.id))}
+                      style={{ ...card, boxShadow: "none", padding: "12px 10px 12px 13px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer", minWidth: 0, opacity: r.off ? 0.5 : 1, ...(late ? { borderLeft: `4px solid ${X.redDk}`, paddingLeft: 10 } : null) }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: r.off ? "line-through" : "none" }} title={r.c}>
+                          {r.c}
+                        </div>
+                        <div style={{ fontSize: 12, color: X.sub, marginTop: 3, display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
+                          {r.id} · <b style={{ color: X.ink }}>{money(r.v)}</b>
+                          <NoteBadge info={notesBy && notesBy[r.id]} />
+                        </div>
+                        {rs.length > 0 && <div style={{ fontSize: 11.5, fontWeight: 700, color: REASON[rs[0].k][0], marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rs.map((x) => x.t).join(" · ")}</div>}
+                      </div>
+                      {isToday && !other && r.fup && (
+                        <button
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            onOpenQuote(r.id, true);
+                          }}
+                          title="Register the follow-up: note, next date and % Win"
+                          style={{ ...btn, height: 42, padding: "0 14px", borderRadius: 12, background: X.teal, borderColor: X.teal, color: "#fff", fontWeight: 700, fontSize: 13.5, flexShrink: 0 }}
+                        >
+                          <Check size={16} /> Done
+                        </button>
+                      )}
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+              {!shownRows.length && (
+                <div style={{ textAlign: "center", color: X.sub, padding: "22px 10px", fontSize: 13 }}>
+                  {rows.length ? "No quote matches the filters." : !cands.length ? (quotes && quotes.length ? "No open quote in this classification and age." : "Import the Quote Report to see the open quotes.") : "Nothing planned for this day."}
+                </div>
+              )}
+            </div>
+          ) : (
           <div style={{ overflow: "auto", maxHeight: 640 }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
@@ -3961,6 +4801,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
               </tbody>
             </table>
           </div>
+          )}
           <div style={{ padding: 10, textAlign: "center", borderTop: `1px solid ${X.line}` }}>
             <button onClick={() => setShowAll((v) => !v)} style={{ ...btn, height: 30, fontSize: 12 }}>
               {showAll ? "Show only the plan of the day" : `Show the other ${cands.length - list.length} open quotes`}
@@ -4106,7 +4947,8 @@ function UnsavedList({ detail, onOpenQuote, onSave, saving }) {
 /* ===== Login: escolher o usuário (Sales Person ou Admin) e a senha =====
    Na primeira vez de cada usuário o programa pede para criar a senha. O arquivo de dados guarda só o hash
    (veja hashPassword em core.js); por isso criar a senha exige a pasta de dados conectada. */
-function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnect, onLogin, onCreate, busy }) {
+function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnect, onLogin, onCreate, onLoadFile, busy }) {
+  const fileRef = useRef(null);
   const [who, setWho] = useState(() => {
     try {
       const w = localStorage.getItem("qp_lastuser") || "";
@@ -4160,13 +5002,14 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
         onLogin(who);
       }, 20);
     } else {
-      if (!connected) return setErr("Open the data folder first: the password is saved in the shared data file.");
+      if (!connected) return setErr(dfSt === "nofsa" ? "The first password must be created on a computer with Chrome or Edge, with the data folder open." : "Open the data folder first: the password is saved in the shared data file.");
       if (pwd.length < 4) return setErr("The password needs at least 4 characters.");
       if (pwd !== pwd2) return setErr("The two passwords are not the same.");
       setChecking(true);
       setTimeout(() => {
         const salt = newSalt();
-        onCreate(who, { role: who === ADMIN_USER ? "admin" : "seller", salt, hash: hashPassword(pwd, salt), at: nowStamp() });
+        // o papel (a tela) continua o que o Admin escolheu; quem é novo fica sem acesso até o Admin escolher
+        onCreate(who, { role: who === ADMIN_USER ? "admin" : (u && u.role) || "", salt, hash: hashPassword(pwd, salt), at: nowStamp() });
         setChecking(false);
         try {
           localStorage.setItem("qp_lastuser", who === ADMIN_USER ? "" : who);
@@ -4177,8 +5020,8 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
   const field = { ...inp, height: 42, fontSize: 14, width: "100%", borderRadius: 10 };
   const lbl = { fontSize: 12, fontWeight: 700, color: X.sub, marginBottom: 6, display: "block" };
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, background: `radial-gradient(1200px 600px at 20% 0%, #DDF1EC 0%, transparent 60%), radial-gradient(900px 500px at 100% 100%, #E6EEFB 0%, transparent 55%), ${X.bg}` }}>
-      <form onSubmit={submit} style={{ ...card, width: "min(420px, 100%)", borderRadius: 18, padding: "28px 28px 22px", display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 24px 60px rgba(16,24,40,.12)" }}>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 14, background: `radial-gradient(1200px 600px at 20% 0%, #DDF1EC 0%, transparent 60%), radial-gradient(900px 500px at 100% 100%, #E6EEFB 0%, transparent 55%), ${X.bg}` }}>
+      <form onSubmit={submit} style={{ ...card, width: "min(420px, 100%)", borderRadius: 18, padding: "24px 20px 20px", display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 24px 60px rgba(16,24,40,.12)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span onDoubleClick={toggleAdmin} style={{ width: 44, height: 44, borderRadius: 12, background: X.teal, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", userSelect: "none" }}>
             <TrendingUp size={24} />
@@ -4250,6 +5093,26 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
             </button>
           ) : dfSt === "opening" ? (
             <span>Opening the data folder…</span>
+          ) : dfSt === "nofsa" ? (
+            /* celular e navegadores sem acesso a pastas: carregar o arquivo de dados à mão */
+            <>
+              <button type="button" onClick={() => fileRef.current && fileRef.current.click()} style={{ ...btn, height: 34, fontSize: 12 }}>
+                <FolderOpen size={13} /> Load the data file…
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".xlsx"
+                multiple
+                style={{ display: "none" }}
+                onChange={async (e) => {
+                  const fs = [...(e.target.files || [])];
+                  e.target.value = "";
+                  for (const f of fs) if (onLoadFile) await onLoadFile(f);
+                }}
+              />
+              <span style={{ width: "100%", fontSize: 11, lineHeight: 1.4 }}>This browser can't keep the data folder connected (phones, Firefox, Safari): load the two files {DATA_FILE} and {REP_FILE}.</span>
+            </>
           ) : (
             <button type="button" onClick={onOpen} style={{ ...btn, height: 30, fontSize: 12 }}>
               <FolderOpen size={13} /> Open the data folder…
@@ -4261,97 +5124,225 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
     </div>
   );
 }
-/* Admin: lista dos usuários, quem já criou a senha, e o botão para zerar (o usuário cria outra no próximo login) */
-function UsersDialog({ names, users, onReset, onClose }) {
+/* ===== Admin: usuários e acesso =====
+   O Admin escolhe o papel (a tela) de cada pessoa: vendedor externo, vendedor interno, gerência ou sem acesso.
+   A lista vem das colunas Sales Person e Quoted By do Quote Report, mais as pessoas da gerência que o Admin
+   acrescenta pelo nome (quem não aparece nos relatórios). Tirar o acesso de alguém acrescentado à mão tira a
+   pessoa da lista. Reset = a pessoa cria outra senha no próximo login. */
+function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
+  const mob = useMobile();
   const [ask, setAsk] = useState("");
-  useEffect(() => {
-    const k = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
-  const all = [ADMIN_USER, ...names];
-  return createPortal(
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1600, background: "rgba(15,23,42,.32)", backdropFilter: "blur(5px)", WebkitBackdropFilter: "blur(5px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "min(620px, 100%)", maxHeight: "86vh", display: "flex", flexDirection: "column", borderRadius: 16, overflow: "hidden" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 18px", borderBottom: `1px solid ${X.line}` }}>
-          <span style={{ width: 34, height: 34, borderRadius: 10, background: X.tealSoft, color: X.tealDk, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-            <Users size={18} />
-          </span>
-          <div>
-            <div style={{ fontSize: 15.5, fontWeight: 800 }}>Users and passwords</div>
-            <div style={{ fontSize: 12, color: X.sub }}>Reset = the user creates a new password at the next sign-in</div>
-          </div>
-          <button onClick={onClose} style={{ ...btn, marginLeft: "auto", padding: "0 10px" }} title="Close (Esc)">
-            <XIcon size={16} />
-          </button>
-        </div>
-        <div style={{ overflowY: "auto" }}>
-          {all.map((n) => {
-            const u = users[n];
-            const has = !!(u && u.hash);
-            return (
-              <div key={n} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 150px 120px", alignItems: "center", gap: 10, padding: "10px 18px", borderBottom: `1px solid #F0F3F6`, fontSize: 13 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                  <span style={{ width: 28, height: 28, borderRadius: 999, background: n === ADMIN_USER ? X.violetSoft : X.tealSoft, color: n === ADMIN_USER ? X.violet : X.tealDk, fontSize: 10.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    {n === ADMIN_USER ? <ShieldCheck size={14} /> : initials(n)}
-                  </span>
-                  <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n}</span>
-                </span>
-                <span style={{ fontSize: 12, color: has ? X.green : X.sub }}>{has ? `password set${u.at ? " · " + fmtDate(String(u.at).slice(0, 10)) : ""}` : "not created yet"}</span>
-                <span style={{ textAlign: "right" }}>
-                  {has &&
-                    (ask === n ? (
-                      <button
-                        onClick={() => {
-                          onReset(n);
-                          setAsk("");
-                        }}
-                        style={{ ...btn, height: 30, fontSize: 12, background: X.redDk, borderColor: X.redDk, color: "#fff" }}
-                      >
-                        Confirm reset
-                      </button>
-                    ) : (
-                      <button onClick={() => setAsk(n)} style={{ ...btn, height: 30, fontSize: 12 }}>
-                        <RotateCcw size={13} /> Reset
-                      </button>
-                    ))}
-                </span>
-              </div>
-            );
-          })}
+  const [q, setQ] = useState("");
+  const [nf, setNf] = useState(""); // filtro: "" todos · "none" sem acesso · papel
+  const [add, setAdd] = useState("");
+  const roleOfU = (n) => (ROLES[(users[n] || {}).role] ? users[n].role : "");
+  const cnt = { "": names.length, none: names.filter((n) => !roleOfU(n)).length };
+  ROLE_KEYS.forEach((k) => (cnt[k] = names.filter((n) => roleOfU(n) === k).length));
+  const ql = norm(q);
+  const list = [ADMIN_USER, ...names].filter((n) => (!ql || norm(n).includes(ql)) && (!nf || (n !== ADMIN_USER && (nf === "none" ? !roleOfU(n) : roleOfU(n) === nf))));
+  const addName = add.trim().replace(/\s+/g, " ");
+  const addOk = !!addName && addName !== ADMIN_USER && ![...names].some((n) => norm(n) === norm(addName));
+  const doAdd = () => {
+    if (!addOk) return;
+    onAdd(addName);
+    setAdd("");
+  };
+  const chip = (k, l, fg) => {
+    const on = nf === k;
+    return (
+      <button key={k || "all"} onClick={() => setNf(k)} style={{ ...btn, height: 30, padding: "0 10px", fontSize: 12, borderRadius: 999, background: on ? X.tealSoft : "#fff", color: on ? X.tealDk : fg || X.ink, borderColor: on ? "#9FD6C9" : X.line, fontWeight: on ? 700 : 600 }}>
+        {l} <span style={{ opacity: 0.7 }}>{cnt[k] || 0}</span>
+      </button>
+    );
+  };
+  const where = (n) => {
+    const c = colOf(n);
+    return c.sp && c.qb ? "Sales Person and Quoted By" : c.sp ? "Sales Person" : c.qb ? "Quoted By" : "added by hand";
+  };
+  return (
+    <div style={{ ...card, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: mob ? "12px 12px" : "16px 18px", borderBottom: `1px solid ${X.line}` }}>
+        <span style={{ width: 36, height: 36, borderRadius: 10, background: X.tealSoft, color: X.tealDk, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Users size={18} />
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 15.5, fontWeight: 800 }}>Users and access</div>
+          <div style={{ fontSize: 12, color: X.sub }}>Choose the screen of each person · saved in the data file right away</div>
         </div>
       </div>
-    </div>,
-    document.body,
+      <div style={{ padding: mob ? "10px 12px" : "12px 18px", display: "flex", flexDirection: "column", gap: 10, borderBottom: `1px solid ${X.line}` }}>
+        <div className="qp-hscroll" style={{ display: "flex", gap: 6 }}>
+          {chip("", "All")}
+          {chip("none", "No access", cnt.none ? X.redDk : X.sub)}
+          {ROLE_KEYS.map((k) => chip(k, ROLES[k].label))}
+        </div>
+        <div style={{ position: "relative" }}>
+          <Search size={14} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: X.sub, pointerEvents: "none" }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a person…" style={{ ...inp, width: "100%", height: 38, paddingLeft: 30 }} />
+        </div>
+      </div>
+      <div>
+        {list.map((n) => {
+          const u = users[n];
+          const has = !!(u && u.hash);
+          const isA = n === ADMIN_USER;
+          const r = roleOfU(n);
+          const R = ROLES[r];
+          const hand = !isA && where(n) === "added by hand";
+          const roleSel = isA ? (
+            <span style={{ fontSize: 12, fontWeight: 700, color: ROLES.manager.fg }}>Admin · Management screen</span>
+          ) : (
+            <select
+              value={r}
+              onChange={(e) => onRole(n, e.target.value)}
+              title="Screen this person sees after signing in"
+              style={{ ...inp, height: 36, width: "100%", fontWeight: 700, color: R ? R.fg : X.redDk, background: R ? R.bg : "#FFF7F7", borderColor: R ? "transparent" : "#F3B4B4" }}
+            >
+              <option value="">{hand ? "No access (remove)" : "No access"}</option>
+              {ROLE_KEYS.map((k) => (
+                <option key={k} value={k}>
+                  {ROLES[k].label}
+                </option>
+              ))}
+            </select>
+          );
+          const pwd = <span style={{ fontSize: 12, color: has ? X.green : X.sub, whiteSpace: "nowrap" }}>{has ? "password set" : "no password yet"}</span>;
+          const reset =
+            has &&
+            (ask === n ? (
+              <button
+                onClick={() => {
+                  onReset(n);
+                  setAsk("");
+                }}
+                style={{ ...btn, height: 32, fontSize: 12, background: X.redDk, borderColor: X.redDk, color: "#fff" }}
+              >
+                Confirm reset
+              </button>
+            ) : (
+              <button onClick={() => setAsk(n)} style={{ ...btn, height: 32, fontSize: 12 }} title="The person creates a new password at the next sign-in">
+                <RotateCcw size={13} /> Reset
+              </button>
+            ));
+          const who = (
+            <span style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+              <span style={{ width: 30, height: 30, borderRadius: 999, background: isA ? X.violetSoft : R ? R.bg : "#F1F4F7", color: isA ? X.violet : R ? R.fg : X.sub, fontSize: 10.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {isA ? <ShieldCheck size={14} /> : initials(n)}
+              </span>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n}</span>
+                <span style={{ display: "block", fontSize: 11, color: X.sub }}>{isA ? "secret user · Ctrl+Shift+A on the sign-in" : hand ? "added by hand (not in the reports)" : `in the report as ${where(n)}`}</span>
+              </span>
+            </span>
+          );
+          return mob ? (
+            <div key={n} style={{ padding: "11px 12px", borderBottom: `1px solid #F0F3F6`, display: "flex", flexDirection: "column", gap: 8 }}>
+              {who}
+              {roleSel}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
+                {pwd}
+                {reset}
+              </div>
+            </div>
+          ) : (
+            <div key={n} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 200px 120px 130px", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: `1px solid #F0F3F6` }}>
+              {who}
+              {roleSel}
+              {pwd}
+              <span style={{ textAlign: "right" }}>{reset}</span>
+            </div>
+          );
+        })}
+        {!list.length && <div style={{ padding: 20, textAlign: "center", color: X.sub, fontSize: 12.5 }}>Nobody found.</div>}
+      </div>
+      <div style={{ padding: mob ? "12px 12px" : "12px 18px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", background: "#FAFBFC" }}>
+        <UserPlus size={16} color={X.sub} />
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: X.ink }}>Someone who is not in the reports?</span>
+        <input value={add} onChange={(e) => setAdd(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doAdd()} placeholder="Full name" style={{ ...inp, height: 36, flex: "1 1 180px", minWidth: 0 }} />
+        <button onClick={doAdd} disabled={!addOk} style={{ ...btn, height: 36, background: addOk ? X.teal : "#fff", color: addOk ? "#fff" : X.sub, borderColor: addOk ? X.teal : X.line, cursor: addOk ? "pointer" : "not-allowed" }} title="Adds the person with the Management screen (change it in the list)">
+          <UserPlus size={14} /> Add
+        </button>
+      </div>
+    </div>
   );
 }
-/* Usuário logado (no topo): nome e papel; o menu tem "Users and passwords" (admin) e "Log out" */
-function UserChip({ name, admin, onLogout, onUsers }) {
-  const p = usePop(220);
+/* Sem acesso: a pessoa entrou, mas o Admin ainda não escolheu a tela dela */
+function NoAccessScreen({ name, connected, checking, onCheck, onLogout }) {
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: `radial-gradient(1200px 600px at 20% 0%, #DDF1EC 0%, transparent 60%), ${X.bg}` }}>
+      <div style={{ ...card, width: "min(420px, 100%)", borderRadius: 18, padding: "26px 22px 20px", display: "flex", flexDirection: "column", gap: 14, textAlign: "center", alignItems: "center" }}>
+        <span style={{ width: 52, height: 52, borderRadius: 14, background: X.amberSoft, color: X.amber, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          <Ban size={26} />
+        </span>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 800 }}>Hi, {String(name).split(" ")[0]}</div>
+          <div style={{ fontSize: 13, color: X.sub, marginTop: 6, lineHeight: 1.5 }}>
+            Your access is not set yet. Ask the admin to choose your screen: <b>outside sales</b>, <b>inside sales</b> or <b>management</b>.
+          </div>
+        </div>
+        {connected ? (
+          <button onClick={onCheck} disabled={checking} style={{ ...btn, height: 44, width: "100%", justifyContent: "center", fontSize: 14, background: X.teal, borderColor: X.teal, color: "#fff" }}>
+            <RefreshCw size={15} /> {checking ? "Checking…" : "The admin set it · check again"}
+          </button>
+        ) : (
+          <div style={{ fontSize: 12, color: X.sub }}>Open the data folder on this computer to receive the access.</div>
+        )}
+        <button onClick={onLogout} style={{ ...btn, height: 40, width: "100%", justifyContent: "center" }}>
+          <LogOut size={15} /> Log out
+        </button>
+      </div>
+    </div>
+  );
+}
+/* Usuário logado (no topo): nome e papel; o menu tem "Users and access" (gerência) e "Log out" */
+/* items = ações extras do menu (no celular: atualizar, salvar, pasta de dados); status = situação dos dados */
+function UserChip({ name, admin, role, compact, onLogout, onUsers, items, status }) {
+  const p = usePop(compact ? 280 : 230, 480);
+  const R = ROLES[role];
   return (
     <>
-      <button ref={p.anchor} onClick={p.toggle} style={{ ...btn, height: 40, padding: "0 10px 0 6px", borderRadius: 11, gap: 8 }} title={admin ? "Admin" : name}>
-        <span style={{ width: 28, height: 28, borderRadius: 999, background: admin ? X.violetSoft : X.tealSoft, color: admin ? X.violet : X.tealDk, fontSize: 10.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+      <button ref={p.anchor} onClick={p.toggle} style={{ ...btn, height: compact ? 38 : 40, padding: compact ? "0 6px" : "0 10px 0 6px", borderRadius: 11, gap: compact ? 4 : 8 }} title={`${admin ? "Admin" : name}${R ? " · " + R.label : ""}`}>
+        <span style={{ width: 28, height: 28, borderRadius: 999, background: admin ? X.violetSoft : R ? R.bg : X.tealSoft, color: admin ? X.violet : R ? R.fg : X.tealDk, fontSize: 10.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
           {admin ? <ShieldCheck size={15} /> : initials(name)}
         </span>
-        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.15 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{admin ? "Admin" : name.split(" ")[0]}</span>
-          <span style={{ fontSize: 10.5, color: X.sub }}>{admin ? "all salespeople" : "salesperson"}</span>
-        </span>
+        {!compact && (
+          <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.15 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{admin ? "Admin" : name.split(" ")[0]}</span>
+            <span style={{ fontSize: 10.5, color: X.sub }}>{R ? R.label : "no access"}</span>
+          </span>
+        )}
         <ChevronDown size={13} color="#A0AEC0" />
       </button>
       {p.render(
         <>
-          {admin && (
+          <div style={{ padding: "8px 9px 6px", borderBottom: `1px solid ${X.line}`, marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{admin ? "Admin" : name}</div>
+            <div style={{ fontSize: 11.5, color: R ? R.fg : X.sub, fontWeight: 600 }}>{R ? R.label : "no access"}</div>
+            {status && <div style={{ fontSize: 11.5, color: X.sub, marginTop: 5, lineHeight: 1.35 }}>{status}</div>}
+          </div>
+          {(items || []).filter(Boolean).map((it) => (
+            <div
+              key={it.label}
+              className="qp-opt"
+              onClick={() => {
+                p.setPos(null);
+                it.onClick();
+              }}
+              style={{ ...optS, padding: "10px 9px", fontSize: 13.5, color: it.color || X.ink }}
+            >
+              <it.icon size={16} /> {it.label}
+            </div>
+          ))}
+          {onUsers && (
             <div
               className="qp-opt"
               onClick={() => {
                 p.setPos(null);
                 onUsers();
               }}
-              style={optS}
+              style={{ ...optS, ...(compact ? { padding: "10px 9px", fontSize: 13.5 } : null) }}
             >
-              <Users size={15} /> Users and passwords…
+              <Users size={15} /> Users and access…
             </div>
           )}
           <div
@@ -4360,7 +5351,7 @@ function UserChip({ name, admin, onLogout, onUsers }) {
               p.setPos(null);
               onLogout();
             }}
-            style={optS}
+            style={{ ...optS, ...(compact ? { padding: "10px 9px", fontSize: 13.5, borderTop: `1px solid ${X.line}`, borderRadius: 0, marginTop: 4 } : null) }}
           >
             <LogOut size={15} /> Log out
           </div>
@@ -5104,13 +6095,13 @@ export default function App() {
   const quotes = (quotesRep && quotesRep.quotes) || [];
   const qIndex = useMemo(() => new Map(quotes.map((q) => [q.id, q])), [quotes]);
   const clsList = useMemo(() => clsOptions(quotes), [quotes]);
-  // classificação: a escolhida; sem escolha, OEM quando existir (como o pulz), senão todas
-  const cls = prefs.cls !== undefined ? prefs.cls : (clsList.find((c) => norm(c.v) === "oem") || { v: "" }).v;
-  const line = ALL_LINES.includes(prefs.line) ? prefs.line : "";
-  /* vendedor: só a coluna Sales Person do Quote Report (sem separar interno e externo) · "sp:Nome".
-     A escolha antiga "ext:Nome" (Sales Person) continua valendo; "int:Nome" (Quoted By) volta para todos. */
-  /* ---------- login: quem está usando (Sales Person ou Admin) ----------
-     Vendedor vê só as próprias cotações (o filtro de vendedor fica preso no nome dele); Admin vê tudo. */
+  /* ---------- login e papel ----------
+     Quem pode entrar: os nomes das colunas Sales Person e Quoted By do Quote Report, mais as pessoas que o
+     Admin acrescentou à mão (gerência). A tela depende do papel que o Admin escolheu (users[nome].role):
+     externo = só as cotações em que ele é o Sales Person · interno = só as que ele cotou (Quoted By) ·
+     gerência (e o Admin) = todas, com o filtro de vendedor livre.
+     Filtro de vendedor da gerência: "sp:Nome" (Sales Person) ou "qb:Nome" (Quoted By). A escolha antiga
+     "ext:Nome" continua valendo como "sp:Nome". */
   const [session, setSession] = useState(() => {
     try {
       return sessionStorage.getItem("qp_session") || "";
@@ -5118,15 +6109,35 @@ export default function App() {
       return "";
     }
   });
+  // classificação padrão: OEM para a gerência; o vendedor (externo e interno) começa vendo todas as dele
+  const sellerRole = !!session && session !== ADMIN_USER && ["outside", "inside"].includes(((users || {})[session] || {}).role);
+  const cls = prefs.cls !== undefined ? prefs.cls : sellerRole ? "" : (clsList.find((c) => norm(c.v) === "oem") || { v: "" }).v;
+  const line = ALL_LINES.includes(prefs.line) ? prefs.line : "";
   const isAdmin = session === ADMIN_USER;
-  const allSellers = useMemo(() => sellerOptions(quotes.filter((q) => !quoteCancelled(q)), "sp"), [quotes]);
-  const sellerNames = useMemo(() => allSellers.map((g) => g.name), [allSellers]);
-  const lockSeller = session && !isAdmin ? session : "";
-  const seller = lockSeller ? "sp:" + lockSeller : /^sp:./.test(prefs.seller || "") ? prefs.seller : /^ext:./.test(prefs.seller || "") ? "sp:" + prefs.seller.slice(4) : "";
+  const liveQuotes = useMemo(() => quotes.filter((q) => !quoteCancelled(q)), [quotes]);
+  const allSellers = useMemo(() => sellerOptions(liveQuotes, "sp"), [liveQuotes]);
+  const allInside = useMemo(() => sellerOptions(liveQuotes, "qb"), [liveQuotes]);
+  const spNameSet = useMemo(() => new Set(allSellers.map((g) => g.name)), [allSellers]);
+  const qbNameSet = useMemo(() => new Set(allInside.map((g) => g.name)), [allInside]);
+  // pessoas acrescentadas pelo Admin (não aparecem nos relatórios): ficam enquanto tiverem um papel
+  const handNames = useMemo(() => Object.keys(users || {}).filter((n) => n !== ADMIN_USER && !spNameSet.has(n) && !qbNameSet.has(n) && ROLES[(users[n] || {}).role]), [users, spNameSet, qbNameSet]);
+  const sellerNames = useMemo(() => [...new Set([...spNameSet, ...qbNameSet, ...handNames])].sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" })), [spNameSet, qbNameSet, handNames]);
+  const colOf = (n) => ({ sp: spNameSet.has(n), qb: qbNameSet.has(n) });
+  // papel de quem entrou: o Admin usa a tela da gerência; sem papel válido = sem acesso
+  const role = !session ? "" : isAdmin ? "manager" : ROLES[((users || {})[session] || {}).role] ? users[session].role : "";
+  const lockSeller = role === "outside" || role === "inside" ? session : "";
+  const seller = lockSeller
+    ? (role === "inside" ? "qb:" : "sp:") + lockSeller
+    : /^(sp|qb):./.test(prefs.seller || "")
+    ? prefs.seller
+    : /^ext:./.test(prefs.seller || "")
+    ? "sp:" + prefs.seller.slice(4)
+    : "";
   const inCls = useMemo(() => scopeQuotes(quotes, { cls }), [quotes, cls]);
   /* vendedores da coluna Sales Person, agrupados como no pulz (sem o código SP; a mesma pessoa com grafias
      diferentes = um nome só). O número = cotações não canceladas (todas as datas), como na tabela. */
   const spList = useMemo(() => sellerOptions(inCls.filter((q) => !quoteCancelled(q)), "sp"), [inCls]);
+  const qbList = useMemo(() => sellerOptions(inCls.filter((q) => !quoteCancelled(q)), "qb"), [inCls]);
   // nome do vendedor (grafias agrupadas como no filtro) a partir do Sales Person da cotação
   const groupOf = useMemo(() => {
     const m = new Map();
@@ -5136,15 +6147,22 @@ export default function App() {
   const who = useMemo(() => {
     if (!seller) return null;
     const name = seller.slice(3);
+    if (seller.startsWith("qb:")) {
+      // vendedor interno: as cotações em que ele aparece no Quoted By
+      const g = qbList.find((x) => x.name === name) || allInside.find((x) => x.name === name);
+      return { qb: g ? g.raw : [name], sp: [] };
+    }
     const g = spList.find((x) => x.name === name) || allSellers.find((x) => x.name === name);
     return { qb: [], sp: g ? g.raw : [name] };
-  }, [seller, spList, allSellers]);
+  }, [seller, spList, allSellers, qbList, allInside]);
   // classificação + linha (Thermometer) e + vendedores (tabela e plano)
   const inLine = useMemo(() => scopeQuotes(quotes, { cls, line }), [quotes, cls, line]);
   // cotações guardadas sem a linha dos itens (importadas por uma versão antiga ou sem a coluna Product Group)
   const noLineList = useMemo(() => inCls.filter((q) => !q.lr && (!q.al || !["PT", "CP", "MH"].some((k) => q.al[k]))), [inCls]);
   const noLine = noLineList.length;
   const scoped = useMemo(() => scopeQuotes(quotes, { cls, line, who }), [quotes, cls, line, who]);
+  // Hoje: todos os follow-ups da pessoa, sem classificação nem linha (um follow-up vencido não some por filtro)
+  const scopedToday = useMemo(() => scopeQuotes(quotes, { who }), [quotes, who]);
   // Sales Report no recorte da tela: booked por dia só do vendedor e da linha escolhidos
   const salesView = useMemo(() => salesForLine(salesForSeller(salesRep, who), line), [salesRep, who, line]);
   // período como no pulz: ano fiscal inteiro ou um mês dele (padrão: o ano fiscal atual)
@@ -5401,30 +6419,51 @@ export default function App() {
     pendingSave.current = false;
     if (handleRef.current) saveNow(true);
   }, [users]);
+  // o papel escolhido pelo Admin nunca é apagado pela senha (criar ou zerar)
+  const keepRole = (name, u) => (name === ADMIN_USER ? "admin" : ((u || {})[name] || {}).role || "");
   const createPassword = (name, rec) => {
     pendingSave.current = true;
-    setUsers((u) => ({ ...u, [name]: rec }));
+    setUsers((u) => ({ ...u, [name]: { ...((u || {})[name] || {}), ...rec, role: keepRole(name, u) || rec.role || "" } }));
     login(name);
   };
   const resetPassword = (name) => {
     pendingSave.current = true;
-    setUsers((u) => ({ ...u, [name]: { role: name === ADMIN_USER ? "admin" : "seller", salt: "", hash: "", at: nowStamp() } }));
+    setUsers((u) => ({ ...u, [name]: { ...((u || {})[name] || {}), role: keepRole(name, u), salt: "", hash: "", at: nowStamp() } }));
     say("ok", `Password of ${name} reset: a new one is created at the next sign-in.`);
   };
-  const [showUsers, setShowUsers] = useState(false);
-  // precisa entrar: ninguém logado, ou o vendedor logado não existe mais nas cotações
-  const needLogin = !session || (!isAdmin && allSellers.length > 0 && !sellerNames.includes(session));
+  // Admin escolhe a tela de alguém (grava logo, como as senhas; "at" novo = vale a escolha mais recente)
+  const setRole = (name, r) => {
+    pendingSave.current = true;
+    setUsers((u) => ({ ...u, [name]: { salt: "", hash: "", ...((u || {})[name] || {}), role: ROLES[r] ? r : "", at: nowStamp() } }));
+    say("ok", ROLES[r] ? `${name} now sees the ${ROLES[r].label} screen.` : `${name} has no access now.`);
+  };
+  const addUser = (name) => setRole(name, "manager");
+  // precisa entrar: ninguém logado, ou quem entrou não existe mais (nem nos relatórios nem acrescentado pelo Admin)
+  const needLogin = !session || (!isAdmin && sellerNames.length > 0 && !sellerNames.includes(session));
+  const noAccess = !needLogin && !role;
 
-  const tab = ["calendar", "sellers"].includes(prefs.tab) ? prefs.tab : "portfolio";
-  const [showAnalysis, setShowAnalysis] = useState(false); // Analysis abre por cima da tela (card no centro)
+  /* abas: cada papel tem as suas (ROLE_TABS); a aba escolhida fica guardada por papel */
+  const tabs = ROLE_TABS[role] || [];
+  const tabKey = "tab_" + (role || "none");
+  const tab = tabs.some((t) => t[0] === prefs[tabKey]) ? prefs[tabKey] : (tabs[0] || [""])[0];
+  const setTab = (k) => setPref(tabKey, k);
+  const mob = useMobile();
+  const [showFilters, setShowFilters] = useState(false); // celular: filtros recolhidos atrás de um botão
+  // celular: a página precisa da meta viewport para não abrir "encolhida"
+  useEffect(() => {
+    if (document.querySelector('meta[name="viewport"]')) return;
+    const m = document.createElement("meta");
+    m.name = "viewport";
+    m.content = "width=device-width, initial-scale=1, viewport-fit=cover";
+    document.head.appendChild(m);
+  }, []);
   const repInfo = (r, kind) =>
     r ? `${kind === "q" ? r.quotes.length.toLocaleString("pt-BR") + " quotes stored" : r.rows.length.toLocaleString("pt-BR") + " booked rows stored"} · ${fmtDate(r.minD)}–${fmtDate(r.maxD)} · last file ${r.fileName || "—"}${r.at ? " imported " + fmtStamp(r.at) : ""}` : "";
   const selS = { ...inp, background: "#FEF6EA", borderColor: "#E9C48A", color: "#8A5A12", fontWeight: 600, maxWidth: 230 };
-  const filtOn = !!(line || seller);
 
   /* ---------- botão Save (ao lado das abas) ---------- */
   const saveBtn = (() => {
-    const base = { ...btn, height: 40, padding: "0 14px", fontSize: 13, fontWeight: 700, borderRadius: 11 };
+    const base = { ...btn, height: mob ? 38 : 40, padding: mob ? "0 11px" : "0 14px", fontSize: 13, fontWeight: 700, borderRadius: 11 };
     if (!FSA)
       return (
         <button onClick={downloadData} title="This browser cannot keep a file connected: download the data file" style={base}>
@@ -5515,9 +6554,36 @@ export default function App() {
     );
   })();
 
+  /* ---------- aviso (toast): no celular fica em cima da barra de abas ---------- */
+  const toastEl = toast && (
+    <div
+      style={{
+        position: "fixed",
+        ...(mob ? { left: 10, right: 10, bottom: needLogin || noAccess ? 12 : 76 } : { right: 20, bottom: 20, maxWidth: 480 }),
+        zIndex: 2200,
+        ...card,
+        padding: "12px 14px",
+        display: "flex",
+        gap: 10,
+        alignItems: "flex-start",
+        borderLeft: `4px solid ${toast.tone === "err" ? X.redDk : toast.tone === "warn" ? "#F2B04C" : X.teal}`,
+        boxShadow: "0 10px 30px rgba(16,24,40,.18)",
+        fontSize: 13,
+      }}
+    >
+      {React.createElement(toast.tone === "err" ? AlertTriangle : toast.tone === "warn" || toast.tone === "info" ? Info : CheckCircle2, { size: 17, color: toast.tone === "err" ? X.redDk : toast.tone === "warn" ? X.amber : toast.tone === "info" ? X.sub : X.tealDk, style: { flexShrink: 0, marginTop: 1 } })}
+      <span style={{ flex: 1 }}>{toast.text}</span>
+      <button onClick={() => setToast(null)} style={{ border: "none", background: "transparent", cursor: "pointer", color: X.sub, padding: 0 }}>
+        <XIcon size={15} />
+      </button>
+    </div>
+  );
+  const css = <style>{GLOBAL_CSS}</style>;
+
   if (needLogin)
     return (
       <>
+        {css}
         <LoginScreen
           names={sellerNames}
           users={users || {}}
@@ -5528,22 +6594,480 @@ export default function App() {
           onReconnect={reconnect}
           onLogin={login}
           onCreate={createPassword}
+          onLoadFile={loadDataFile}
           busy={!loaded}
         />
-        {toast && (
-          <div style={{ position: "fixed", right: 20, bottom: 20, maxWidth: 440, ...card, padding: "12px 14px", fontSize: 12.5, zIndex: 50 }} onClick={() => setToast(null)}>
-            {toast.text}
-          </div>
-        )}
+        {toastEl}
       </>
     );
+  if (noAccess)
+    return (
+      <>
+        {css}
+        <NoAccessScreen name={session} connected={connected} checking={checkSt.busy} onCheck={() => pullIfChanged(true)} onLogout={logout} />
+        {toastEl}
+      </>
+    );
+
+  const R = ROLES[role];
+  const filtersTxt = `${seller ? seller.slice(3) : "All salespeople"} · ${cls || "All classifications"} · ${line ? "line " + line : "all lines"}`;
+  const showPeriod = ["portfolio", "mine", "analysis", "sellers"].includes(tab);
+  const canFupReport = role === "inside" || role === "manager";
+  const nFilters = [cls, line, !lockSeller && seller].filter(Boolean).length;
+
+  /* ---------- filtros (período, classificação, linha, vendedor) ---------- */
+  const fLbl = { fontSize: 12, color: X.sub, fontWeight: 600 };
+  const periodOpts = (
+    <>
+    <option value="all">All periods</option>
+    {pGroups.map((g) => (
+      <optgroup key={g.y} label={`${g.label} · ${g.range}`}>
+        <option value={"fy:" + g.y}>
+          {g.label} · {g.range} (whole year){g.current ? " · current" : ""}
+        </option>
+        {g.months.map((m) => (
+          <option key={m} value={"m:" + m}>
+            {"   "}
+            {MON_SHORT[+m.slice(5) - 1]}/{m.slice(0, 4)}
+          </option>
+        ))}
+      </optgroup>
+    ))}
+    </>
+  );
+  const periodSel = showPeriod && (
+    <div style={{ position: "relative", display: "flex", alignItems: "center", minWidth: 0, ...(mob ? { flex: 1 } : null) }} title="Period: all, a whole fiscal year or one month">
+      <CalendarDays size={15} color="#8A5A12" style={{ position: "absolute", left: 11, pointerEvents: "none" }} />
+      <select value={period} onChange={(e) => setPref("period", e.target.value)} style={{ ...selS, maxWidth: "none", minWidth: mob ? 0 : 250, width: mob ? "100%" : undefined, paddingLeft: 34, height: mob ? 40 : 36 }}>
+        {periodOpts}
+      </select>
+    </div>
+  );
+  const clsSel = clsList.length > 0 && (
+    <label style={{ display: "flex", flexDirection: mob ? "column" : "row", alignItems: mob ? "stretch" : "center", gap: mob ? 5 : 7, ...fLbl }}>
+      Classification
+      <select value={cls} onChange={(e) => setPref("cls", e.target.value)} style={{ ...selS, ...(mob ? { maxWidth: "none", width: "100%", height: 40 } : null) }}>
+        <option value="">All</option>
+        {clsList.map((o) => (
+          <option key={o.v} value={o.v}>
+            {o.v} ({o.n.toLocaleString("pt-BR")})
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  const lineSeg = (
+    <div title="Product line (Product Group): quoted, open, lost, sold and booked values only count the line" style={{ display: "flex", flexDirection: mob ? "column" : "row", alignItems: mob ? "stretch" : "center", gap: mob ? 5 : 6, ...fLbl }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <Layers size={14} /> Line{mob ? "" : ":"}
+      </span>
+      <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 9, border: `1px solid ${line ? "#E9C48A" : X.line}`, background: line ? "#FFFBEB" : "#fff" }}>
+        {["", ...ALL_LINES].map((v) => {
+          const on = line === v;
+          return (
+            <button
+              key={v || "all"}
+              onClick={() => setPref("line", v)}
+              style={{ flex: mob ? 1 : "none", border: "none", borderRadius: 7, padding: mob ? "9px 11px" : "5px 11px", fontSize: 12, fontWeight: on ? 700 : 500, cursor: "pointer", background: on ? (v ? "#FDE9CF" : X.tealSoft) : "transparent", color: on ? (v ? "#8A5A12" : X.tealDk) : X.sub }}
+            >
+              {v || "All"}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+  const noLineTag = line && noLine > 0 && (
+    <span
+      title={`These quotes were stored by an older version of the program (or the Quote Report had no Product Group column), so the program does not know their line. Import the Quote Report that has them again: the lines are filled in and nothing else changes.\n\n${noLineList
+        .slice(0, 12)
+        .map((q) => `${q.id} · ${q.c} · ${fmtDate(q.d)} · ${q.cls || "no classification"}${q.up ? ` · last import ${fmtStamp(q.up)}` : ""}`)
+        .join("\n")}${noLine > 12 ? `\n… and ${noLine - 12} more` : ""}`}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: X.redDk, background: X.redSoft, padding: "5px 10px", borderRadius: 8 }}
+    >
+      <AlertTriangle size={14} /> {noLine.toLocaleString("pt-BR")} quote{noLine === 1 ? "" : "s"} without product line · import the Quote Report again
+    </span>
+  );
+  // gerência: vendedor livre (externo = Sales Person, interno = Quoted By) · externo e interno: preso no próprio nome
+  const sellerOpts = (
+    <>
+    <option value="">All salespeople</option>
+    {spList.length > 0 && (
+      <optgroup label="Outside sales · Sales Person">
+        {spList.map((o) => (
+          <option key={"sp" + o.v} value={`sp:${o.v}`} title={"Sales Person in the Quote Report as: " + o.raw.join(" · ")}>
+            {o.v} ({o.n.toLocaleString("pt-BR")})
+          </option>
+        ))}
+      </optgroup>
+    )}
+    {qbList.length > 0 && (
+      <optgroup label="Inside sales · Quoted By">
+        {qbList.map((o) => (
+          <option key={"qb" + o.v} value={`qb:${o.v}`} title={"Quoted By in the Quote Report as: " + o.raw.join(" · ")}>
+            {o.v} ({o.n.toLocaleString("pt-BR")})
+          </option>
+        ))}
+      </optgroup>
+    )}
+    </>
+  );
+  const sellerSel = lockSeller ? (
+    <span title={`Signed in as ${lockSeller}: you see only the quotes where you are the ${R.colTxt}`} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 600, color: R.fg, background: R.bg, padding: "7px 11px", borderRadius: 9 }}>
+      {React.createElement(R.icon, { size: 14 })} Only my quotes · {R.colTxt}
+    </span>
+  ) : (
+    <label style={{ display: "flex", flexDirection: mob ? "column" : "row", alignItems: mob ? "stretch" : "center", gap: mob ? 5 : 8, fontSize: 12.5, fontWeight: 600, color: X.ink }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, ...(mob ? fLbl : null) }}>
+        <UserRound size={15} color={X.sub} /> Salesperson
+      </span>
+      <select value={seller} onChange={(e) => setPref("seller", e.target.value)} title="Outside = Sales Person column · Inside = Quoted By column" style={{ ...selS, maxWidth: "none", minWidth: mob ? 0 : 230, width: mob ? "100%" : undefined, height: mob ? 40 : 36, background: seller ? "#FEF6EA" : "#FDE9CF" }}>
+        {sellerOpts}
+      </select>
+    </label>
+  );
+  const clearBtn = (line || (!lockSeller && seller)) && (
+    <button onClick={() => setPrefs((p) => ({ ...p, line: "", ...(lockSeller ? null : { seller: "" }) }))} style={{ ...btn, height: mob ? 38 : 32, fontSize: 12, padding: "0 10px", justifyContent: "center" }} title="Clear Line and Salesperson">
+      <XIcon size={13} /> Clear
+    </button>
+  );
+  const fupRep = canFupReport && <FupReportButton acts={acts} quotes={scoped} meta={meta} thermo={thermo} today={today} filtersTxt={filtersTxt} />;
+  /* ---------- celular: os filtros ficam numa folha ----------
+     Na aba Quotes a folha abre pelo botão ao lado da busca (junto com ordem e filtros por coluna);
+     nas outras abas, pelo botão de filtro no topo. O Today não tem filtro: mostra todos os follow-ups da pessoa. */
+  const sheetFilters = (
+    <>
+      {showPeriod && (
+        <SheetField label="Period">
+          <select value={period} onChange={(e) => setPref("period", e.target.value)} style={{ ...inp, width: "100%", height: 46, fontSize: 14, borderRadius: 12 }}>
+            {periodOpts}
+          </select>
+        </SheetField>
+      )}
+      {clsList.length > 0 && (
+        <SheetField label="Classification">
+          <Chips value={cls} options={[["", "All"], ...clsList.map((o) => [o.v, o.v])]} onChange={(v) => setPref("cls", v)} />
+        </SheetField>
+      )}
+      <SheetField label="Product line">
+        <Chips value={line} options={[["", "All"], ...ALL_LINES.map((v) => [v, v])]} onChange={(v) => setPref("line", v)} />
+      </SheetField>
+      {!lockSeller && (
+        <SheetField label="Salesperson">
+          <select value={seller} onChange={(e) => setPref("seller", e.target.value)} style={{ ...inp, width: "100%", height: 46, fontSize: 14, borderRadius: 12 }}>
+            {sellerOpts}
+          </select>
+        </SheetField>
+      )}
+      {noLineTag}
+      {fupRep && (
+        <SheetField label="Report">
+          <span>{fupRep}</span>
+        </SheetField>
+      )}
+    </>
+  );
+  // quantos filtros estão ligados (o período não conta: sempre tem um)
+  const nSheet = [cls, line, !lockSeller && seller].filter(Boolean).length;
+  const filterTabs = ["portfolio", "calendar", "goal", "analysis", "sellers"];
+  const hasTopFilter = mob && quotesRep && filterTabs.includes(tab) && tab !== "portfolio"; // Quotes: o filtro fica ao lado da busca
+  const filterSheet = mob && (
+    <Sheet
+      open={showFilters}
+      title="Filters"
+      onClose={() => setShowFilters(false)}
+      footer={
+        <>
+          {nSheet > 0 && (
+            <button onClick={() => setPrefs((p) => ({ ...p, cls: "", line: "", ...(lockSeller ? null : { seller: "" }) }))} style={{ ...btn, height: 44, flex: 1, justifyContent: "center", borderRadius: 12 }}>
+              Clear
+            </button>
+          )}
+          <button onClick={() => setShowFilters(false)} style={{ ...btn, height: 44, flex: 2, justifyContent: "center", borderRadius: 12, background: X.teal, borderColor: X.teal, color: "#fff" }}>
+            Done
+          </button>
+        </>
+      }
+    >
+      {sheetFilters}
+    </Sheet>
+  );
+  const filterBar =
+    mob || !quotesRep || tab === "data" || tab === "today" ? null : (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        {periodSel}
+        {clsSel}
+        {lineSeg}
+        {noLineTag}
+        {sellerSel}
+        {clearBtn}
+        <span style={{ fontSize: 11.5, color: X.sub, display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Database size={13} />
+          {salesRep ? `Sales ${fmtDate(salesRep.minD)}–${fmtDate(salesRep.maxD)}` : "No Sales Report: Sold uses the quote's Sales Amt"}
+          {seller && salesRep && (salesRep.hasSeller ? ` · booked: only ${seller.slice(3)}` : " · booked does not follow the salesperson yet: import the Sales Report again")}
+        </span>
+        {fupRep && <span style={{ marginLeft: "auto" }}>{fupRep}</span>}
+      </div>
+    );
+
+  /* ---------- abas: no computador no topo; no celular, fixas embaixo ---------- */
+  const tabBadge = (k) => (k === "portfolio" || k === "mine" ? rows.length : null);
+  const tabsTop = !mob && tabs.length > 1 && (
+    <div style={{ display: "inline-flex", gap: 4, background: "#fff", border: `1px solid ${X.line}`, borderRadius: 12, padding: 4, boxShadow: "0 1px 3px rgba(16,24,40,.05)" }}>
+      {tabs.map(([k, l, Ico]) => {
+        const on = tab === k;
+        const n = tabBadge(k);
+        return (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "none", borderRadius: 9, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 500, background: on ? X.tealSoft : "transparent", color: on ? X.tealDk : X.ink }}
+          >
+            <Ico size={16} /> {l}
+            {n != null && <span style={{ fontSize: 11, fontWeight: 700, background: on ? "#fff" : X.head, color: on ? X.tealDk : X.sub, padding: "1px 8px", borderRadius: 999 }}>{n.toLocaleString("pt-BR")}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+  const tabsBottom = mob && tabs.length > 1 && (
+    <nav
+      className="no-print"
+      style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 1200, background: "#fff", borderTop: `1px solid ${X.line}`, boxShadow: "0 -4px 16px rgba(16,24,40,.06)", display: "flex", padding: "6px 6px calc(6px + env(safe-area-inset-bottom))" }}
+    >
+      {tabs.map(([k, l, Ico]) => {
+        const on = tab === k;
+        return (
+          <button
+            key={k}
+            onClick={() => {
+              setTab(k);
+              window.scrollTo(0, 0);
+            }}
+            className="qp-card-btn"
+            style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "5px 2px", cursor: "pointer", color: on ? X.tealDk : X.sub, fontSize: 11, fontWeight: on ? 800 : 600, borderRadius: 10 }}
+          >
+            <span style={{ width: 44, height: 26, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", background: on ? X.tealSoft : "transparent" }}>
+              <Ico size={19} />
+            </span>
+            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{l}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+
+  /* ---------- botões de dados (topo e aba Data) ---------- */
+  const refreshBtn = connected && df.st !== "saving" && (
+    <button
+      onClick={() => pullIfChanged(true)}
+      disabled={checkSt.busy}
+      title={`Bring the changes other people saved in the data files (this also happens by itself every minute and when you come back to this window)${checkSt.at ? ` · last check ${checkSt.at.slice(11, 16)}` : ""}`}
+      style={{ ...btn, height: mob ? 38 : 40, padding: mob ? "0 10px" : "0 12px", fontSize: 13, fontWeight: 700, borderRadius: 11, color: X.tealDk, cursor: checkSt.busy ? "wait" : "pointer" }}
+    >
+      <RefreshCw size={15} /> {mob ? "" : checkSt.busy ? "Checking…" : "Refresh"}
+    </button>
+  );
+  const imports = (
+    <>
+      <ImportButton label={busy === "quote" ? "Reading…" : "Quote Report"} icon={FileSpreadsheet} info={repInfo(quotesRep, "q")} onFile={(f) => importFile(f, "quote")} accent={!quotesRep} />
+      <ImportButton label={busy === "sales" ? "Reading…" : "Sales Report"} icon={Upload} info={repInfo(salesRep, "s")} onFile={(f) => importFile(f, "sales")} accent={!!quotesRep && !salesRep} />
+    </>
+  );
+  /* celular: um ícone diz se está tudo salvo (✓), se falta salvar (tocar salva), ou se a pasta pede atenção */
+  const warnS = { background: "#FEF0C7", borderColor: "#E9C48A", color: "#8A5A12" };
+  const syncBtn =
+    df.st === "saving" || df.st === "opening" ? (
+      <button disabled title={df.st === "saving" ? "Saving…" : "Opening the data folder…"} style={iconBtn({ color: X.sub, cursor: "wait" })}>
+        <RefreshCw size={17} className="qp-spin" />
+      </button>
+    ) : !FSA ? (
+      <button onClick={downloadData} title="This browser can't keep the data folder: download the data file" style={iconBtn(unsaved ? warnS : null)}>
+        <Download size={17} />
+      </button>
+    ) : df.st === "ask" ? (
+      <button onClick={reconnect} title="Reconnect the data folder" style={iconBtn(warnS)}>
+        <Link2 size={17} />
+      </button>
+    ) : !connected ? (
+      <button onClick={connectNew} title="No data folder: the changes are only in this browser" style={iconBtn(warnS)}>
+        <AlertTriangle size={17} />
+      </button>
+    ) : df.st === "err" ? (
+      <button onClick={() => saveNow()} title="Not saved · tap to try again" style={iconBtn({ background: X.redSoft, borderColor: "#F3B4B4", color: X.redDk })}>
+        <AlertTriangle size={17} />
+      </button>
+    ) : unsaved ? (
+      <button onClick={() => saveNow()} title="Save now" style={iconBtn({ background: X.teal, borderColor: X.teal, color: "#fff" })}>
+        <Save size={17} />
+        {unsavedN > 0 && (
+          <span style={{ position: "absolute", top: -4, right: -4, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#F2B04C", color: "#fff", fontSize: 10.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff" }}>{unsavedN}</span>
+        )}
+      </button>
+    ) : (
+      <button onClick={() => pullIfChanged(true)} title="Everything is saved · tap to bring the changes of the other people" style={iconBtn({ color: X.tealDk, borderColor: "#BFE3D9" })}>
+        {checkSt.busy ? <RefreshCw size={17} className="qp-spin" /> : <CheckCircle2 size={18} />}
+      </button>
+    );
+  const dfStatusTxt =
+    df.st === "on"
+      ? unsaved
+        ? `${unsavedN ? `${unsavedN} change${unsavedN === 1 ? "" : "s"}` : "Changes"} not saved yet in ${df.name}`
+        : `All saved in ${df.name}${df.savedAt ? ` · ${df.savedAt.slice(11, 16)}` : ""}`
+      : df.st === "err"
+      ? `Not saved in ${df.name}: ${df.err}`
+      : df.st === "ask"
+      ? `Reconnect ${df.name || "the data folder"} to save`
+      : df.st === "nofsa"
+      ? "This browser can't keep the data folder: download the data file to keep the changes"
+      : df.st === "saving"
+      ? "Saving…"
+      : "No data folder: the changes are only in this browser";
+  const menuItems = [
+    connected && { label: checkSt.busy ? "Checking…" : "Bring the latest changes", icon: RefreshCw, onClick: () => pullIfChanged(true) },
+    connected && { label: "Save now", icon: Save, onClick: () => saveNow(!unsaved) },
+    ...(FSA
+      ? [
+          { label: "Open the data folder…", icon: FolderOpen, onClick: connectOpen },
+          { label: "Create the data files in a folder…", icon: FilePlus, onClick: connectNew },
+        ]
+      : [
+          { label: "Load a data file…", icon: FolderOpen, onClick: () => loadDataRef.current && loadDataRef.current.click() },
+          { label: "Download the data file", icon: Download, onClick: downloadData },
+        ]),
+  ];
+  const dataMenu = (
+    <DataMenu
+      items={
+        FSA
+          ? [
+              { label: "Open the data folder…", icon: FolderOpen, onClick: connectOpen },
+              { label: "Create the data files in a folder…", icon: FilePlus, onClick: connectNew },
+            ]
+          : [
+              { label: "Load a data file…", icon: FolderOpen, onClick: () => loadDataRef.current && loadDataRef.current.click() },
+              { label: "Download the data file", icon: Download, onClick: downloadData },
+            ]
+      }
+    />
+  );
+
+  /* ---------- aba Data (gerência): arquivos de dados, relatórios e usuários ---------- */
+  const secCard = { ...card, padding: mob ? 12 : 16, display: "flex", flexDirection: "column", gap: 12 };
+  const secHead = (Ic, t, sub) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ width: 36, height: 36, borderRadius: 10, background: X.tealSoft, color: X.tealDk, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Ic size={18} />
+      </span>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 15.5, fontWeight: 800 }}>{t}</div>
+        <div style={{ fontSize: 12, color: X.sub }}>{sub}</div>
+      </div>
+    </div>
+  );
+  const dataTab = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={secCard}>
+        {secHead(Database, "Data files", `${DATA_FILE} (follow-ups, notes, history, goals, users) and ${REP_FILE} (quotes and sales)`)}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {dfChip}
+          {refreshBtn}
+          {saveBtn}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {FSA ? (
+            <>
+              <button onClick={connectOpen} style={btn}>
+                <FolderOpen size={15} /> Open the data folder…
+              </button>
+              <button onClick={connectNew} style={btn}>
+                <FilePlus size={15} /> Create the data files in a folder…
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => loadDataRef.current && loadDataRef.current.click()} style={btn}>
+                <FolderOpen size={15} /> Load a data file…
+              </button>
+              <button onClick={downloadData} style={btn}>
+                <Download size={15} /> Download the data file
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      <div style={secCard}>
+        {secHead(FileSpreadsheet, "Reports", "Import the Quote Report and the Sales Report: the quotes and sales are joined with the ones stored")}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{imports}</div>
+        <div style={{ fontSize: 12, color: X.sub, display: "flex", flexDirection: "column", gap: 4 }}>
+          <span>
+            <b style={{ color: X.ink }}>Quote Report</b> · {quotesRep ? repInfo(quotesRep, "q") : "not imported yet"}
+          </span>
+          <span>
+            <b style={{ color: X.ink }}>Sales Report</b> · {salesRep ? repInfo(salesRep, "s") : "not imported yet"}
+          </span>
+        </div>
+      </div>
+      {isAdmin ? (
+        <UsersPanel names={sellerNames} colOf={colOf} users={users || {}} onRole={setRole} onAdd={addUser} onReset={resetPassword} />
+      ) : (
+        <div style={{ ...secCard, flexDirection: "row", alignItems: "center", fontSize: 12.5, color: X.sub }}>
+          <Lock size={15} /> Only the Admin chooses the screen of each person and resets passwords.
+        </div>
+      )}
+    </div>
+  );
+
+  /* ---------- conteúdo de cada aba ---------- */
+  const tableProps = { onAskClose: askClose, thermo, rows, cancelRows, meta, onMeta, today, periodLabel: periodLabelOf(period), qIndex, sales: salesView, acts, onNote, onDone, onResched, onReq, user, onUser: setUser, notesBy, openQ, onOpenQuote: openQuote };
+  const calProps = { goalEdit: role === "manager", thermo, quotes: scoped, sales: salesView, cls, line, meta, onMeta, onAskClose: askClose, onDone, onToggleExcl, onOpenQuote: openQuote, notesBy, dailyGoal, setDailyGoal, dayGoals, setDayGoals, excl, prefs, setPref, today };
+  const content = !loaded ? (
+    <div style={{ padding: 60, textAlign: "center", color: X.sub }}>Loading…</div>
+  ) : tab === "data" ? (
+    dataTab
+  ) : !quotesRep ? (
+    role === "manager" ? (
+      <EmptyState onFile={importFile} />
+    ) : (
+      <div style={{ ...card, padding: "32px 18px", textAlign: "center", display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+        <FileSpreadsheet size={26} color={X.sub} />
+        <div style={{ fontSize: 16, fontWeight: 800 }}>No quotes yet</div>
+        <div style={{ fontSize: 13, color: X.sub, maxWidth: 420 }}>The management imports the Quote Report into the data folder. {connected ? "Then click Refresh." : "Open the data folder on this computer (⋯ menu)."}</div>
+      </div>
+    )
+  ) : tab === "today" ? (
+    <TodayView quotes={scopedToday} cls="" meta={meta} thermo={thermo} today={today} notesBy={notesBy} excl={excl} prefs={prefs} onOpenQuote={openQuote} onGoMine={() => setTab("mine")} />
+  ) : tab === "mine" ? (
+    <QuoteTable {...tableProps} cards title="Quotes" filtersExtra={mob ? sheetFilters : null} filtersExtraN={mob ? nSheet : 0} />
+  ) : tab === "calendar" || tab === "goal" ? (
+    <CalendarView {...calProps} />
+  ) : tab === "sellers" ? (
+    <SellerReport quotes={scoped} periodRows={rows} meta={meta} acts={acts} groupOf={groupOf} today={today} filtersTxt={filtersTxt} periodTxtMain={periodLabelOf(period)} onOpenQuote={openQuote} />
+  ) : tab === "analysis" ? (
+    <AnalysisModal
+      inline
+      rows={rows}
+      cancelRows={cancelRows}
+      meta={meta}
+      qIndex={qIndex}
+      groupOf={groupOf}
+      periodTxt={periodLabelOf(period)}
+      sellerTxt={seller ? seller.slice(3) : "All salespeople"}
+      filtersTxt={`${cls || "All classifications"} · ${line ? "line " + line : "all lines"}`}
+      onOpenQuote={openQuote}
+    />
+  ) : (
+    <QuoteTable {...tableProps} cards={mob} filtersExtra={mob ? sheetFilters : null} filtersExtraN={mob ? nSheet : 0} />
+  );
+
   return (
-    <div style={{ minHeight: "100%", background: X.bg, padding: "18px 24px 40px", display: "flex", flexDirection: "column", gap: 14, color: X.ink }}>
+    <div className="qp-shell" style={{ minHeight: "100%", background: X.bg, display: "flex", flexDirection: "column", color: X.ink }}>
+      {css}
       {/* ---------- erro do arquivo de dados (fica até fechar) ---------- */}
       {dfErr && (
-        <div className="no-print" style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "12px 14px", borderRadius: 10, background: X.redSoft, border: "1px solid #F3B4B4", color: X.redDk }}>
+        <div className="no-print" style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap", padding: "12px 14px", borderRadius: 10, background: X.redSoft, border: "1px solid #F3B4B4", color: X.redDk }}>
           <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
-          <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ minWidth: 0, flex: "1 1 220px", display: "flex", flexDirection: "column", gap: 3 }}>
             <div style={{ fontSize: 13.5, fontWeight: 800 }}>{dfErr.title}</div>
             <div style={{ fontSize: 12.5, color: X.ink }}>{dfErr.hint}</div>
             <div style={{ fontSize: 11.5, color: X.sub, fontFamily: "ui-monospace, Consolas, monospace", wordBreak: "break-word" }}>Browser message: {dfErr.text}</div>
@@ -5568,111 +7092,110 @@ export default function App() {
         </div>
       )}
       {/* ---------- topo ---------- */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <span style={{ width: 40, height: 40, borderRadius: 11, background: X.teal, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-          <TrendingUp size={21} />
-        </span>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.4 }}>Quote Follow Up</div>
-          <div style={{ fontSize: 12, color: X.sub }}>Quotes, follow-ups and the daily goal</div>
-        </div>
-        <div className="no-print" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {dfChip}
-          {unsavedPop.render(
-            unsavedDetail && (
-              <UnsavedList
-                detail={unsavedDetail}
-                saving={df.st === "saving"}
-                onSave={() => {
-                  unsavedPop.setPos(null);
-                  saveNow();
-                }}
-                onOpenQuote={(id) => {
-                  unsavedPop.setPos(null);
-                  openQuote(id);
-                }}
-              />
-            ),
-          )}
-          <div style={{ width: 1, height: 26, background: X.line, margin: "0 2px" }} />
-          <ImportButton label={busy === "quote" ? "Reading…" : "Quote Report"} icon={FileSpreadsheet} info={repInfo(quotesRep, "q")} onFile={(f) => importFile(f, "quote")} accent={!quotesRep} />
-          <ImportButton label={busy === "sales" ? "Reading…" : "Sales Report"} icon={Upload} info={repInfo(salesRep, "s")} onFile={(f) => importFile(f, "sales")} accent={!!quotesRep && !salesRep} />
-          <div style={{ width: 1, height: 26, background: X.line, margin: "0 2px" }} />
-          <div style={{ display: "inline-flex", gap: 4, background: "#fff", border: `1px solid ${X.line}`, borderRadius: 12, padding: 4, boxShadow: "0 1px 3px rgba(16,24,40,.05)" }}>
-            {[
-              ["portfolio", "Quote portfolio", Table2, rows.length],
-              ["calendar", "Calendar", CalendarDays, null],
-              ["sellers", "Salespeople", Users, null],
-              ["analysis", "Analysis", PieChart, null],
-            ].map(([k, l, Ico, n]) => {
-              const on = k === "analysis" ? showAnalysis : tab === k;
-              return (
-                <button
-                  key={k}
-                  onClick={() => (k === "analysis" ? setShowAnalysis(true) : setPref("tab", k))}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "none", borderRadius: 9, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 500, background: on ? X.tealSoft : "transparent", color: on ? X.tealDk : X.ink }}
-                >
-                  <Ico size={16} /> {l}
-                  {n != null && <span style={{ fontSize: 11, fontWeight: 700, background: on ? "#fff" : X.head, color: on ? X.tealDk : X.sub, padding: "1px 8px", borderRadius: 999 }}>{n}</span>}
+      <div
+        style={
+          mob
+            ? { position: "sticky", top: 0, zIndex: 1100, margin: "-10px -12px 0", padding: "10px 12px 8px", background: "rgba(244,247,249,.96)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", borderBottom: `1px solid ${X.line}`, display: "flex", flexDirection: "column", gap: 8 }
+            : { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }
+        }
+      >
+        {mob ? (
+          /* celular: o nome da aba, e só três botões (filtro, salvamento, menu) */
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: -0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.15 }}>{(tabs.find((t) => t[0] === tab) || [, "Quote Follow Up"])[1]}</div>
+              <div style={{ fontSize: 12, color: R ? R.fg : X.sub, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {lockSeller ? String(session).split(" ")[0] + " · " : ""}
+                {R ? R.label : ""}
+              </div>
+            </div>
+            <span className="no-print" style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+              {hasTopFilter && (
+                <button onClick={() => setShowFilters(true)} title="Filters" style={iconBtn(nSheet ? { background: X.tealSoft, borderColor: "#9FD6C9", color: X.tealDk } : null)}>
+                  <SlidersHorizontal size={18} />
+                  {dotBadge(nSheet)}
                 </button>
-              );
-            })}
+              )}
+              {syncBtn}
+              <UserChip compact name={session} admin={isAdmin} role={role} onLogout={logout} onUsers={isAdmin ? () => setTab("data") : null} items={menuItems} status={dfStatusTxt} />
+            </span>
           </div>
-          {/* salvar no arquivo de dados (como no pulz: só grava quando você pede) */}
-          {connected && df.st !== "saving" && (
-            <button
-              onClick={() => pullIfChanged(true)}
-              disabled={checkSt.busy}
-              title={`Bring the changes other people saved in the data files (this also happens by itself every minute and when you come back to this window)${checkSt.at ? ` · last check ${checkSt.at.slice(11, 16)}` : ""}`}
-              style={{ ...btn, height: 40, padding: "0 12px", fontSize: 13, fontWeight: 700, borderRadius: 11, color: X.tealDk, cursor: checkSt.busy ? "wait" : "pointer" }}
-            >
-              <RefreshCw size={15} /> {checkSt.busy ? "Checking…" : "Refresh"}
-            </button>
-          )}
-          {saveBtn}
-          <UserChip name={session} admin={isAdmin} onLogout={logout} onUsers={() => setShowUsers(true)} />
-          <DataMenu
-            items={
-              FSA
-                ? [
-                    { label: "Open the data folder…", icon: FolderOpen, onClick: connectOpen },
-                    { label: "Create the data files in a folder…", icon: FilePlus, onClick: connectNew },
-                  ]
-                : [
-                    { label: "Load a data file…", icon: FolderOpen, onClick: () => loadDataRef.current && loadDataRef.current.click() },
-                    { label: "Download the data file", icon: Download, onClick: downloadData },
-                  ]
-            }
-          />
-          <input
-            ref={restoreRef}
-            type="file"
-            accept=".json"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const f = e.target.files && e.target.files[0];
-              e.target.value = "";
-              if (f) restore(f);
-            }}
-          />
-          <input
-            ref={loadDataRef}
-            type="file"
-            accept=".xlsx"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              const f = e.target.files && e.target.files[0];
-              e.target.value = "";
-              if (f) loadDataFile(f);
-            }}
-          />
+        ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: mob ? 8 : 12, minWidth: 0 }}>
+          <span style={{ width: mob ? 34 : 40, height: mob ? 34 : 40, borderRadius: 11, background: X.teal, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <TrendingUp size={mob ? 18 : 21} />
+          </span>
+          <div style={{ minWidth: 0, flex: mob ? 1 : "none" }}>
+            <div style={{ fontSize: mob ? 16 : 20, fontWeight: 800, letterSpacing: -0.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Quote Follow Up</div>
+            <div style={{ fontSize: 12, color: R ? R.fg : X.sub, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
+              {R && React.createElement(R.icon, { size: 12 })}
+              {R ? R.label : ""}
+              {!mob && <span style={{ color: X.sub, fontWeight: 400 }}>· {role === "outside" ? "today's follow-ups and my quotes" : role === "inside" ? "portfolio, calendar and the plan of the day" : "results, salespeople, goal and data"}</span>}
+            </div>
+          </div>
         </div>
+        )}
+        {mob ? null : (
+          <div className="no-print" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {dfChip}
+            {role === "manager" && (
+              <>
+                <div style={{ width: 1, height: 26, background: X.line, margin: "0 2px" }} />
+                {imports}
+              </>
+            )}
+            <div style={{ width: 1, height: 26, background: X.line, margin: "0 2px" }} />
+            {tabsTop}
+            {refreshBtn}
+            {saveBtn}
+            <UserChip name={session} admin={isAdmin} role={role} onLogout={logout} onUsers={isAdmin ? () => setTab("data") : null} />
+            {dataMenu}
+          </div>
+        )}
+        {unsavedPop.render(
+          unsavedDetail && (
+            <UnsavedList
+              detail={unsavedDetail}
+              saving={df.st === "saving"}
+              onSave={() => {
+                unsavedPop.setPos(null);
+                saveNow();
+              }}
+              onOpenQuote={(id) => {
+                unsavedPop.setPos(null);
+                openQuote(id);
+              }}
+            />
+          ),
+        )}
+        <input
+          ref={restoreRef}
+          type="file"
+          accept=".json"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files && e.target.files[0];
+            e.target.value = "";
+            if (f) restore(f);
+          }}
+        />
+        <input
+          ref={loadDataRef}
+          type="file"
+          accept=".xlsx"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files && e.target.files[0];
+            e.target.value = "";
+            if (f) loadDataFile(f);
+          }}
+        />
       </div>
 
       {df.st === "ask" && (
-        <div style={{ ...card, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, background: "#FFFBEB", borderColor: "#F3D08A", fontSize: 13 }}>
+        <div style={{ ...card, padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#FFFBEB", borderColor: "#F3D08A", fontSize: 13 }}>
           <Link2 size={16} color="#8A5A12" />
-          <span style={{ color: "#8A5A12" }}>
+          <span style={{ color: "#8A5A12", flex: "1 1 200px" }}>
             The browser needs your permission again to save in <b>{df.name}</b>. Reconnect before importing or editing, so nothing is left out of the file.
           </span>
           <button onClick={reconnect} style={{ ...btn, marginLeft: "auto", height: 32, background: X.teal, color: "#fff", borderColor: X.teal }}>
@@ -5681,176 +7204,11 @@ export default function App() {
         </div>
       )}
 
-      {/* ---------- recortes ---------- */}
-      {quotesRep && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          {/* período: ano fiscal inteiro ou um mês dele (igual ao pulz) */}
-          {tab === "portfolio" && (
-            <div style={{ position: "relative", display: "flex", alignItems: "center" }} title="Period: all, a whole fiscal year or one month">
-              <CalendarDays size={15} color="#8A5A12" style={{ position: "absolute", left: 11, pointerEvents: "none" }} />
-              <select value={period} onChange={(e) => setPref("period", e.target.value)} style={{ ...selS, maxWidth: "none", minWidth: 250, paddingLeft: 34 }}>
-                <option value="all">All periods</option>
-                {pGroups.map((g) => (
-                  <optgroup key={g.y} label={`${g.label} · ${g.range}`}>
-                    <option value={"fy:" + g.y}>
-                      {g.label} · {g.range} (whole year){g.current ? " · current" : ""}
-                    </option>
-                    {g.months.map((m) => (
-                      <option key={m} value={"m:" + m}>
-                        {"\u00A0\u00A0\u00A0"}
-                        {MON_SHORT[+m.slice(5) - 1]}/{m.slice(0, 4)}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </div>
-          )}
-          {clsList.length > 0 && (
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: X.sub, fontWeight: 600 }}>
-              Classification
-              <select value={cls} onChange={(e) => setPref("cls", e.target.value)} style={selS}>
-                <option value="">All</option>
-                {clsList.map((o) => (
-                  <option key={o.v} value={o.v}>
-                    {o.v} ({o.n.toLocaleString("pt-BR")})
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {/* linha: botões All / PT / CP / MH (igual ao pulz) */}
-          <div title="Product line (Product Group): quoted, open, lost, sold and booked values only count the line" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: X.sub, fontWeight: 600 }}>
-            <Layers size={14} /> Line:
-            <div style={{ display: "inline-flex", gap: 2, padding: 2, borderRadius: 9, border: `1px solid ${line ? "#E9C48A" : X.line}`, background: line ? "#FFFBEB" : "#fff" }}>
-              {["", ...ALL_LINES].map((v) => {
-                const on = line === v;
-                return (
-                  <button
-                    key={v || "all"}
-                    onClick={() => setPref("line", v)}
-                    style={{ border: "none", borderRadius: 7, padding: "5px 11px", fontSize: 12, fontWeight: on ? 700 : 500, cursor: "pointer", background: on ? (v ? "#FDE9CF" : X.tealSoft) : "transparent", color: on ? (v ? "#8A5A12" : X.tealDk) : X.sub }}
-                  >
-                    {v || "All"}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          {line && noLine > 0 && (
-            <span
-              title={`These quotes were stored by an older version of the program (or the Quote Report had no Product Group column), so the program does not know their line. Import the Quote Report that has them again: the lines are filled in and nothing else changes.\n\n${noLineList
-                .slice(0, 12)
-                .map((q) => `${q.id} · ${q.c} · ${fmtDate(q.d)} · ${q.cls || "no classification"}${q.up ? ` · last import ${fmtStamp(q.up)}` : ""}`)
-                .join("\n")}${noLine > 12 ? `\n… and ${noLine - 12} more` : ""}`}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: X.redDk, background: X.redSoft, padding: "5px 10px", borderRadius: 8 }}
-            >
-              <AlertTriangle size={14} /> {noLine.toLocaleString("pt-BR")} quote{noLine === 1 ? "" : "s"} without product line · import the Quote Report again
-            </span>
-          )}
-          {/* vendedor: coluna Sales Person do Quote Report */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: X.ink, display: "inline-flex", alignItems: "center", gap: 7 }}>
-              <UserRound size={15} color={X.sub} /> Salesperson
-            </span>
-            <select
-              value={seller}
-              onChange={(e) => setPref("seller", e.target.value)}
-              disabled={!!lockSeller}
-              title={lockSeller ? "Signed in as " + lockSeller + ": you see only your quotes" : "Sales Person column of the Quote Report"}
-              style={{ ...selS, maxWidth: "none", minWidth: 230, background: seller ? "#FEF6EA" : "#FDE9CF" }}
-            >
-              {!lockSeller && <option value="">All salespeople</option>}
-              {lockSeller && <option value={seller}>{lockSeller}</option>}
-              {!lockSeller && spList.map((o) => (
-                <option key={o.v} value={`sp:${o.v}`} title={"Sales Person in the Quote Report as: " + o.raw.join(" · ")}>
-                  {o.v} ({o.n.toLocaleString("pt-BR")})
-                </option>
-              ))}
-            </select>
-          </div>
-          {filtOn && (
-            <button onClick={() => setPrefs((p) => ({ ...p, line: "", seller: "" }))} style={{ ...btn, height: 32, fontSize: 12, padding: "0 10px" }} title="Clear Line and Salesperson">
-              <XIcon size={13} /> Clear
-            </button>
-          )}
-          <span style={{ fontSize: 11.5, color: X.sub, display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Database size={13} />
-            {salesRep ? `Sales ${fmtDate(salesRep.minD)}–${fmtDate(salesRep.maxD)}` : "No Sales Report: Sold uses the quote's Sales Amt"}
-            {seller && salesRep && (salesRep.hasSeller ? ` · booked: only ${seller.slice(3)}` : " · booked does not follow the salesperson yet: import the Sales Report again")}
-          </span>
-          <span style={{ marginLeft: "auto" }}>
-            <FupReportButton
-              acts={acts}
-              quotes={scoped}
-              meta={meta}
-              thermo={thermo}
-              today={today}
-              filtersTxt={`${seller ? seller.slice(3) : "All salespeople"} · ${cls || "All classifications"} · ${line ? "line " + line : "all lines"}`}
-            />
-          </span>
-        </div>
-      )}
+      {filterBar}
+      {content}
+      {tabsBottom}
+      {filterSheet}
 
-      {!loaded ? (
-        <div style={{ padding: 60, textAlign: "center", color: X.sub }}>Loading…</div>
-      ) : tab === "calendar" ? (
-        <CalendarView
-          thermo={thermo}
-          quotes={scoped}
-          sales={salesView}
-          cls={cls}
-          line={line}
-          meta={meta}
-          onMeta={onMeta}
-          onAskClose={askClose}
-          onDone={onDone}
-          onToggleExcl={onToggleExcl}
-          onOpenQuote={openQuote}
-          notesBy={notesBy}
-          dailyGoal={dailyGoal}
-          setDailyGoal={setDailyGoal}
-          dayGoals={dayGoals}
-          setDayGoals={setDayGoals}
-          excl={excl}
-          prefs={prefs}
-          setPref={setPref}
-          today={today}
-        />
-      ) : tab === "sellers" ? (
-        <SellerReport
-          quotes={scoped}
-          periodRows={rows}
-          meta={meta}
-          acts={acts}
-          groupOf={groupOf}
-          today={today}
-          filtersTxt={`${seller ? seller.slice(3) : "All salespeople"} · ${cls || "All classifications"} · ${line ? "line " + line : "all lines"}`}
-          periodTxtMain={periodLabelOf(period)}
-          onOpenQuote={openQuote}
-        />
-      ) : !quotesRep ? (
-        <EmptyState onFile={importFile} />
-      ) : (
-        <QuoteTable onAskClose={askClose} thermo={thermo} rows={rows} cancelRows={cancelRows} meta={meta} onMeta={onMeta} today={today} periodLabel={periodLabelOf(period)} qIndex={qIndex} sales={salesView} acts={acts} onNote={onNote} onDone={onDone} onResched={onResched} onReq={onReq} user={user} onUser={setUser} notesBy={notesBy} openQ={openQ} onOpenQuote={openQuote} />
-      )}
-
-      {showUsers && isAdmin && <UsersDialog names={sellerNames} users={users || {}} onReset={resetPassword} onClose={() => setShowUsers(false)} />}
-      {showAnalysis && (
-        <AnalysisModal
-          rows={rows}
-          cancelRows={cancelRows}
-          meta={meta}
-          qIndex={qIndex}
-          groupOf={groupOf}
-          periodTxt={periodLabelOf(period)}
-          sellerTxt={seller ? seller.slice(3) : "All salespeople"}
-          filtersTxt={`${cls || "All classifications"} · ${line ? "line " + line : "all lines"}`}
-          onOpenQuote={openQuote}
-          onClose={() => setShowAnalysis(false)}
-          blocked={!!openQ || !!closeAsk}
-        />
-      )}
       {closeAsk && (
         <CloseDialog
           key={closeAsk.id + closeAsk.kind + closeAsk.mode}
@@ -5903,31 +7261,7 @@ export default function App() {
         />
       )}
 
-      {toast && (
-        <div
-          style={{
-            position: "fixed",
-            right: 20,
-            bottom: 20,
-            maxWidth: 480,
-            zIndex: 2000,
-            ...card,
-            padding: "12px 14px",
-            display: "flex",
-            gap: 10,
-            alignItems: "flex-start",
-            borderLeft: `4px solid ${toast.tone === "err" ? X.redDk : toast.tone === "warn" ? "#F2B04C" : X.teal}`,
-            boxShadow: "0 10px 30px rgba(16,24,40,.18)",
-            fontSize: 13,
-          }}
-        >
-          {React.createElement(toast.tone === "err" ? AlertTriangle : toast.tone === "warn" || toast.tone === "info" ? Info : CheckCircle2, { size: 17, color: toast.tone === "err" ? X.redDk : toast.tone === "warn" ? X.amber : toast.tone === "info" ? X.sub : X.tealDk, style: { flexShrink: 0, marginTop: 1 } })}
-          <span style={{ flex: 1 }}>{toast.text}</span>
-          <button onClick={() => setToast(null)} style={{ border: "none", background: "transparent", cursor: "pointer", color: X.sub, padding: 0 }}>
-            <XIcon size={15} />
-          </button>
-        </div>
-      )}
+      {toastEl}
     </div>
   );
 }
@@ -5952,7 +7286,7 @@ function EmptyState({ onFile }) {
         {step(1, "Quote Report", "Needs Quote ID, Customer and Create Date. Status, Amount, Sales Amt, Sales Id and Classification are used when present.")}
         {step(2, "Sales Report (optional)", "Booked lines with Sales Id: gives the real Sold value of each won quote and the booked total of the month for the goal.")}
         {step(3, "Fill in FUP and % Win", "Straight in the table (the Thermometer is automatic). Then open the Calendar, type the daily goal and click a day to see its plan.")}
-        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 4 }}>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 4, flexWrap: "wrap" }}>
           <ImportButton label="Import Quote Report" icon={FileSpreadsheet} onFile={(f) => onFile(f, "quote")} accent />
           <ImportButton label="Import Sales Report" icon={Upload} onFile={(f) => onFile(f, "sales")} />
         </div>
