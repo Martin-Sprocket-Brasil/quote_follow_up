@@ -461,7 +461,7 @@ async function applyActs(conn, me, b, okId, skipped) {
       continue;
     }
     const rk = REPORT_KINDS.has(k);
-    if (rk ? !mgr : !okId(id)) {
+    if (rk ? !(mgr || b.rep) : !okId(id)) { // registros da importação: só junto com o relatório (ou da gerência)
       skipped.add(id);
       continue;
     }
@@ -728,7 +728,7 @@ app.get(
 
 /* Gravação: só as diferenças desde a última vez (o que esta página mudou), tudo numa transação.
    corpo: { meta: {QT: {...} | null}, excl: {add, del}, acts: [...], dailyGoal, dayGoals: {dia: valor | null},
-            rep: {quotes, removed, sales, info} }  ← rep só da gerência (importação dos relatórios) */
+            rep: {quotes, removed, sales, info} }  ← rep: importação dos relatórios (qualquer perfil com papel) */
 app.post(
   "/api/sync",
   auth,
@@ -737,7 +737,7 @@ app.post(
     const me = req.user,
       b = isObj(req.body) ? req.body : {};
     const mgr = MGR.has(me.role);
-    if (b.rep && !mgr) throw httpErr(403, "forbidden", "Only the management imports the reports.");
+    // os três perfis (vendedor externo, interno e gerência) importam o Quote Report e o Sales Report; quem não tem papel nem chega aqui (needRole)
     let rep = await getRep();
     const skipped = new Set();
     let skippedGoals = false;
@@ -754,7 +754,8 @@ app.post(
         rep = { ...rep, byId: new Map(rep.byId) };
         arr(b.rep.quotes).forEach((q) => isObj(q) && rep.byId.set(qid(q.id), { sp: str(q.sp), qb: str(q.qb), c: str(q.c) }));
       }
-      const okId = scopeOf(me, rep);
+      // gerência só visualiza: follow-ups, notas e formulários de cotação vêm dos vendedores (o registro da importação continua)
+      const okId = mgr ? () => false : scopeOf(me, rep);
       const nF = await applyFollowups(conn, me, b, okId, rep, skipped);
       const nA = await applyActs(conn, me, b, okId, skipped);
       let nG = 0;

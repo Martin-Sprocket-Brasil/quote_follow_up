@@ -6,7 +6,7 @@
    • Calendar: meta diária, agenda de follow-ups e, ao clicar num dia, as cotações para bater a meta do dia.
    As regras (parsers, cálculos, agenda) ficam em core.js.
    ===================================================================================== */
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useContext } from "react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import {
@@ -274,7 +274,7 @@ input:not([type="checkbox"]):not([type="radio"]), textarea, select { box-sizing:
    O Admin escolhe o papel de cada usuário (aba Data da gerência). Cada papel tem a sua tela:
    • outside = vendedor externo (coluna Sales Person) e inside = vendedor interno (coluna Quoted By):
      por enquanto as mesmas telas — Today, Quotes e Calendar (cada um vê as cotações da própria coluna);
-   • manager = gerência: Overview, Quotes, Team (FUP por vendedor), Goal, Analysis e Data (todos os vendedores).
+   • manager = gerência: Overview, Quotes, Team (FUP por vendedor), Goal, Analysis, Forms (DCS / VA) e Data (todos os vendedores).
    Sem papel (usuário novo ou o antigo "seller"), a pessoa entra mas só vê o aviso para pedir o acesso. */
 const ROLES = {
   outside: { label: _t("Outside sales"), icon: MapPin, fg: X.violet, bg: X.violetSoft, col: "sp", colTxt: "Sales Person" },
@@ -282,6 +282,10 @@ const ROLES = {
   manager: { label: _t("Management"), icon: ShieldCheck, fg: "#2F6FDB", bg: "#E6EEFB", col: "", colTxt: "" },
 };
 const ROLE_KEYS = ["outside", "inside", "manager"];
+/* gerência só visualiza as cotações: sem FUP, % Win, notas, fechamento, plano do dia ou DCS (quem faz é o vendedor).
+   As células e o painel da QT leem isto e viram texto; o servidor também recusa essas gravações da gerência. */
+const ROCtx = React.createContext(false);
+const noop = () => {};
 // por enquanto o vendedor externo usa as mesmas telas do interno (com o Calendar)
 const SELLER_TABS = [
   ["today", _t("Today"), CalendarCheck],
@@ -298,10 +302,11 @@ const ROLE_TABS = {
     ["sellers", _t("Team"), Users],
     ["goal", _t("Goal"), Target],
     ["analysis", _t("Analysis"), PieChart],
+    ["forms", _t("Forms"), FileText],
     ["data", _t("Data"), Database],
   ],
 };
-const MOB_MENU_TABS = new Set(["data"]); // no celular, essas abas ficam no menu do usuário
+const MOB_MENU_TABS = new Set(["data", "forms"]); // no celular, essas abas ficam no menu do usuário
 const TEMP_ICON = { HOT: Flame, WARM: Sun, COOL: Wind, COLD: Snowflake };
 
 const FupPill = ({ v, short }) => (FUP[v] ? pill(short ? v : `${v} · ${FUP[v].label}`, FUP[v].color, FUP[v].bg, { fontWeight: 700 }) : null);
@@ -478,7 +483,9 @@ const optS = { display: "flex", alignItems: "center", gap: 8, padding: "7px 9px"
 
 /* Célula editável (FUP, % Win, Thermometer): mostra a pílula, clique abre as opções. */
 function PickCell({ value, options, onChange, render, placeholder = _t("Set"), title, width = 210, describe }) {
+  const ro = useContext(ROCtx);
   const p = usePop(width);
+  if (ro) return value ? <span style={{ display: "inline-flex" }}>{render(value)}</span> : <span style={{ fontSize: 12, color: "#A0AEC0" }}>—</span>;
   return (
     <>
       <button
@@ -1378,7 +1385,8 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
     }
   }, [focusDone]);
   const [hf, setHf] = useState("all"); // filtro do histórico: all | note | follow | report
-  const [showDet, setShowDet] = useState(false); // celular: "Details" recolhido
+  const ro = useContext(ROCtx); // gerência: só visualiza
+  const [showDet, setShowDet] = useState(ro); // celular: "Details" recolhido (gerência: já aberto)
   const [dcsOpen, setDcsOpen] = useState(false); // formulário DCS / Value Added
   const [showHist, setShowHist] = useState(false); // celular: "History" recolhido
   if (!q) return <div style={{ padding: 16, color: X.sub }}>{_t("Quote not found in the stored data.")}</div>;
@@ -1418,7 +1426,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
   const nextIn = next ? daysBetween(today, next) : 0;
   const nextLate = !!next && nextIn < 0;
   // nota + próximo follow-up (Done / Change date)
-  const open = st === "open" && !!(onDone && onResched);
+  const open = !ro && st === "open" && !!(onDone && onResched);
   const ndFix = /^\d{4}-\d{2}-\d{2}$/.test(nd) ? toBusinessDay(nd) : "";
   const ndOk = !!ndFix && ndFix > today;
   const curWin = mm.win || 0;
@@ -1491,6 +1499,85 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
   const nDone = [hasNote, ndOk, winOk].filter(Boolean).length;
   const sect = { padding: mob ? "12px 12px" : "14px 18px", borderTop: `1px solid ${X.line}`, display: "flex", flexDirection: "column", gap: 10 };
   const panelCard = { background: "#fff", border: `1px solid ${X.line}`, borderRadius: 14, boxShadow: "0 1px 3px rgba(16,24,40,.05)" };
+  /* ---------- gerência: resumo da cotação (só leitura) no lugar do registro do follow-up ---------- */
+  const qActs = (acts || []).filter((a) => a.id === q.id);
+  const lastOf = (pred) => qActs.reduce((b, a) => (pred(a) && (!b || a.t >= b.t) ? a : b), null);
+  const lastDone = lastOf((a) => a.k === "done");
+  const lastAct = lastOf((a) => !REPORT_KINDS.has(a.k));
+  const nDoneAll = qActs.filter((a) => a.k === "done").length,
+    nNotes = qActs.filter((a) => a.k === "note").length;
+  // fechamento: pedido no Sales Report (ganha), fechada à mão, ou a mudança de situação vinda do Quote Report
+  const soDates = (q.so || []).map((id) => soMap[id] && soMap[id].d).filter(Boolean).sort();
+  const closeA = st === "open" ? null : byHand ? lastOf((a) => a.k === "close") : lastOf((a) => a.k === "status");
+  const closedAt = st === "open" ? "" : st === "won" && soDates.length ? soDates[0] : closeA ? closeA.t.slice(0, 10) : "";
+  const toClose = closedAt ? Math.max(0, daysBetween(q.d, closedAt)) : null;
+  const rowsRO = (items) => (
+    <div style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))", gap: mob ? 10 : "12px 18px" }}>
+      {items.filter(Boolean).map(([l, v, sub], i) => (
+        <div key={i} style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: X.sub, fontWeight: 600 }}>{l}</div>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: X.ink, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis" }}>{v || <span style={{ color: "#A0AEC0", fontWeight: 500 }}>—</span>}</div>
+          {sub ? <div style={{ fontSize: 11.5, color: X.sub, marginTop: 1 }}>{sub}</div> : null}
+        </div>
+      ))}
+    </div>
+  );
+  const roHead = (t) => <div style={{ fontSize: 11, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>{t}</div>;
+  const ago = (d) => {
+    const n = Math.max(0, daysBetween(d, today));
+    return n === 0 ? _t("today") : _t("{0} {1} ago", n, n === 1 ? _t("day") : _t("days"));
+  };
+  const roPanel = ro && (
+    <div style={panelCard}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: mob ? "12px 14px" : "14px 18px" }}>
+        <span style={{ width: 30, height: 30, borderRadius: 9, background: X.head, color: X.ink, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          <Info size={16} />
+        </span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: X.ink }}>{_t("Quote summary")}</div>
+          <div style={{ fontSize: 12, color: X.sub, display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <Lock size={11} /> {_t("View only: the follow-up is done by the salesperson")}
+          </div>
+        </div>
+      </div>
+      <div style={sect}>
+        {roHead(_t("Responsible"))}
+        {rowsRO([
+          [_t("Inside salesperson"), clean(q.qb) ? sellerDisplay(q.qb) : "", clean(q.qb) ? "Quoted By" : ""],
+          [_t("Outside salesperson"), clean(q.sp) ? sellerDisplay(q.sp) : "", clean(q.sp) ? "Sales Person" : ""],
+        ])}
+      </div>
+      <div style={sect}>
+        {roHead(_t("Dates"))}
+        {rowsRO([
+          [_t("Created"), fmtDate(q.d), ago(q.d)],
+          q.fs && [_t("Entered the program"), fmtDate(q.fs.slice(0, 10)), ago(q.fs.slice(0, 10))],
+          [_t("Last follow-up"), lastDone ? fmtDate(lastDone.t.slice(0, 10)) : "", lastDone ? [ago(lastDone.t.slice(0, 10)), lastDone.by].filter(Boolean).join(" · ") : _t("no follow-up done yet")],
+          st === "open"
+            ? [_t("Next follow-up"), next ? <span style={{ color: nextLate ? X.redDk : X.ink }}>{fmtDate(next)}</span> : "", next ? (nextIn === 0 ? _t("today") : nextLate ? _t("{0} {1} late", -nextIn, nextIn === -1 ? _t("day") : _t("days")) : _t("in {0} {1}", nextIn, nextIn === 1 ? _t("day") : _t("days"))) : mm.fup ? "" : _t("no FUP yet")]
+            : [_t("Closed"), closedAt ? fmtDate(closedAt) : s[0], toClose != null ? _t("{0} days after it was created", toClose) : s[0]],
+        ])}
+      </div>
+      <div style={sect}>
+        {roHead(_t("Values"))}
+        {rowsRO([
+          [_t("Quoted"), money(q.a)],
+          st === "won" ? [_t("Sold"), <span style={{ color: X.green }}>{money(soldV != null ? soldV : q.a)}</span>, (q.so || []).join(", ")] : [_t("Orders (SO)"), (q.so || []).join(", "), (q.so || []).length ? "" : _t("No order yet")],
+          lines.length > 0 && [_t("Product Lines"), lines.map((k) => `${k} ${moneyShort(q.al[k])}`).join(" · ")],
+          (q.conta || q.cls) && [_t("Account / classification"), [q.conta, q.cls].filter(Boolean).join(" · ")],
+        ])}
+      </div>
+      <div style={{ ...sect, borderRadius: "0 0 14px 14px" }}>
+        {roHead(_t("Follow-up activity"))}
+        {rowsRO([
+          [_t("Follow-ups done"), String(nDoneAll), nNotes ? _t("{0} {1}", nNotes, nNotes === 1 ? _t("note") : _t("notes")) : _t("no notes")],
+          [_t("Last activity"), lastAct ? fmtDate(lastAct.t.slice(0, 10)) : "", lastAct ? [(ACT_META[lastAct.k] || {}).title, lastAct.by].filter(Boolean).join(" · ") : _t("nothing yet")],
+          [_t("Customer requisition"), mm.req || ""],
+          (st === "lost" || st === "cancelled") && [_t("Close reason"), whyTxt(mm.why) || <span style={{ color: X.redDk }}>{_t("no reason yet")}</span>, byHand ? _t("closed by hand") : _t("in the Quote Report")],
+        ])}
+      </div>
+    </div>
+  );
   const noteBox = (
     <textarea
       ref={noteRef}
@@ -1559,9 +1646,9 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
     </div>
   );
   // DCS / Value Added: o último formulário desta cotação (ou o convite para preencher)
-  const dcsA = onDcs ? dcsLast(acts, q.id) : null;
+  const dcsA = onDcs || ro ? dcsLast(acts, q.id) : null;
   const dcsF = dcsA && dcsParse(dcsA);
-  const dcsBox = onDcs && (
+  const dcsBox = (onDcs || (ro && dcsF)) && (
     <div style={{ ...panelCard, padding: mob ? "12px 14px" : "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
       <span style={{ width: 34, height: 34, borderRadius: 10, background: dcsF ? "#E0F2FE" : X.head, color: dcsF ? "#0E7490" : X.sub, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <FileText size={17} />
@@ -1573,13 +1660,15 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
         </div>
       </div>
       {dcsF && <DcsPdfButton f={dcsF} />}
+      {!ro && (
       <button onClick={() => setDcsOpen(true)} style={{ ...btn, height: 34, borderRadius: 10, flexShrink: 0, ...(dcsF ? null : { background: X.teal, borderColor: X.teal, color: "#fff", fontWeight: 700 }) }}>
         {dcsF ? <Pencil size={14} /> : <FileText size={14} />} {dcsF ? (mob ? _t("Edit") : _t("New version")) : _t("Fill in")}
       </button>
-      <DcsForm open={dcsOpen} onClose={() => setDcsOpen(false)} q={q} acts={acts} onSave={onDcs} />
+      )}
+      {!ro && <DcsForm open={dcsOpen} onClose={() => setDcsOpen(false)} q={q} acts={acts} onSave={onDcs} />}
     </div>
   );
-  const reqBox = onReq && (
+  const reqBox = !ro && onReq && (
     <div style={{ ...(mob ? { padding: "12px 14px", borderTop: `1px solid ${X.line}` } : { ...panelCard, padding: "12px 16px" }), display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       <ClipboardList size={16} color={X.violet} />
       <div style={{ minWidth: 0 }}>
@@ -1663,7 +1752,8 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
       <div style={mob ? { display: "flex", flexDirection: "column", gap: 12, padding: "12px 10px 24px" } : { flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 16, padding: 16 }}>
         {/* registro do follow-up */}
         <div style={mob ? { display: "flex", flexDirection: "column", gap: 12 } : { minHeight: 0, overflow: "auto", display: "flex", flexDirection: "column", gap: 12, paddingRight: 2 }} onClick={(e) => e.stopPropagation()}>
-          {(st === "lost" || st === "cancelled") && onAskClose && (
+          {roPanel}
+          {!ro && (st === "lost" || st === "cancelled") && onAskClose && (
             <div style={{ ...panelCard, padding: "14px 18px", display: "flex", flexDirection: "column", gap: 10, borderLeft: `4px solid ${CLOSE_COLOR[st][0]}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <XCircle size={17} color={CLOSE_COLOR[st][0]} />
@@ -1693,6 +1783,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
               </div>
             </div>
           )}
+          {!ro && (
           <div style={panelCard}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px" }}>
               <span style={{ width: 30, height: 30, borderRadius: 9, background: X.violetSoft, color: X.violet, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
@@ -1840,6 +1931,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
               </>
             )}
           </div>
+          )}
           {dcsBox}
           {!mob && reqBox}
           {/* celular: os dados da cotação e a requisição ficam recolhidos em "Details" */}
@@ -1979,7 +2071,8 @@ function NoteBadge({ info, onClick }) {
 }
 /* Fechamento: pílula "Lost · Price" / "Cancelled · Budget Only" (sem motivo = tracejada) */
 const CLOSE_COLOR = { lost: [X.redDk, X.redSoft], cancelled: ["#475569", "#E9EDF2"] };
-function ClosePill({ kind, why, onClick, title }) {
+function ClosePill({ kind, why, onClick: click, title }) {
+  const onClick = useContext(ROCtx) ? undefined : click;
   const [fg, bg] = CLOSE_COLOR[kind] || CLOSE_COLOR.cancelled;
   return (
     <span
@@ -2749,6 +2842,7 @@ const REASON = {
 /* Botão Done do plano e da semana: abre a cotação direto na nota + data do próximo follow-up
    (o Done fica no Activities / History e só confirma com nota e data). */
 function DoneButton({ id, onOpenQuote, small }) {
+  if (useContext(ROCtx)) return null;
   return (
     <button
       onClick={(e) => {
@@ -2813,7 +2907,7 @@ function xlsxStyled(name, sheets) {
     const fl = st.fill ? idx(fills, `<fill><patternFill patternType="solid"><fgColor rgb="${argb(st.fill)}"/><bgColor indexed="64"/></patternFill></fill>`) : 0;
     const bc = st.border === false ? null : argb(st.border || "#C9D3DC");
     const bd = bc ? idx(borders, `<border><left style="thin"><color rgb="${bc}"/></left><right style="thin"><color rgb="${bc}"/></right><top style="thin"><color rgb="${bc}"/></top><bottom style="thin"><color rgb="${bc}"/></bottom><diagonal/></border>`) : 0;
-    const nf = st.fmt === "money" ? 164 : st.fmt === "pct" ? 9 : st.fmt === "int" ? 1 : 0;
+    const nf = st.fmt === "money" ? 164 : st.fmt === "usd" ? 165 : st.fmt === "pct" ? 9 : st.fmt === "int" ? 1 : 0;
     const al = `<alignment vertical="center"${st.h ? ` horizontal="${st.h}"` : ""}${st.wrap ? ' wrapText="1"' : ""}/>`;
     xfOf[k] = xfs.push(`<xf numFmtId="${nf}" fontId="${f}" fillId="${fl}" borderId="${bd}" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">${al}</xf>`) - 1;
     return xfOf[k];
@@ -2848,7 +2942,7 @@ function xlsxStyled(name, sheets) {
   };
   const sheetFiles = sheets.map(sheetXml); // primeiro as abas (registram os estilos)
   const names = sheets.map((s, i) => xmlEsc(String(s.title || `Sheet${i + 1}`).replace(/[\\/?*[\]:]/g, " ").slice(0, 31)));
-  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;R$&quot;\\ #,##0.00"/></numFmts><fonts count="${fonts.length}">${fonts.join("")}</fonts><fills count="${fills.length}">${fills.join("")}</fills><borders count="${borders.length}">${borders.join("")}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.join("")}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="&quot;R$&quot;\\ #,##0.00"/><numFmt numFmtId="165" formatCode="&quot;US$&quot;\\ #,##0.00"/></numFmts><fonts count="${fonts.length}">${fonts.join("")}</fonts><fills count="${fills.length}">${fills.join("")}</fills><borders count="${borders.length}">${borders.join("")}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.join("")}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
   const files = {
     "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>`,
     "_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
@@ -3104,411 +3198,6 @@ function HolidayTag({ d, full }) {
       {h.block ? _t("Holiday · ") : ""}
       {h.name}
     </span>
-  );
-}
-/* ===== Analysis: card grande no centro da tela (o resto fica desfocado) =====
-   Resultado das cotações (Open / Won / Lost / Cancelled), motivos de Lost e Cancelled e os Top 10 clientes e
-   Product Groups com mais Lost + Cancelled. Segue os filtros da tela; dá para escolher um cliente. QTs / Value
-   troca tudo entre quantidade e valor. */
-const ST_ORDER = ["open", "won", "lost", "cancelled"];
-const ST_COL = { open: ["#B7791F", "#FDF0D9"], won: ["#1F8A5B", "#DDF3E8"], lost: ["#C53030", "#FDE3E3"], cancelled: ["#64748B", "#E9EDF2"] };
-const REASON_COL = {
-  "Lead Time": "#E07B39",
-  Price: "#C53030",
-  "Budget Only": "#7A6AD8",
-  "Project Discontinued": "#475569",
-  "No Response": "#D69E2E",
-  "Stalled project": "#2F6FDB",
-};
-const pctOf = (a, b) => (b ? a / b : 0);
-const pct0 = (x) => (x > 0 && x < 0.005 ? "<1%" : `${Math.round(x * 100)}%`);
-// rosca em SVG: fatias = [{ k, v, color }]
-function Donut({ parts, size = 120, stroke = 18, center, sub }) {
-  const tot = parts.reduce((t, p) => t + p.v, 0);
-  const r = (size - stroke) / 2,
-    c = 2 * Math.PI * r;
-  let acc = 0;
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#EEF2F5" strokeWidth={stroke} />
-      {tot > 0 &&
-        parts
-          .filter((p) => p.v > 0)
-          .map((p) => {
-            const len = (p.v / tot) * c;
-            const el = (
-              <circle key={p.k} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={p.color} strokeWidth={stroke} strokeDasharray={`${Math.max(0, len - 1.5)} ${c}`} strokeDashoffset={-acc} transform={`rotate(-90 ${size / 2} ${size / 2})`}>
-                <title>{`${p.k}: ${pct0(p.v / tot)}`}</title>
-              </circle>
-            );
-            acc += len;
-            return el;
-          })}
-      <text x="50%" y="49%" textAnchor="middle" style={{ fontSize: 20, fontWeight: 800, fill: X.ink }}>
-        {center}
-      </text>
-      <text x="50%" y="64%" textAnchor="middle" style={{ fontSize: 10.5, fill: X.sub }}>
-        {sub}
-      </text>
-    </svg>
-  );
-}
-/* inline = página da gerência (aba Analysis), sem a janela por cima */
-function AnalysisModal({ rows, cancelRows, meta, qIndex, groupOf, periodTxt, filtersTxt, sellerTxt, onOpenQuote, onClose, blocked, inline }) {
-  const mob = useMobile();
-  const [by, setBy] = useState("n"); // n = QTs · v = valor
-  const [cust, setCust] = useState(""); // cliente escolhido ("" = todos)
-  const [sell, setSell] = useState(""); // vendedor (Sales Person) escolhido ("" = todos)
-  useEffect(() => {
-    const k = (e) => e.key === "Escape" && !blocked && !inline && onClose && onClose();
-    window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [onClose, blocked]);
-  const base0 = useMemo(() => [...rows, ...cancelRows].map((r) => ({ ...r, why: normWhy(((meta || {})[r.id] || {}).why || ""), seller: groupOf(r.sp) || _t("(no salesperson)") })), [rows, cancelRows, meta, groupOf]);
-  const sellers = useMemo(() => {
-    const m = {};
-    base0.forEach((r) => (m[r.seller] = (m[r.seller] || 0) + 1));
-    return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0], "pt-BR"));
-  }, [base0]);
-  const base = useMemo(() => (sell ? base0.filter((r) => r.seller === sell) : base0), [base0, sell]);
-  const customers = useMemo(() => {
-    const m = {};
-    base.forEach((r) => (m[r.c] = (m[r.c] || 0) + 1));
-    return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0], "pt-BR"));
-  }, [base]);
-  // trocou o vendedor e o cliente escolhido não tem QTs dele: volta para todos os clientes
-  useEffect(() => {
-    if (cust && !customers.some(([c]) => c === cust)) setCust("");
-  }, [customers, cust]);
-  const all = cust ? base.filter((r) => r.c === cust) : base;
-  // valor de cada QT: ganha = Sold (Booked do pedido, como a coluna Sold); as outras = valor cotado
-  const money1 = (r) => (r.st === "won" ? r.sold || 0 : r.quoted || 0);
-  const val = (r) => (by === "v" ? money1(r) : 1);
-  const fmtX = (x) => (by === "v" ? moneyShort(x) : x.toLocaleString("pt-BR"));
-  const tot = all.reduce((t, r) => t + val(r), 0);
-  const st = {};
-  ST_ORDER.forEach((k) => (st[k] = { n: 0, v: 0, x: 0, q: 0 }));
-  all.forEach((r) => {
-    const o = st[r.st] || st.open;
-    o.n++;
-    o.v += money1(r);
-    o.x += val(r);
-    o.q += r.quoted || 0;
-  });
-  /* Hit rate = ganho ÷ total cotado (Open + Won + Lost; as canceladas ficam fora, como no total Quoted da
-     carteira). Em QTs: QTs ganhas ÷ QTs cotadas. Em Value: Sold ÷ valor cotado. */
-  const quotedN = st.open.n + st.won.n + st.lost.n;
-  const quotedV = st.open.q + st.won.q + st.lost.q;
-  const hit = by === "v" ? (quotedV ? st.won.v / quotedV : null) : quotedN ? st.won.n / quotedN : null;
-  // motivos de um tipo (lost / cancelled)
-  const reasons = (kind) => {
-    const list = all.filter((r) => r.st === kind);
-    const m = Object.fromEntries(CLOSE_REASONS[kind].map((k) => [k, { n: 0, x: 0 }]));
-    const none = [];
-    list.forEach((r) => {
-      if (m[r.why]) {
-        m[r.why].n++;
-        m[r.why].x += val(r);
-      } else none.push(r.id);
-    });
-    const t = Object.values(m).reduce((s, o) => s + o.x, 0);
-    return { m, t, n: list.length, none };
-  };
-  // Top 10: os 10 com mais lost + cancelled; a barra e o total contam todas as situações (open, won, lost, cancelled)
-  const topBy = (keysOf) => {
-    const g = {};
-    all.forEach((r) => {
-      keysOf(r).forEach(([k, w]) => {
-        const o = g[k] || (g[k] = { k, open: 0, won: 0, lost: 0, cancelled: 0, why: {} });
-        const x = by === "v" ? w : 1;
-        o[r.st] = (o[r.st] || 0) + x;
-        if ((r.st === "lost" || r.st === "cancelled") && r.why) o.why[r.why] = (o.why[r.why] || 0) + 1;
-      });
-    });
-    return Object.values(g)
-      .map((o) => ({ ...o, lc: o.lost + o.cancelled, t: o.open + o.won + o.lost + o.cancelled }))
-      .filter((o) => o.lc > 0)
-      .sort((a, b) => b.lc - a.lc || b.t - a.t)
-      .slice(0, 10);
-  };
-  const topCust = topBy((r) => [[r.c, money1(r)]]);
-  const topPg = topBy((r) => {
-    const q = qIndex.get(r.id) || {};
-    // valor dos itens do grupo; na ganha, proporcional ao Sold
-    const f = r.quoted ? money1(r) / r.quoted : 0;
-    return q.pg && Object.keys(q.pg).length ? Object.entries(q.pg).map(([k, v]) => [k, v * f]) : [[_t("(no Product Group)"), money1(r)]];
-  });
-  // cliente escolhido: todas as QTs perdidas / canceladas dele (filtro Lost / Cancelled), maiores primeiro
-  const [lcF, setLcF] = useState("");
-  const lcAll = cust ? all.filter((r) => r.st === "lost" || r.st === "cancelled").sort((a, b) => (b.quoted || 0) - (a.quoted || 0)) : [];
-  const lostQts = lcF ? lcAll.filter((r) => r.st === lcF) : lcAll;
-  const lcMax = Math.max(0, ...lostQts.map((r) => r.quoted || 0));
-
-  const panel = { border: `1px solid ${X.line}`, borderRadius: 14, padding: 16, background: "#fff", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 };
-  const ttl = { fontSize: 13.5, fontWeight: 800, color: X.ink, display: "flex", alignItems: "center", gap: 8 };
-  const muted = { fontSize: 11.5, color: X.sub, fontWeight: 500 };
-  const seg = (opts, cur, set) => (
-    <div style={{ display: "inline-flex", gap: 3, background: X.head, borderRadius: 9, padding: 3 }}>
-      {opts.map(([k, l]) => (
-        <button key={k} onClick={() => set(k)} style={{ border: "none", borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: cur === k ? 700 : 500, cursor: "pointer", background: cur === k ? "#fff" : "transparent", color: cur === k ? X.tealDk : X.sub, boxShadow: cur === k ? "0 1px 2px rgba(16,24,40,.08)" : "none" }}>
-          {l}
-        </button>
-      ))}
-    </div>
-  );
-  const reasonPanel = (kind) => {
-    const R = reasons(kind);
-    const nR = R.n - R.none.length;
-    return (
-      <div style={panel}>
-        <div style={ttl}>
-          <span style={{ width: 10, height: 10, borderRadius: 3, background: ST_COL[kind][0] }} /> {CLOSE_LABEL[kind]}{" "}{_t("· reasons")}<span style={{ ...muted, marginLeft: "auto" }}>{R.n.toLocaleString("pt-BR")} QTs</span>
-        </div>
-        <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: mob ? "wrap" : "nowrap", justifyContent: "center" }}>
-          <Donut parts={CLOSE_REASONS[kind].map((k) => ({ k, v: R.m[k].x, color: REASON_COL[k] || "#94A3B8" }))} center={nR.toLocaleString("pt-BR")} sub={_t("with reason")} />
-          <div style={{ flex: "1 1 200px", minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-            {CLOSE_REASONS[kind].map((k) => {
-              const sh = pctOf(R.m[k].x, R.t);
-              return (
-                <div key={k}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 3, background: REASON_COL[k] || "#94A3B8", flexShrink: 0 }} />
-                    <span style={{ fontWeight: 600 }}>{whyTxt(k)}</span>
-                    <span style={{ ...muted, marginLeft: "auto" }}>{R.m[k].n}</span>
-                    <b style={{ width: 40, textAlign: "right" }}>{pct0(sh)}</b>
-                  </div>
-                  <div style={{ height: 5, borderRadius: 4, background: X.track, marginTop: 4, overflow: "hidden" }}>
-                    <div style={{ height: 5, width: sh * 100 + "%", background: REASON_COL[k] || "#94A3B8", borderRadius: 4 }} />
-                  </div>
-                </div>
-              );
-            })}
-            {R.none.length > 0 && (
-              <span onClick={() => onOpenQuote(R.none[0], false, R.none)} title={_t("Open them to choose the reason")} style={{ alignSelf: "flex-start", fontSize: 11.5, fontWeight: 600, color: X.redDk, background: X.redSoft, borderRadius: 999, padding: "2px 9px", cursor: "pointer" }}>
-                {R.none.length.toLocaleString("pt-BR")}{" "}{_t("without reason ›")}</span>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-  const topWhy = (o) => {
-    const e = Object.entries(o).sort((a, b) => b[1] - a[1])[0];
-    return e ? e[0] : "";
-  };
-  const topPanel = (title, list, onPick) => {
-    const max = Math.max(0, ...list.map((o) => o.t));
-    return (
-      <div style={panel}>
-        <div style={{ ...ttl, flexWrap: "wrap", rowGap: 4 }}>
-          {title}
-          <span style={{ ...muted, marginLeft: "auto", display: "inline-flex", gap: 9, flexWrap: "wrap" }}>
-            {ST_ORDER.map((k) => (
-              <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: ST_COL[k][0] }} />
-                {_t(STATE_LABEL[k])}
-              </span>
-            ))}
-          </span>
-        </div>
-        {!list.length && <div style={muted}>{_t("Nothing lost or cancelled.")}</div>}
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          {list.map((o, i) => (
-            <div
-              key={o.k}
-              onClick={onPick ? () => onPick(o.k) : undefined}
-              title={onPick ? _t("Show only this customer") : undefined}
-              className={onPick ? "qp-opt" : undefined}
-              style={{ display: "grid", gridTemplateColumns: "22px minmax(0, 1fr) auto", alignItems: "center", columnGap: 12, padding: "8px 6px", borderRadius: 8, borderTop: i ? `1px solid #F0F3F6` : "none", cursor: onPick ? "pointer" : "default" }}
-            >
-              <span style={{ width: 22, height: 22, borderRadius: 999, background: i < 3 ? "#FDE3E3" : X.head, color: i < 3 ? ST_COL.lost[0] : X.sub, fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
-              <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
-                <span style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: X.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={o.k}>
-                    {o.k}
-                  </span>
-                  {topWhy(o.why) && <span style={{ fontSize: 10.5, color: X.sub, whiteSpace: "nowrap" }}>· {whyTxt(topWhy(o.why))}</span>}
-                </span>
-                <span style={{ display: "flex", height: 7, borderRadius: 4, overflow: "hidden", background: X.track }} title={ST_ORDER.map((k) => `${_t(STATE_LABEL[k])}: ${fmtX(o[k])}`).join(" · ")}>
-                  {ST_ORDER.map((k) => (o[k] > 0 ? <span key={k} style={{ width: pctOf(o[k], max) * 100 + "%", background: ST_COL[k][0] }} /> : null))}
-                </span>
-              </span>
-              <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", lineHeight: 1.3 }}>
-                <b style={{ display: "block", fontSize: 13, color: ST_COL.lost[0] }}>{fmtX(o.lc)}</b>
-                <span style={{ fontSize: 10.5, color: X.sub }}>
-                  {pct0(pctOf(o.lc, o.t))}{" "}{_t("of")}{" "}{fmtX(o.t)}
-                </span>
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-  const body = (
-      <div onClick={(e) => e.stopPropagation()} style={inline ? { ...card, overflow: "hidden", background: X.bg, display: "flex", flexDirection: "column" } : { width: "min(1160px, 96vw)", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", background: X.bg, borderRadius: 18, boxShadow: "0 30px 80px rgba(15,23,42,.35)", display: "flex", flexDirection: "column" }}>
-        {/* cabeçalho */}
-        <div style={{ position: inline ? "static" : "sticky", top: 0, zIndex: 2, background: "#fff", borderBottom: `1px solid ${X.line}`, padding: mob ? "12px 12px" : "14px 18px", display: "flex", alignItems: "center", gap: mob ? 8 : 12, flexWrap: "wrap", borderRadius: inline ? 0 : "18px 18px 0 0" }}>
-          {/* celular: o topo já diz "Analysis"; fica só a linha do recorte */}
-          {!mob && (
-          <span style={{ width: 36, height: 36, borderRadius: 10, background: X.tealSoft, color: X.tealDk, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
-            <PieChart size={19} />
-          </span>
-          )}
-          <div style={{ minWidth: 0 }}>
-            {!mob && <div style={{ fontSize: 16.5, fontWeight: 800, color: X.ink }}>{_t("Quote analysis")}</div>}
-            <div style={{ ...muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: mob ? "normal" : "nowrap" }}>
-              {periodTxt} · {sell || sellerTxt} · {filtersTxt}
-            </div>
-          </div>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", ...(mob ? { width: "100%" } : null) }}>
-            <select value={sell} onChange={(e) => setSell(e.target.value)} style={{ ...inp, height: 34, maxWidth: mob ? "none" : 220, flex: mob ? "1 1 140px" : "none", minWidth: 0, fontWeight: sell ? 700 : 500, borderColor: sell ? "#9FD6C9" : X.line, background: sell ? X.tealSoft : "#fff" }} title={_t("Salesperson (Sales Person)")}>
-              <option value="">{_t("All salespeople")}</option>
-              {sellers.map(([c, n]) => (
-                <option key={c} value={c}>
-                  {c} ({n})
-                </option>
-              ))}
-            </select>
-            <select value={cust} onChange={(e) => setCust(e.target.value)} style={{ ...inp, height: 34, maxWidth: mob ? "none" : 280, flex: mob ? "1 1 140px" : "none", minWidth: 0, fontWeight: cust ? 700 : 500, borderColor: cust ? "#9FD6C9" : X.line, background: cust ? X.tealSoft : "#fff" }} title={_t("Customer")}>
-              <option value="">{_t("All customers")}</option>
-              {customers.map(([c, n]) => (
-                <option key={c} value={c}>
-                  {c} ({n})
-                </option>
-              ))}
-            </select>
-            {seg(
-              [
-                ["n", "QTs"],
-                ["v", _t("Value")],
-              ],
-              by,
-              setBy,
-            )}
-            {!inline && (
-              <button onClick={onClose} style={{ ...btn, padding: "0 10px", height: 34 }} title={_t("Close (Esc)")}>
-                <XIcon size={16} />
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div style={{ padding: mob ? 10 : 18, display: "flex", flexDirection: "column", gap: mob ? 10 : 14 }}>
-          {/* resultado: as 4 situações + o hit rate; embaixo, a barra com a divisão */}
-          <div style={{ ...panel, gap: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fit, minmax(170px, 1fr))", gap: mob ? 8 : 12 }}>
-              {ST_ORDER.map((k) => {
-                const o = st[k];
-                const [fg, bg] = ST_COL[k];
-                return (
-                  <div key={k} style={{ borderRadius: 12, background: bg, padding: "12px 14px", minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: fg }}>{_t(STATE_LABEL[k])}</div>
-                    <div style={{ fontSize: mob ? 24 : 30, fontWeight: 800, color: fg, letterSpacing: -0.8, lineHeight: 1.15 }}>{pct0(pctOf(o.x, tot))}</div>
-                    <div style={{ fontSize: 12, color: X.ink, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {o.n.toLocaleString("pt-BR")}{" "}{_t("QTs ·")}{" "}{moneyShort(o.v)}
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{ borderRadius: 12, border: `2px solid ${ST_COL.won[1]}`, background: "#fff", padding: "10px 14px", display: "flex", alignItems: "center", gap: 12, minWidth: 0, ...(mob ? { gridColumn: "1 / -1" } : null) }}>
-                <Donut parts={[{ k: "Hit rate", v: hit || 0, color: ST_COL.won[0] }, { k: "rest", v: 1 - (hit || 0), color: "#EEF2F5" }]} size={64} stroke={9} center="" sub="" />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: X.tealDk }}>{_t("Hit rate")}</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: ST_COL.won[0], letterSpacing: -0.8, lineHeight: 1.15 }}>{hit != null ? pct0(hit) : "—"}</div>
-                  <div style={{ fontSize: 11.5, color: X.sub }}>{_t("won ÷ quoted")}</div>
-                </div>
-              </div>
-            </div>
-            <div style={{ display: "flex", height: 10, borderRadius: 6, overflow: "hidden", background: X.track }}>
-              {ST_ORDER.map((k) => (st[k].x > 0 ? <div key={k} title={`${_t(STATE_LABEL[k])} ${pct0(pctOf(st[k].x, tot))}`} style={{ width: pctOf(st[k].x, tot) * 100 + "%", background: ST_COL[k][0] }} /> : null))}
-            </div>
-          </div>
-
-          {/* motivos */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 14 }}>
-            {reasonPanel("lost")}
-            {reasonPanel("cancelled")}
-          </div>
-
-          {/* top 10 */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: 14 }}>
-            {cust ? (
-              <div style={{ ...panel, gap: 10 }}>
-                <div style={{ ...ttl, flexWrap: "wrap", rowGap: 6 }}>
-                  <span style={{ minWidth: 0 }}>{_t("Lost & cancelled QTs")}<span style={{ display: "block", ...muted }}>
-                      {lostQts.length.toLocaleString("pt-BR")}{" "}{_t("QTs ·")}{" "}{moneyShort(lostQts.reduce((t, r) => t + (r.quoted || 0), 0))}
-                    </span>
-                  </span>
-                  <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    {seg(
-                      [
-                        ["", _t("All {0}", lcAll.length)],
-                        ["lost", _t("Lost {0}", lcAll.filter((r) => r.st === "lost").length)],
-                        ["cancelled", _t("Cancelled {0}", lcAll.filter((r) => r.st === "cancelled").length)],
-                      ],
-                      lcF,
-                      setLcF,
-                    )}
-                    <button onClick={() => setCust("")} title={_t("Back to all customers")} style={{ ...btn, height: 28, padding: "0 8px", fontSize: 11.5 }}>
-                      <XIcon size={12} />{" "}{_t("Customer")}</button>
-                  </span>
-                </div>
-                {!lostQts.length ? (
-                  <div style={muted}>{_t("Nothing lost or cancelled.")}</div>
-                ) : (
-                  <div style={{ maxHeight: 360, overflow: "auto", margin: "0 -6px" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "112px 70px 84px minmax(0, 1fr) 96px", minWidth: 470, gap: 10, padding: "0 6px 6px", fontSize: 10.5, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.3, position: "sticky", top: 0, background: "#fff", zIndex: 1, borderBottom: `1px solid ${X.line}` }}>
-                      <span>{_t("Quotation")}</span>
-                      <span>{_t("Date")}</span>
-                      <span>{_t("Status")}</span>
-                      <span>{_t("Reason")}</span>
-                      <span style={{ textAlign: "right" }}>{_t("Quoted")}</span>
-                    </div>
-                    {lostQts.map((r) => (
-                      <div
-                        key={r.id}
-                        onClick={() => onOpenQuote(r.id, false, lostQts.map((x) => x.id))}
-                        className="qp-opt"
-                        title={_t("Open the quote")}
-                        style={{ display: "grid", gridTemplateColumns: "112px 70px 84px minmax(0, 1fr) 96px", minWidth: 470, alignItems: "center", gap: 10, fontSize: 12.5, cursor: "pointer", padding: "7px 6px", borderBottom: `1px solid #F0F3F6` }}
-                      >
-                        <span style={{ fontWeight: 700, fontSize: 12, color: X.tealDk, background: X.tealSoft, borderRadius: 6, padding: "2px 7px", justifySelf: "start" }}>{r.id}</span>
-                        <span style={{ color: X.sub, fontSize: 12 }}>{r.d ? `${r.d.slice(8, 10)}/${r.d.slice(5, 7)}/${r.d.slice(2, 4)}` : "—"}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: ST_COL[r.st][0], background: ST_COL[r.st][1], padding: "2px 8px", borderRadius: 999, justifySelf: "start" }}>{STATE_LABEL[r.st]}</span>
-                        {r.why ? (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                            <span style={{ width: 8, height: 8, borderRadius: 2, background: REASON_COL[r.why] || "#94A3B8", flexShrink: 0 }} />
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{whyTxt(r.why)}</span>
-                          </span>
-                        ) : (
-                          <span style={{ justifySelf: "start", fontSize: 11, fontWeight: 600, color: X.redDk, border: `1px dashed ${X.redDk}`, borderRadius: 999, padding: "1px 8px" }}>{_t("set reason ›")}</span>
-                        )}
-                        <span style={{ textAlign: "right" }}>
-                          <b style={{ display: "block", fontVariantNumeric: "tabular-nums" }}>{moneyShort(r.quoted)}</b>
-                          <span style={{ display: "block", height: 4, borderRadius: 3, background: X.track, marginTop: 3, overflow: "hidden" }}>
-                            <span style={{ display: "block", height: 4, marginLeft: "auto", width: pctOf(r.quoted || 0, lcMax) * 100 + "%", background: ST_COL[r.st][0], borderRadius: 3 }} />
-                          </span>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              topPanel(_t("Top 10 customers · lost + cancelled"), topCust, setCust)
-            )}
-            {topPanel(_t("Top 10 product groups · lost + cancelled"), topPg)}
-          </div>
-        </div>
-      </div>
-  );
-  if (inline) return body;
-  return createPortal(
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1400, background: "rgba(15,23,42,.32)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: mob ? 0 : 20 }}>
-      {body}
-    </div>,
-    document.body,
   );
 }
 /* ===== Relatório de FUP por vendedor (aba Salespeople) =====
@@ -4029,7 +3718,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
                     </td>
                     <td style={{ ...td, color: x.pend ? X.redDk : X.sub, fontWeight: 600 }}>{x.pend}</td>
                     <td style={td}>
-                      <PctBar v={x.pctPend} color={X.redDk} />
+                      <PctBar v={x.pctPend} color="#A9B4C2" />
                     </td>
                   </tr>
                   {isOpen && (
@@ -4056,7 +3745,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
                 </td>
                 <td style={{ ...td, fontWeight: 800, background: X.head, color: X.redDk }}>{tot.pend}</td>
                 <td style={{ ...td, background: X.head }}>
-                  <PctBar v={tot.total ? tot.pend / tot.total : 0} color={X.redDk} />
+                  <PctBar v={tot.total ? tot.pend / tot.total : 0} color="#A9B4C2" />
                 </td>
               </tr>
             </tfoot>
@@ -4475,11 +4164,997 @@ function TodayView({ quotes, cls, meta, thermo, today, notesBy, excl, prefs, onO
   );
 }
 
+/* ===== Formulários DCS / Value Added (gerência) =====
+   Todos os formulários salvos (atividades "dcs" do histórico): por padrão a última versão de cada QT, com filtros de
+   período (data em que foi salvo), tipo, vendedor e busca; números do período, subgrupos mais usados e Excel.
+   O programa sabe quando o formulário foi SALVO; o envio do e-mail acontece fora dele (Outlook, WhatsApp…). */
+// valor digitado → número: aceita 2.480,00 · 2480,5 · 1,250.00 · 1250.00 · 2.480 (o último separador com 1–2 casas é o decimal)
+const dcsNum = (v) => {
+  let s = String(v || "").replace(/[^\d,.-]/g, "");
+  if (!s) return 0;
+  const last = Math.max(s.lastIndexOf(","), s.lastIndexOf("."));
+  const dec = last >= 0 && s.length - last - 1 <= 2 && s.length - last - 1 > 0 ? last : -1;
+  s = dec >= 0 ? s.slice(0, dec).replace(/[.,]/g, "") + "." + s.slice(dec + 1) : s.replace(/[.,]/g, "");
+  const n = parseFloat(s);
+  return isFinite(n) ? n : 0;
+};
+const usd = (n) => "US$ " + (Number(n) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const DCS_COLOR = { va: [X.tealDk, X.tealSoft], dcs: ["#0E7490", "#E0F2FE"], desl: [X.redDk, X.redSoft] };
+const dcsPill = (k) => (DCS_KINDS[k] ? pill(dcsKindTxt(k), DCS_COLOR[k][0], DCS_COLOR[k][1], { fontWeight: 700 }) : pill("—", X.sub, X.head));
+function DcsFormsReport({ acts, today, onOpenQuote }) {
+  const mob = useMobile();
+  const fyY = today.slice(5, 7) >= "07" ? +today.slice(0, 4) : +today.slice(0, 4) - 1;
+  const lastM = addDays(today.slice(0, 8) + "01", -1);
+  const RANGES = [
+    ["all", _t("All"), "", ""],
+    ["month", _t("This month"), today.slice(0, 8) + "01", today],
+    ["lastmonth", _t("Last month"), lastM.slice(0, 8) + "01", lastM],
+    ["d90", _t("Last 90 days"), addDays(today, -89), today],
+    ["fy", _t("This fiscal year"), `${fyY}-07-01`, `${fyY + 1}-06-30`],
+  ];
+  const ss = (k, def) => {
+    try {
+      const v = JSON.parse(sessionStorage.getItem("qp_dcs_" + k));
+      return v == null ? def : v;
+    } catch {
+      return def;
+    }
+  };
+  const useSS = (k, def) => {
+    const [v, setV] = useState(() => ss(k, def));
+    useEffect(() => {
+      try {
+        sessionStorage.setItem("qp_dcs_" + k, JSON.stringify(v));
+      } catch {}
+    }, [k, v]);
+    return [v, setV];
+  };
+  const [rk, setRk] = useSS("rk", "all");
+  const [kinds, setKinds] = useSS("kinds", []);
+  const [who, setWho] = useSS("who", "");
+  const [srch, setSrch] = useState("");
+  const [allVer, setAllVer] = useSS("allver", false);
+  const r = RANGES.find((x) => x[0] === rk) || RANGES[0];
+
+  // todas as versões, da mais nova para a mais antiga; "ver" = quantas versões a QT tem e qual é esta
+  const all = useMemo(() => {
+    const list = [];
+    (acts || []).forEach((a, i) => {
+      if (a.k !== "dcs") return;
+      const f = dcsParse(a);
+      if (f) list.push({ a, f, i, t: String(a.t || ""), id: a.id });
+    });
+    list.sort((x, y) => (x.t === y.t ? y.i - x.i : x.t < y.t ? 1 : -1));
+    const n = {},
+      seen = {};
+    list.forEach((x) => (n[x.id] = (n[x.id] || 0) + 1));
+    list.forEach((x) => {
+      x.nVer = n[x.id];
+      x.ver = n[x.id] - (seen[x.id] = (seen[x.id] || 0) + 1) + 1;
+      x.latest = x.ver === x.nVer;
+    });
+    return list;
+  }, [acts]);
+  const people = useMemo(() => {
+    const s = new Set();
+    all.forEach((x) => [x.f.inside, x.f.outside].forEach((p) => p && s.add(String(p).trim())));
+    return [...s].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [all]);
+  const norm2 = (s) =>
+    String(s || "")
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase();
+  // filtros, menos o de tipo (para as contagens dos chips de tipo)
+  const base = useMemo(() => {
+    const q = norm2(srch.trim());
+    return all.filter((x) => {
+      if (!allVer && !x.latest) return false;
+      const d = x.t.slice(0, 10);
+      if (r[2] && (d < r[2] || d > r[3])) return false;
+      if (who && x.f.inside !== who && x.f.outside !== who) return false;
+      if (q) {
+        const hay = norm2([x.id, x.f.so, x.f.endUser, x.f.distributor, x.f.city, x.f.state, x.f.desc, x.a.c, x.a.by].join(" "));
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [all, allVer, r, who, srch]);
+  const shown = useMemo(() => (kinds.length ? base.filter((x) => kinds.includes(x.f.kind)) : base), [base, kinds]);
+  const cntKind = (k) => base.filter((x) => x.f.kind === k).length;
+  // números e subgrupos: só a última versão de cada QT (com "Todas as versões" a lista mostra as antigas, mas não soma duas vezes)
+  const cur = useMemo(() => shown.filter((x) => x.latest), [shown]);
+  const tot = useMemo(() => {
+    const t = { n: cur.length, mon: 0, doc: 0, brl: 0, usd: 0, k: { va: 0, dcs: 0, desl: 0 } };
+    cur.forEach((x) => {
+      if (t.k[x.f.kind] != null) t.k[x.f.kind]++;
+      if (x.f.documented === "Sim") t.doc++;
+      if (x.f.monetized === "Sim") {
+        t.mon++;
+        if (x.f.currency === "USD") t.usd += dcsNum(x.f.value);
+        else t.brl += dcsNum(x.f.value);
+      }
+    });
+    return t;
+  }, [cur]);
+  // subgrupos mais usados (VA e DCS)
+  const subs = useMemo(() => {
+    const m = {};
+    cur.forEach((x) => (x.f.items || []).forEach((k) => (m[k] = (m[k] || 0) + 1)));
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  }, [cur]);
+  const fltOn = rk !== "all" || kinds.length > 0 || !!who || !!srch.trim() || allVer;
+  const clear = () => {
+    setRk("all");
+    setKinds([]);
+    setWho("");
+    setSrch("");
+    setAllVer(false);
+  };
+  const periodTxt = r[2] ? `${r[1]} · ${fmtDate(r[2])} – ${fmtDate(r[3])}` : _t("All periods");
+  const fltTxt = [periodTxt, kinds.length ? kinds.map(dcsKindTxt).join(", ") : _t("all types"), who || _t("all salespeople"), srch.trim() ? `"${srch.trim()}"` : "", allVer ? _t("all versions") : _t("latest version of each quote")].filter(Boolean).join(" · ");
+
+  const toExcel = () => {
+    const C = XS.cell;
+    const head = [_t("Saved at"), "QT", "SO", _t("Type"), _t("Subgroups"), _t("End user"), _t("Distributor"), _t("City"), _t("State"), _t("Inside salesperson"), _t("Outside salesperson"), _t("Description"), _t("Monetized"), _t("Value"), _t("Currency"), _t("Documented"), _t("Saved by"), _t("Version")];
+    const main = {
+      title: _t("Forms"),
+      cols: [16, 13, 13, 14, 34, 34, 34, 18, 6, 24, 24, 60, 11, 15, 8, 12, 24, 9],
+      freeze: 3,
+      filter: 3,
+      filterTo: shown.length + 3,
+      merges: ["A1:R1", "A2:R2"],
+      heights: { 0: 22, 2: 30 },
+      rows: [
+        [{ v: _t("DCS / Value Added forms"), st: XS.title }],
+        [{ v: `${fltTxt} · ${shown.length} ${shown.length === 1 ? _t("form") : _t("forms")} · ${_t("generated {0}", fmtStamp(nowStamp()))}`, st: XS.sub }],
+        head.map((h, i) => ({ v: h, st: XS.head(i === 3 || i === 4 ? "#0E7490" : null) })),
+        ...shown.map((x, k) => {
+          const f = x.f,
+            [fg, bg] = DCS_COLOR[f.kind] || [X.ink, "#fff"];
+          const val = dcsNum(f.value);
+          return [
+            { v: `${fmtDate(x.t.slice(0, 10))} ${x.t.slice(11, 16)}`, st: C(k, { h: "center" }) },
+            { v: x.id, st: C(k, { b: true, h: "center" }) },
+            { v: f.so || "", st: C(k, { h: "center" }) },
+            { v: dcsKindTxt(f.kind), st: { b: true, h: "center", color: fg, fill: bg } },
+            { v: (f.items || []).map(dcsItemTxt).join(", "), st: C(k, { wrap: true }) },
+            { v: f.endUser || "", st: C(k, { wrap: true }) },
+            { v: f.distributor || "", st: C(k, { wrap: true }) },
+            { v: f.city || "", st: C(k) },
+            { v: f.state || "", st: C(k, { h: "center" }) },
+            { v: f.inside || "", st: C(k) },
+            { v: f.outside || "", st: C(k) },
+            { v: f.desc || "", st: C(k, { wrap: true }) },
+            { v: f.monetized === "Sim" ? _t("Yes") : f.monetized === "Não" ? _t("No") : "", st: C(k, { h: "center" }) },
+            { v: val || "", st: C(k, { fmt: f.currency === "USD" ? "usd" : "money", h: "right", b: true }) },
+            { v: f.value ? f.currency || "BRL" : "", st: C(k, { h: "center" }) },
+            { v: f.documented === "Sim" ? _t("Yes") : f.documented === "Não" ? _t("No") : "", st: C(k, { h: "center" }) },
+            { v: x.a.by || "", st: C(k) },
+            { v: x.nVer > 1 ? `${x.ver}/${x.nVer}` : "1", st: C(k, { h: "center", color: x.latest ? X.ink : "#94A3B8" }) },
+          ];
+        }),
+      ],
+    };
+    // resumo: por tipo e por subgrupo
+    const kindRows = ["va", "dcs", "desl"].map((k) => {
+      const xs = cur.filter((x) => x.f.kind === k);
+      const m = xs.filter((x) => x.f.monetized === "Sim");
+      return [dcsKindTxt(k), xs.length, m.length, m.filter((x) => x.f.currency !== "USD").reduce((t, x) => t + dcsNum(x.f.value), 0), m.filter((x) => x.f.currency === "USD").reduce((t, x) => t + dcsNum(x.f.value), 0), xs.filter((x) => x.f.documented === "Sim").length];
+    });
+    const sumHead = [_t("Type"), _t("Forms"), _t("Monetized"), _t("Value (BRL)"), _t("Value (USD)"), _t("Documented")];
+    const summary = {
+      title: _t("Summary"),
+      cols: [30, 12, 13, 18, 18, 13],
+      merges: ["A1:F1", "A2:F2"],
+      heights: { 0: 22, 2: 30 },
+      rows: [
+        [{ v: _t("DCS / Value Added forms · summary"), st: XS.title }],
+        [{ v: fltTxt, st: XS.sub }],
+        sumHead.map((h) => ({ v: h, st: XS.head() })),
+        ...kindRows.map((row, k) => [
+          { v: row[0], st: C(k, { b: true }) },
+          { v: row[1], st: C(k, { h: "right", fmt: "int" }) },
+          { v: row[2], st: C(k, { h: "right", fmt: "int" }) },
+          { v: row[3], st: C(k, { h: "right", fmt: "money" }) },
+          { v: row[4], st: C(k, { h: "right", fmt: "usd" }) },
+          { v: row[5], st: C(k, { h: "right", fmt: "int" }) },
+        ]),
+        [
+          { v: _t("Total"), st: XS.total() },
+          ...[1, 2, 3, 4, 5].map((i) => ({ v: kindRows.reduce((t, row) => t + row[i], 0), st: XS.total({ h: "right", fmt: i === 3 ? "money" : i === 4 ? "usd" : "int" }) })),
+        ],
+        [],
+        [_t("Subgroup"), _t("Type"), _t("Forms")].map((h) => ({ v: h, st: XS.head("#0E7490") })),
+        ...subs.map(([key, n], k) => [
+          { v: dcsItemTxt(key), st: C(k) },
+          { v: DCS_ITEMS.va.some((it) => it[0] === key) ? dcsKindTxt("va") : dcsKindTxt("dcs"), st: C(k, { h: "center" }) },
+          { v: n, st: C(k, { h: "right", fmt: "int" }) },
+        ]),
+      ],
+    };
+    xlsxSave(_t("DCS VA forms {0}.xlsx", today), [main, summary]);
+  };
+
+  /* ---------- tela ---------- */
+  const tile = (label, value, sub, color, wide) => (
+    <div style={{ ...card, padding: mob ? "11px 12px" : "14px 16px", minWidth: 0, ...(wide && mob ? { gridColumn: "1 / -1" } : null) }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+      <div style={{ fontSize: mob ? 20 : 24, fontWeight: 800, color: color || X.ink, marginTop: 3, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
+      {sub && <div style={{ fontSize: 11.5, color: X.sub, marginTop: 2, lineHeight: 1.35 }}>{sub}</div>}
+    </div>
+  );
+  const valTxt = (f) => (f.monetized === "Sim" && f.value ? (f.currency === "USD" ? usd(dcsNum(f.value)) : money(dcsNum(f.value))) : f.monetized === "Não" ? _t("Not monetized") : "—");
+  const open = (x) => onOpenQuote(x.id, false, shown.map((y) => y.id));
+  const verTag = (x) => x.nVer > 1 && <span style={{ fontSize: 10.5, fontWeight: 700, color: x.latest ? X.tealDk : X.sub, background: x.latest ? X.tealSoft : X.head, borderRadius: 999, padding: "1px 7px", whiteSpace: "nowrap" }}>{x.latest ? _t("v{0} · latest", x.ver) : _t("v{0} of {1}", x.ver, x.nVer)}</span>;
+  const th = { padding: "9px 10px", fontSize: 10.5, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.3, background: X.head, borderBottom: `1px solid ${X.line}`, textAlign: "left", whiteSpace: "nowrap" };
+  const td = { padding: "10px 10px", fontSize: 12.5, borderBottom: `1px solid ${X.line}`, verticalAlign: "top" };
+  const sub2 = { fontSize: 11.5, color: X.sub, marginTop: 2 };
+  const maxSub = subs.length ? subs[0][1] : 1;
+
+  const filters = (
+    <div style={{ ...card, padding: mob ? 12 : "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="qp-hscroll" style={{ display: "flex", gap: 6, overflowX: mob ? "auto" : "visible", flexWrap: mob ? "nowrap" : "wrap", paddingBottom: 2 }}>
+        {RANGES.map(([k, l]) => {
+          const on = rk === k;
+          return (
+            <button key={k} onClick={() => setRk(k)} style={{ flexShrink: 0, border: `1px solid ${on ? X.teal : X.line}`, background: on ? X.teal : "#fff", color: on ? "#fff" : X.ink, borderRadius: 999, padding: "7px 13px", fontSize: 12.5, fontWeight: on ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap" }}>
+              {l}
+            </button>
+          );
+        })}
+      </div>
+      <MultiChips value={kinds} onChange={setKinds} options={["va", "dcs", "desl"].map((k) => [k, dcsKindTxt(k), cntKind(k)])} />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ position: "relative", flex: mob ? "1 1 100%" : "0 1 300px", minWidth: 0 }}>
+          <Search size={15} color={X.sub} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
+          <input value={srch} onChange={(e) => setSrch(e.target.value)} placeholder={_t("Search QT, SO, customer, city…")} style={{ ...inp, width: "100%", height: mob ? 42 : 36, paddingLeft: 32, fontSize: mob ? 15 : 12.5, borderRadius: mob ? 11 : 8 }} />
+        </div>
+        <select value={who} onChange={(e) => setWho(e.target.value)} style={{ ...inp, height: mob ? 42 : 36, flex: mob ? "1 1 0" : "0 1 240px", minWidth: 0, fontSize: mob ? 14 : 12.5, borderRadius: mob ? 11 : 8 }}>
+          <option value="">{_t("All salespeople")}</option>
+          {people.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, color: X.ink, cursor: "pointer", whiteSpace: "nowrap" }} title={_t("Show also the older versions (each Fix creates a new one)")}>
+          <input type="checkbox" checked={allVer} onChange={(e) => setAllVer(e.target.checked)} style={{ width: 16, height: 16, accentColor: X.teal }} />
+          {_t("All versions")}
+        </label>
+        {fltOn && (
+          <button onClick={clear} style={{ ...btn, height: 32, fontSize: 12, border: "none", background: "transparent", color: X.tealDk, fontWeight: 700 }}>
+            <XIcon size={13} /> {_t("Clear filters")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        {!mob && (
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+              <FileText size={19} color="#0E7490" /> {_t("DCS / Value Added forms")}
+            </div>
+            <div style={{ fontSize: 12.5, color: X.sub, marginTop: 2 }}>{_t("Every form saved in the quotes' history. Date = when it was saved; the e-mail is sent outside the program.")}</div>
+          </div>
+        )}
+        <button onClick={toExcel} disabled={!shown.length} style={{ ...btn, height: mob ? 42 : 38, borderRadius: 11, fontWeight: 700, color: X.tealDk, ...(mob ? { flex: 1, justifyContent: "center" } : null), opacity: shown.length ? 1 : 0.5 }}>
+          <FileSpreadsheet size={16} /> {_t("Export to Excel")}
+        </button>
+      </div>
+      {filters}
+      <div style={{ display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : "repeat(5, minmax(0, 1fr))", gap: mob ? 8 : 12 }}>
+        {tile(_t("Forms"), tot.n.toLocaleString("pt-BR"), allVer ? (shown.length === 1 ? _t("1 version in the list") : _t("{0} versions in the list", shown.length)) : _t("one per quote"))}
+        {tile(dcsKindTxt("va"), tot.k.va, null, X.tealDk)}
+        {tile(dcsKindTxt("dcs"), tot.k.dcs, null, "#0E7490")}
+        {tile(dcsKindTxt("desl"), tot.k.desl, null, X.redDk)}
+        {tile(_t("Monetized"), moneyShort(tot.brl), [tot.usd ? usd(tot.usd) : "", _t("{0} of {1} monetized · {2} documented", tot.mon, tot.n, tot.doc)].filter(Boolean).join(" · "), X.green, true)}
+      </div>
+      {!all.length ? (
+        <div style={{ ...card, padding: "32px 18px", textAlign: "center", display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+          <FileText size={26} color={X.sub} />
+          <div style={{ fontSize: 16, fontWeight: 800 }}>{_t("No form yet")}</div>
+          <div style={{ fontSize: 13, color: X.sub, maxWidth: 440 }}>{_t("The salespeople fill it in the quote record (DCS / Value Added box). Every form saved shows up here.")}</div>
+        </div>
+      ) : !shown.length ? (
+        <div style={{ ...card, padding: "26px 18px", textAlign: "center", color: X.sub, fontSize: 13 }}>
+          {_t("No form with these filters.")}{" "}
+          <button onClick={clear} style={{ border: "none", background: "none", color: X.tealDk, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
+            {_t("Clear filters")}
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "minmax(0, 1fr) 250px", gap: 12, alignItems: "start" }}>
+          {mob ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {shown.map((x) => (
+                <div key={x.a.t + x.i} className="qp-opt" onClick={() => open(x)} style={{ ...card, padding: "12px 13px", cursor: "pointer", display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                    {dcsPill(x.f.kind)}
+                    <span style={{ fontWeight: 800, fontSize: 13.5 }}>{x.id}</span>
+                    {verTag(x)}
+                    <span style={{ marginLeft: "auto", fontSize: 11.5, color: X.sub, whiteSpace: "nowrap" }}>{fmtDate(x.t.slice(0, 10))}</span>
+                  </div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.f.endUser || x.f.distributor || x.a.c}</div>
+                  {(x.f.items || []).length > 0 && <div style={{ fontSize: 12, color: X.ink }}>{x.f.items.map(dcsItemTxt).join(", ")}</div>}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: X.sub, minWidth: 0 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{[x.f.city && `${x.f.city}${x.f.state ? "/" + x.f.state : ""}`, x.f.inside].filter(Boolean).join(" · ")}</span>
+                    <b style={{ color: x.f.monetized === "Sim" ? X.green : X.sub, whiteSpace: "nowrap" }}>{valTxt(x.f)}</b>
+                    <DcsPdfButton f={x.f} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ ...card, overflow: "auto", minWidth: 0 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    {[_t("Saved"), _t("Quote"), _t("Type / subgroups"), _t("End user / distributor"), _t("Salespeople"), _t("Value"), ""].map((h, i) => (
+                      <th key={i} style={{ ...th, ...(i === 5 ? { textAlign: "right" } : null) }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((x) => {
+                    const f = x.f;
+                    return (
+                      <tr key={x.a.t + x.i} className="qp-row" onClick={() => open(x)} style={{ cursor: "pointer", opacity: x.latest ? 1 : 0.62 }}>
+                        <td style={{ ...td, whiteSpace: "nowrap" }}>
+                          {fmtDate(x.t.slice(0, 10))}
+                          <div style={sub2}>
+                            {x.t.slice(11, 16)} · {String(x.a.by || "").split(" ")[0]}
+                          </div>
+                        </td>
+                        <td style={{ ...td, whiteSpace: "nowrap" }}>
+                          <b>{x.id}</b>
+                          <div style={{ ...sub2, display: "flex", gap: 5, alignItems: "center" }}>
+                            {f.so || "—"} {verTag(x)}
+                          </div>
+                        </td>
+                        <td style={{ ...td, minWidth: 190, maxWidth: 280 }}>
+                          {dcsPill(f.kind)}
+                          {(f.items || []).length > 0 && <div style={{ ...sub2, color: X.ink }}>{f.items.map(dcsItemTxt).join(", ")}</div>}
+                        </td>
+                        <td style={{ ...td, maxWidth: 280 }}>
+                          <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.endUser}>
+                            {f.endUser || "—"}
+                          </div>
+                          <div style={{ ...sub2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.distributor}>
+                            {f.distributor ? _t("Distr.: {0}", f.distributor) : _t("No distributor")}
+                          </div>
+                          <div style={{ ...sub2, display: "flex", alignItems: "center", gap: 4 }}>
+                            <MapPin size={11} /> {f.city || "—"}
+                            {f.state ? "/" + f.state : ""}
+                          </div>
+                        </td>
+                        <td style={{ ...td, whiteSpace: "nowrap" }}>
+                          {f.inside || "—"}
+                          <div style={sub2}>{f.outside || "—"}</div>
+                        </td>
+                        <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                          <b style={{ color: f.monetized === "Sim" ? X.green : X.sub }}>{valTxt(f)}</b>
+                          <div style={{ ...sub2, color: f.documented === "Sim" ? X.tealDk : X.sub }}>{f.documented === "Sim" ? _t("Documented") : f.documented === "Não" ? _t("Not documented") : ""}</div>
+                        </td>
+                        <td style={{ ...td, textAlign: "right" }}>
+                          <DcsPdfButton f={f} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div style={{ ...card, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 9 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.3 }}>{_t("Most used subgroups")}</div>
+            {!subs.length && <div style={{ fontSize: 12.5, color: X.sub }}>{_t("None in these forms.")}</div>}
+            {subs.slice(0, 12).map(([k, n]) => (
+              <div key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5 }}>
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dcsItemTxt(k)}</span>
+                  <b style={{ fontVariantNumeric: "tabular-nums" }}>{n}</b>
+                </div>
+                <span style={{ display: "block", height: 6, borderRadius: 4, background: X.track, overflow: "hidden" }}>
+                  <span style={{ display: "block", height: 6, width: (n / maxSub) * 100 + "%", background: DCS_ITEMS.va.some((it) => it[0] === k) ? X.teal : "#0E7490", borderRadius: 4 }} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ===== Overview (gerência) =====
    Uma tela só com o que a gerência olha todo dia: a meta do mês (vendido × meta e o ritmo), a carteira do período,
    o que precisa de atenção (follow-ups atrasados, de hoje e cotações sem FUP — tocar abre a lista já filtrada),
    a equipe hoje (quem atualizou os follow-ups) e as cotações abertas de maior prioridade. Os números saem das
    mesmas contas das abas Quotes, Team e Goal. */
+/* ===== peças das telas da gerência (Visão geral e Análise) =====
+   Visual enxuto: fundo branco, números em tinta escura, uma cor só para barras de tamanho (azul) e o verde
+   apenas para "ganho" no gráfico mensal. Vermelho só em texto de problema (atrasado, perdido, mais de 90 dias). */
+const MG_Q = "#5B8AD9"; // cotado / tamanho (validado com o verde abaixo: lightness, croma, daltonismo e contraste)
+const MG_W = "#0F8A70"; // ganho
+const MG = {
+  card: { background: "#fff", border: `1px solid ${X.line}`, borderRadius: 12, minWidth: 0 },
+  title: { fontSize: 13, fontWeight: 800, color: X.ink },
+  sub: { fontSize: 11.5, color: X.sub },
+  th: { padding: "8px 10px", fontSize: 11, fontWeight: 700, color: X.sub, textAlign: "right", whiteSpace: "nowrap", borderBottom: `1px solid ${X.line}`, background: "#fff", position: "sticky", top: 0 },
+  td: { padding: "8px 10px", fontSize: 12.5, textAlign: "right", whiteSpace: "nowrap", borderBottom: `1px solid #EEF2F5`, fontVariantNumeric: "tabular-nums" },
+};
+const pctS = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
+const nS = (n) => (n || 0).toLocaleString("pt-BR");
+// barra fina de tamanho (um tom só), ponta arredondada
+function MgBar({ v, max, color = MG_Q, w = 90 }) {
+  const f = max > 0 ? Math.max(0, Math.min(1, v / max)) : 0;
+  return (
+    <span style={{ display: "inline-block", width: w, height: 6, borderRadius: 4, background: "#EEF2F5", verticalAlign: "middle", overflow: "hidden" }}>
+      <span style={{ display: "block", height: 6, width: `${f * 100}%`, minWidth: v > 0 ? 3 : 0, background: color, borderRadius: 4 }} />
+    </span>
+  );
+}
+/* faixa de números: um cartão só, com divisórias (sem fundos coloridos) · items: [rótulo, valor, legenda, tom] */
+function MgStrip({ items }) {
+  const mob = useMobile();
+  return (
+    <div style={{ ...MG.card, display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : `repeat(${items.length}, minmax(0, 1fr))` }}>
+      {items.map(([l, v, sub, tone, extra], i) => (
+        <div key={i} style={{ padding: mob ? "11px 12px" : "13px 16px", minWidth: 0, borderLeft: !mob && i ? `1px solid ${X.line}` : "none", borderTop: mob && i > 1 ? `1px solid ${X.line}` : "none", ...(mob && i % 2 ? { borderLeft: `1px solid ${X.line}` } : null), ...(mob && i === items.length - 1 && items.length % 2 ? { gridColumn: "1 / -1", borderLeft: "none" } : null) }}>
+          <div style={{ fontSize: 11.5, color: X.sub, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l}</div>
+          <div style={{ fontSize: mob ? 18 : 21, fontWeight: 800, letterSpacing: -0.4, marginTop: 2, color: tone === "bad" ? X.redDk : X.ink, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</div>
+          {sub ? <div style={{ fontSize: 11.5, color: X.sub, marginTop: 1, lineHeight: 1.35 }}>{sub}</div> : null}
+          {extra || null}
+        </div>
+      ))}
+    </div>
+  );
+}
+// cartão com título, legenda à direita e conteúdo
+const MgCard = ({ title, right, children, pad = true, style }) => (
+  <div style={{ ...MG.card, display: "flex", flexDirection: "column", ...style }}>
+    <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "12px 14px 8px", flexWrap: "wrap" }}>
+      <span style={MG.title}>{title}</span>
+      {right ? <span style={{ marginLeft: "auto", ...MG.sub }}>{right}</span> : null}
+    </div>
+    <div style={pad ? { padding: "0 14px 12px" } : { paddingBottom: 6 }}>{children}</div>
+  </div>
+);
+/* tabela que ordena ao clicar no cabeçalho · cols: [{k, l, v: (r) => número | texto, f: (r) => conteúdo, left, w}] */
+function MgTable({ cols, rows, sort0, total, onRow, max = 0, empty }) {
+  const [sort, setSort] = useState(sort0 || { k: cols[1].k, dir: -1 });
+  const col = cols.find((c) => c.k === sort.k) || cols[1];
+  const sorted = useMemo(() => {
+    const val = (r) => (col.v ? col.v(r) : r[col.k]);
+    return [...rows].sort((a, b) => {
+      const x = val(a),
+        y = val(b);
+      if (typeof x === "string" || typeof y === "string") return String(x || "").localeCompare(String(y || ""), "pt-BR") * sort.dir;
+      return ((x == null ? -Infinity : x) - (y == null ? -Infinity : y)) * sort.dir;
+    });
+  }, [rows, sort, col]);
+  const [all, setAll] = useState(false);
+  const vis = max && !all ? sorted.slice(0, max) : sorted;
+  if (!rows.length) return <div style={{ padding: "10px 14px 14px", fontSize: 12.5, color: X.sub }}>{empty || _t("Nothing in this period.")}</div>;
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            {cols.map((c, i) => {
+              const on = sort.k === c.k;
+              return (
+                <th
+                  key={c.k}
+                  onClick={() => setSort(on ? { k: c.k, dir: -sort.dir } : { k: c.k, dir: c.left ? 1 : -1 })}
+                  title={c.tip || _t("Sort")}
+                  style={{ ...MG.th, textAlign: c.left ? "left" : "right", cursor: "pointer", color: on ? X.ink : X.sub, ...(i === 0 ? { paddingLeft: 14, position: "sticky", left: 0, zIndex: 1 } : null), ...(c.w ? { width: c.w } : null) }}
+                >
+                  {c.l}
+                  {on ? (sort.dir < 0 ? " ↓" : " ↑") : ""}
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {vis.map((r, k) => (
+            <tr key={r.key || k} className={onRow ? "qp-row" : undefined} onClick={onRow ? () => onRow(r) : undefined} style={{ cursor: onRow ? "pointer" : "default" }}>
+              {cols.map((c, i) => (
+                <td key={c.k} style={{ ...MG.td, textAlign: c.left ? "left" : "right", ...(i === 0 ? { paddingLeft: 14, position: "sticky", left: 0, background: "#fff", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", fontWeight: 600 } : null), ...(c.tdStyle ? c.tdStyle(r) : null) }}>
+                  {c.f ? c.f(r) : c.v ? c.v(r) : r[c.k]}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+        {total && (
+          <tfoot>
+            <tr>
+              {cols.map((c, i) => (
+                <td key={c.k} style={{ ...MG.td, fontWeight: 800, borderBottom: "none", borderTop: `1px solid ${X.line}`, textAlign: c.left ? "left" : "right", ...(i === 0 ? { paddingLeft: 14, position: "sticky", left: 0, background: "#fff" } : null) }}>
+                  {total[c.k] != null ? total[c.k] : ""}
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        )}
+      </table>
+      {max > 0 && sorted.length > max && (
+        <button onClick={() => setAll((v) => !v)} style={{ border: "none", background: "none", color: X.tealDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", padding: "10px 14px" }}>
+          {all ? _t("Show fewer") : _t("Show all {0}", nS(sorted.length))}
+        </button>
+      )}
+    </div>
+  );
+}
+/* números de um grupo de cotações (vendedor, cliente, mês): cotado = abertas + ganhas + perdidas (as canceladas ficam
+   fora, como no Hit rate); conversão = QTs ganhas ÷ QTs cotadas */
+const mgAgg = () => ({ n: 0, q: 0, won: 0, wonN: 0, open: 0, openN: 0, lost: 0, lostN: 0, canc: 0, cancN: 0, late: 0, nofup: 0, days: 0, daysN: 0, why: {} });
+function mgAdd(o, r) {
+  if (r.st === "cancelled") {
+    o.cancN++;
+    o.canc += r.quoted || 0;
+  } else {
+    o.n++;
+    o.q += r.quoted || 0;
+  }
+  if (r.st === "won") {
+    o.wonN++;
+    o.won += r.sold || 0;
+    if (r.toWin != null) {
+      o.days += r.toWin;
+      o.daysN++;
+    }
+  } else if (r.st === "open") {
+    o.openN++;
+    o.open += r.quoted || 0;
+    if (!r.fup) o.nofup++;
+    else if (r.next && r.next < r.today) o.late++;
+  } else if (r.st === "lost") {
+    o.lostN++;
+    o.lost += r.quoted || 0;
+  }
+  if ((r.st === "lost" || r.st === "cancelled") && r.why) o.why[r.why] = (o.why[r.why] || 0) + 1;
+  return o;
+}
+const mgHit = (o) => (o.n ? o.wonN / o.n : null);
+const mgTopWhy = (o) => {
+  const e = Object.entries(o.why).sort((a, b) => b[1] - a[1])[0];
+  return e ? whyTxt(e[0]) : "";
+};
+// linhas do período com o que a análise precisa: FUP, próximo follow-up, motivo e dias até ganhar
+function mgRows(rows, cancelRows, meta, today) {
+  return [...rows, ...cancelRows].map((r) => {
+    const m = (meta || {})[r.id] || {};
+    const so = (r.sos || []).map((s) => s.d).filter(Boolean).sort()[0] || "";
+    return { ...r, fup: m.fup || "", win: m.win || 0, next: r.st === "open" && m.fup ? fupPending(m)[0] || "" : "", why: normWhy(m.why || ""), toWin: r.st === "won" && so && so >= r.d ? daysBetween(r.d, so) : null, today };
+  });
+}
+
+/* ===== Análise (gerência) =====
+   Uma pergunta por vez, escolhida no topo: vendedores, mês a mês, carteira em aberto, clientes e motivos.
+   Usa os filtros do topo (período, classificação, linha e vendedor). Excel com todas as partes. */
+const MGA_SECS = [
+  ["sellers", _t("Salespeople")],
+  ["months", _t("Month by month")],
+  ["open", _t("Open portfolio")],
+  ["customers", _t("Customers")],
+  ["reasons", _t("Reasons")],
+];
+const AGE_BUCKETS = [
+  [0, 15, _t("0–15 days")],
+  [16, 30, _t("16–30 days")],
+  [31, 60, _t("31–60 days")],
+  [61, 90, _t("61–90 days")],
+  [91, Infinity, _t("More than 90 days")],
+];
+function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt, filtersTxt, sellerTxt, onOpenQuote }) {
+  const mob = useMobile();
+  const [sec, setSec] = useState(() => {
+    try {
+      return sessionStorage.getItem("qp_mga_sec") || "sellers";
+    } catch {
+      return "sellers";
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("qp_mga_sec", sec);
+    } catch {}
+  }, [sec]);
+  const [who, setWho] = useState("sp"); // vendedor externo (Sales Person) ou interno (Quoted By)
+  const all = useMemo(() => mgRows(rows, cancelRows, meta, today), [rows, cancelRows, meta, today]);
+  const tot = useMemo(() => all.reduce(mgAdd, mgAgg()), [all]);
+  const open = useMemo(() => all.filter((r) => r.st === "open"), [all]);
+  const goQ = (list) => (r) => onOpenQuote(r.id, false, list.map((x) => x.id));
+
+  /* ---------- vendedores ---------- */
+  const sellers = useMemo(() => {
+    const g = {};
+    all.forEach((r) => {
+      const k = groupOf(who === "sp" ? r.sp : r.qb) || _t("(no salesperson)");
+      mgAdd(g[k] || (g[k] = { ...mgAgg(), key: k, name: k }), r);
+    });
+    return Object.values(g).map((o) => ({ ...o, hit: mgHit(o), avgDays: o.daysN ? o.days / o.daysN : null }));
+  }, [all, who, groupOf]);
+  const maxHit = 1;
+  const moneyCol = (k, l, tip) => ({ k, l, tip, f: (r) => moneyShort(r[k]) });
+  const sellerCols = [
+    { k: "name", l: who === "sp" ? _t("Outside salesperson") : _t("Inside salesperson"), left: true },
+    { k: "n", l: "QTs", tip: _t("Quotes of the period (cancelled not counted)") },
+    moneyCol("q", _t("Quoted")),
+    moneyCol("won", _t("Won"), _t("Sold value of the won quotes")),
+    { k: "hit", l: _t("Hit rate"), tip: _t("Won QTs ÷ quoted QTs"), f: (r) => (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          {!mob && <MgBar v={r.hit || 0} max={maxHit} w={70} />}
+          <b style={{ minWidth: 34, display: "inline-block" }}>{pctS(r.hit)}</b>
+        </span>
+      ) },
+    moneyCol("open", _t("Open")),
+    { k: "late", l: _t("Overdue"), tip: _t("Open quotes with the follow-up overdue"), f: (r) => <span style={{ color: r.late ? X.redDk : X.sub, fontWeight: r.late ? 700 : 400 }}>{nS(r.late)}</span> },
+    { k: "nofup", l: _t("No FUP"), tip: _t("Open quotes without FUP (never show up in the plan)"), f: (r) => <span style={{ color: r.nofup ? X.ink : X.sub }}>{nS(r.nofup)}</span> },
+    { k: "avgDays", l: _t("Days to win"), tip: _t("Average days from the quote to the order (won quotes with the order in the Sales Report)"), f: (r) => (r.avgDays == null ? "—" : Math.round(r.avgDays)) },
+  ];
+  const sellerTot = { name: _t("Total"), n: nS(tot.n), q: moneyShort(tot.q), won: moneyShort(tot.won), hit: pctS(mgHit(tot)), open: moneyShort(tot.open), late: nS(tot.late), nofup: nS(tot.nofup), avgDays: tot.daysN ? Math.round(tot.days / tot.daysN) : "—" };
+
+  /* ---------- mês a mês (mês da cotação) ---------- */
+  const months = useMemo(() => {
+    const g = {};
+    all.forEach((r) => {
+      const k = String(r.d || "").slice(0, 7);
+      if (k) mgAdd(g[k] || (g[k] = { ...mgAgg(), key: k }), r);
+    });
+    return Object.values(g)
+      .sort((a, b) => (a.key < b.key ? -1 : 1))
+      .map((o) => ({ ...o, label: MON_SHORT[+o.key.slice(5) - 1] + "/" + o.key.slice(2, 4), hit: mgHit(o) }));
+  }, [all]);
+  const [hov, setHov] = useState(-1);
+  const mMax = Math.max(1, ...months.map((m) => Math.max(m.q, m.won)));
+  const monthChart = (
+    <div style={{ padding: "4px 14px 6px" }}>
+      <div style={{ display: "flex", gap: 14, alignItems: "center", fontSize: 11.5, color: X.sub, marginBottom: 8 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: MG_Q }} /> {_t("Quoted")}
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: MG_W }} /> {_t("Won (of the quotes of the month)")}
+        </span>
+        <span style={{ marginLeft: "auto" }}>{_t("scale up to {0}", moneyShort(mMax))}</span>
+      </div>
+      <div style={{ position: "relative", height: 150, display: "flex", alignItems: "flex-end", gap: mob ? 4 : 10, borderBottom: `1px solid ${X.line}` }} onMouseLeave={() => setHov(-1)}>
+        {[0.5, 1].map((f) => (
+          <span key={f} style={{ position: "absolute", left: 0, right: 0, bottom: `${f * 100}%`, borderTop: `1px dashed #E8EDF2` }} />
+        ))}
+        {months.map((m, i) => (
+          <div key={m.key} onMouseEnter={() => setHov(i)} onClick={() => setHov(i)} style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 2, position: "relative", cursor: "default", background: hov === i ? "rgba(29,43,54,.04)" : "transparent", borderRadius: "6px 6px 0 0" }}>
+            <span style={{ width: "38%", maxWidth: 22, height: `${(m.q / mMax) * 100}%`, minHeight: m.q ? 2 : 0, background: MG_Q, borderRadius: "4px 4px 0 0" }} />
+            <span style={{ width: "38%", maxWidth: 22, height: `${(m.won / mMax) * 100}%`, minHeight: m.won ? 2 : 0, background: MG_W, borderRadius: "4px 4px 0 0" }} />
+            {hov === i && (
+              <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: "50%", transform: `translateX(${i < 2 ? "-20%" : i > months.length - 3 ? "-80%" : "-50%"})`, background: "#fff", border: `1px solid ${X.line}`, boxShadow: "0 6px 18px rgba(16,24,40,.12)", borderRadius: 10, padding: "8px 10px", fontSize: 12, whiteSpace: "nowrap", zIndex: 5, pointerEvents: "none" }}>
+                <div style={{ fontWeight: 800, marginBottom: 3 }}>{m.label}</div>
+                <div>
+                  {_t("Quoted")}: <b>{moneyShort(m.q)}</b> · {nS(m.n)} QTs
+                </div>
+                <div>
+                  {_t("Won")}: <b>{moneyShort(m.won)}</b> · {nS(m.wonN)} QTs
+                </div>
+                <div style={{ color: X.sub }}>
+                  {_t("Hit rate")} {pctS(m.hit)} · {_t("open")} {moneyShort(m.open)}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: mob ? 4 : 10, marginTop: 5 }}>
+        {months.map((m, i) => (
+          <span key={m.key} style={{ flex: 1, minWidth: 0, textAlign: "center", fontSize: 10.5, color: hov === i ? X.ink : X.sub, fontWeight: hov === i ? 700 : 500, overflow: "hidden", whiteSpace: "nowrap" }}>
+            {mob ? m.label.slice(0, 3) : m.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+  const monthCols = [
+    { k: "key", l: _t("Month"), left: true, f: (r) => r.label },
+    { k: "n", l: "QTs" },
+    moneyCol("q", _t("Quoted")),
+    moneyCol("won", _t("Won")),
+    { k: "hit", l: _t("Hit rate"), f: (r) => <b>{pctS(r.hit)}</b> },
+    moneyCol("open", _t("Still open")),
+    { k: "lostN", l: _t("Lost") },
+    { k: "cancN", l: _t("Cancelled") },
+  ];
+
+  /* ---------- carteira em aberto ---------- */
+  const openK = useMemo(() => {
+    const age = AGE_BUCKETS.map(([a, b, l]) => ({ key: l, l, a, b, n: 0, v: 0 }));
+    const fs = { ok: { n: 0, v: 0 }, today: { n: 0, v: 0 }, late: { n: 0, v: 0 }, none: { n: 0, v: 0 } };
+    const win = {};
+    let v = 0,
+      w = 0,
+      ageSum = 0;
+    open.forEach((r) => {
+      const d = Math.max(0, daysBetween(r.d, today));
+      ageSum += d;
+      v += r.quoted || 0;
+      w += ((r.quoted || 0) * (r.win || 0)) / 100;
+      const b = age.find((x) => d >= x.a && d <= x.b);
+      b.n++;
+      b.v += r.quoted || 0;
+      const f = !r.fup ? fs.none : r.next && r.next < today ? fs.late : r.next === today ? fs.today : fs.ok;
+      f.n++;
+      f.v += r.quoted || 0;
+      const wk = r.win || 0;
+      const o = win[wk] || (win[wk] = { n: 0, v: 0 });
+      o.n++;
+      o.v += r.quoted || 0;
+    });
+    return { age, fs, win, v, w, avgAge: open.length ? ageSum / open.length : 0 };
+  }, [open, today]);
+  const bigOpen = useMemo(() => [...open].sort((a, b) => (b.quoted || 0) - (a.quoted || 0)).slice(0, 10), [open]);
+  const barRows = (list, maxV, bad) => (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      {list.map(([l, o, isBad]) => (
+        <div key={l} style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr) 46px 84px" : "minmax(0, 1fr) 54px 96px minmax(60px, 120px)", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid #EEF2F5`, fontSize: 12.5 }}>
+          <span style={{ color: isBad && o.n ? X.redDk : X.ink, fontWeight: isBad && o.n ? 700 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</span>
+          <span style={{ textAlign: "right", color: X.sub, fontVariantNumeric: "tabular-nums" }}>{nS(o.n)}</span>
+          <b style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{moneyShort(o.v)}</b>
+          {!mob && <MgBar v={o.v} max={maxV} w="100%" />}
+        </div>
+      ))}
+      {bad}
+    </div>
+  );
+  const ageMax = Math.max(1, ...openK.age.map((x) => x.v));
+  const fsList = [
+    [_t("Up to date"), openK.fs.ok],
+    [_t("Due today"), openK.fs.today],
+    [_t("Overdue"), openK.fs.late, true],
+    [_t("No FUP"), openK.fs.none],
+  ];
+  const fsMax = Math.max(1, ...fsList.map((x) => x[1].v));
+  const winList = [99, 75, 50, 25, 0].map((k) => [k ? `${k}%` : _t("No % Win"), openK.win[k] || { n: 0, v: 0 }]);
+  const winMax = Math.max(1, ...winList.map((x) => x[1].v));
+
+  /* ---------- clientes ---------- */
+  const [cSrch, setCSrch] = useState("");
+  const customers = useMemo(() => {
+    const g = {};
+    all.forEach((r) => mgAdd(g[r.c] || (g[r.c] = { ...mgAgg(), key: r.c, name: r.c, seller: groupOf(r.sp) }), r));
+    return Object.values(g).map((o) => ({ ...o, hit: mgHit(o), lc: o.lostN + o.cancN, topWhy: mgTopWhy(o) }));
+  }, [all, groupOf]);
+  const custShown = useMemo(() => {
+    const q = norm(cSrch.trim());
+    return q ? customers.filter((c) => norm(c.name).includes(q)) : customers;
+  }, [customers, cSrch]);
+  const custCols = [
+    { k: "name", l: _t("Customer"), left: true },
+    { k: "n", l: "QTs" },
+    moneyCol("q", _t("Quoted")),
+    moneyCol("won", _t("Won")),
+    { k: "hit", l: _t("Hit rate"), f: (r) => <b>{pctS(r.hit)}</b> },
+    moneyCol("open", _t("Open")),
+    { k: "lc", l: _t("Lost + canc."), tip: _t("Lost and cancelled quotes"), f: (r) => <span style={{ color: r.lc ? X.redDk : X.sub, fontWeight: r.lc ? 700 : 400 }}>{nS(r.lc)}</span> },
+    { k: "topWhy", l: _t("Main reason"), left: true, f: (r) => <span style={{ color: X.sub }}>{r.topWhy || "—"}</span> },
+  ];
+
+  /* ---------- motivos ---------- */
+  const reasons = useMemo(() => {
+    const out = {};
+    ["lost", "cancelled"].forEach((kind) => {
+      const list = all.filter((r) => r.st === kind);
+      const m = Object.fromEntries(CLOSE_REASONS[kind].map((k) => [k, { n: 0, v: 0 }]));
+      let none = 0;
+      list.forEach((r) => {
+        if (m[r.why]) {
+          m[r.why].n++;
+          m[r.why].v += r.quoted || 0;
+        } else none++;
+      });
+      out[kind] = { n: list.length, none, list: Object.entries(m).sort((a, b) => b[1].n - a[1].n) };
+    });
+    return out;
+  }, [all]);
+  const pgLoss = useMemo(() => {
+    const g = {};
+    all.forEach((r) => {
+      const q = qIndex.get(r.id) || {};
+      const keys = q.pg && Object.keys(q.pg).length ? Object.keys(q.pg) : [_t("(no Product Group)")];
+      keys.forEach((k) => {
+        const o = g[k] || (g[k] = { key: k, name: k, n: 0, lc: 0 });
+        o.n++;
+        if (r.st === "lost" || r.st === "cancelled") o.lc++;
+      });
+    });
+    return Object.values(g)
+      .filter((o) => o.lc > 0)
+      .map((o) => ({ ...o, rate: o.n ? o.lc / o.n : 0 }));
+  }, [all, qIndex]);
+  const reasonCard = (kind) => {
+    const R = reasons[kind];
+    const mx = Math.max(1, ...R.list.map((x) => x[1].n));
+    return (
+      <MgCard title={kind === "lost" ? _t("Lost · reasons") : _t("Cancelled · reasons")} right={_t("{0} QTs", nS(R.n))}>
+        {R.list.map(([k, o]) => (
+          <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 40px 44px minmax(50px, 110px)", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid #EEF2F5`, fontSize: 12.5 }}>
+            <span>{whyTxt(k)}</span>
+            <b style={{ textAlign: "right" }}>{nS(o.n)}</b>
+            <span style={{ textAlign: "right", color: X.sub }}>{R.n ? pctS(o.n / R.n) : "—"}</span>
+            <MgBar v={o.n} max={mx} w="100%" />
+          </div>
+        ))}
+        <div style={{ fontSize: 12, color: R.none ? X.redDk : X.sub, paddingTop: 8 }}>{R.none ? _t("{0} without a reason yet", nS(R.none)) : _t("All have a reason.")}</div>
+      </MgCard>
+    );
+  };
+
+  /* ---------- Excel: todas as partes ---------- */
+  const toExcel = () => {
+    const C = XS.cell;
+    const sheet = (title, head, data, cols) => ({
+      title,
+      cols,
+      freeze: 3,
+      merges: [`A1:${String.fromCharCode(64 + head.length)}1`, `A2:${String.fromCharCode(64 + head.length)}2`],
+      heights: { 0: 22, 2: 30 },
+      rows: [[{ v: title, st: XS.title }], [{ v: `${periodTxt} · ${filtersTxt} · ${sellerTxt}`, st: XS.sub }], head.map((h) => ({ v: h, st: XS.head() })), ...data.map((r, k) => r.map(([v, f], i) => ({ v, st: C(k, { ...(i ? { h: "right" } : { b: true }), ...(f ? { fmt: f } : null) }) })))],
+    });
+    const S = [...sellers].sort((a, b) => b.q - a.q);
+    xlsxSave(_t("Analysis {0}.xlsx", today), [
+      sheet(_t("Salespeople"), [who === "sp" ? _t("Outside salesperson") : _t("Inside salesperson"), "QTs", _t("Quoted"), _t("Won"), _t("Hit rate"), _t("Open"), _t("Overdue"), _t("No FUP"), _t("Days to win")], S.map((r) => [[r.name], [r.n, "int"], [r.q, "money"], [r.won, "money"], [r.hit || 0, "pct"], [r.open, "money"], [r.late, "int"], [r.nofup, "int"], [r.avgDays == null ? "" : Math.round(r.avgDays)]]), [28, 8, 15, 15, 10, 15, 10, 10, 12]),
+      sheet(_t("Month by month"), [_t("Month"), "QTs", _t("Quoted"), _t("Won"), _t("Hit rate"), _t("Still open"), _t("Lost"), _t("Cancelled")], months.map((r) => [[r.label], [r.n, "int"], [r.q, "money"], [r.won, "money"], [r.hit || 0, "pct"], [r.open, "money"], [r.lostN, "int"], [r.cancN, "int"]]), [12, 8, 15, 15, 10, 15, 8, 10]),
+      sheet(_t("Open portfolio"), [_t("Age"), "QTs", _t("Value")], openK.age.map((r) => [[r.l], [r.n, "int"], [r.v, "money"]]), [22, 8, 16]),
+      sheet(_t("Customers"), [_t("Customer"), "QTs", _t("Quoted"), _t("Won"), _t("Hit rate"), _t("Open"), _t("Lost + canc."), _t("Main reason")], [...customers].sort((a, b) => b.q - a.q).map((r) => [[r.name], [r.n, "int"], [r.q, "money"], [r.won, "money"], [r.hit || 0, "pct"], [r.open, "money"], [r.lc, "int"], [r.topWhy]]), [44, 8, 15, 15, 10, 15, 12, 22]),
+      sheet(_t("Reasons"), [_t("Type"), _t("Reason"), "QTs"], ["lost", "cancelled"].flatMap((kind) => [...reasons[kind].list.map(([k, o]) => [[CLOSE_LABEL[kind]], [whyTxt(k)], [o.n, "int"]]), [[CLOSE_LABEL[kind]], [_t("No reason")], [reasons[kind].none, "int"]]]), [14, 26, 8]),
+    ]);
+  };
+
+  const segBar = (
+    <div className="qp-hscroll" style={{ display: "flex", gap: 3, background: "#EEF2F5", borderRadius: 10, padding: 3, overflowX: "auto", maxWidth: "100%" }}>
+      {MGA_SECS.map(([k, l]) => {
+        const on = sec === k;
+        return (
+          <button key={k} onClick={() => setSec(k)} style={{ flexShrink: 0, border: "none", borderRadius: 8, padding: mob ? "7px 11px" : "6px 13px", fontSize: 12.5, fontWeight: on ? 700 : 500, cursor: "pointer", background: on ? "#fff" : "transparent", color: on ? X.ink : X.sub, boxShadow: on ? "0 1px 2px rgba(16,24,40,.08)" : "none", whiteSpace: "nowrap" }}>
+            {l}
+          </button>
+        );
+      })}
+    </div>
+  );
+  const hitAll = mgHit(tot);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        {segBar}
+        <span style={{ ...MG.sub, marginLeft: mob ? 0 : "auto" }}>
+          {periodTxt} · {sellerTxt}
+        </span>
+        <button onClick={toExcel} style={{ ...btn, height: 34, borderRadius: 10, fontWeight: 700, color: X.tealDk }}>
+          <FileSpreadsheet size={15} /> Excel
+        </button>
+      </div>
+      {sec !== "open" && <MgStrip
+        items={[
+          [_t("Quoted"), moneyShort(tot.q), _t("{0} quotes", nS(tot.n))],
+          [_t("Won"), moneyShort(tot.won), _t("{0} quotes", nS(tot.wonN))],
+          [_t("Hit rate"), pctS(hitAll), _t("won ÷ quoted (QTs)")],
+          [_t("Open"), moneyShort(tot.open), _t("{0} quotes", nS(tot.openN))],
+          [_t("Lost + cancelled"), nS(tot.lostN + tot.cancN), _t("{0} lost · {1} cancelled", nS(tot.lostN), nS(tot.cancN))],
+        ]}
+      />}
+      {sec === "sellers" && (
+        <MgCard
+          pad={false}
+          title={_t("By salesperson")}
+          right={
+            <span style={{ display: "inline-flex", gap: 3, background: "#EEF2F5", borderRadius: 8, padding: 2 }}>
+              {[
+                ["sp", _t("Outside")],
+                ["qb", _t("Inside")],
+              ].map(([k, l]) => (
+                <button key={k} onClick={() => setWho(k)} style={{ border: "none", borderRadius: 6, padding: "3px 10px", fontSize: 11.5, fontWeight: who === k ? 700 : 500, cursor: "pointer", background: who === k ? "#fff" : "transparent", color: who === k ? X.ink : X.sub }}>
+                  {l}
+                </button>
+              ))}
+            </span>
+          }
+        >
+          <MgTable key={who} cols={sellerCols} rows={sellers} sort0={{ k: "q", dir: -1 }} total={sellerTot} max={mob ? 12 : 0} />
+        </MgCard>
+      )}
+      {sec === "months" && (
+        <>
+          <MgCard title={_t("Quoted × won, by month of the quote")} right={_t("hover a month for the numbers")} pad={false}>
+            {months.length ? monthChart : <div style={{ padding: "4px 14px 14px", fontSize: 12.5, color: X.sub }}>{_t("Nothing in this period.")}</div>}
+          </MgCard>
+          <MgCard title={_t("Table")} pad={false}>
+            <MgTable cols={monthCols} rows={months} sort0={{ k: "key", dir: 1 }} />
+          </MgCard>
+        </>
+      )}
+      {sec === "open" && (
+        <>
+          <MgStrip
+            items={[
+              [_t("Open"), moneyShort(openK.v), _t("{0} quotes", nS(open.length))],
+              [_t("Weighted by % Win"), moneyShort(openK.w), _t("value × % Win of each quote")],
+              [_t("Average age"), _t("{0} days", Math.round(openK.avgAge)), _t("since the quote was created")],
+              [_t("Overdue follow-ups"), nS(openK.fs.late.n), moneyShort(openK.fs.late.v), openK.fs.late.n ? "bad" : ""],
+            ]}
+          />
+          <div style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))", gap: 12, alignItems: "start" }}>
+            <MgCard title={_t("Age of the open quotes")} right={_t("QTs · value")}>
+              {barRows(openK.age.map((x) => [x.l, x, x.a > 90]), ageMax)}
+            </MgCard>
+            <MgCard title={_t("Follow-up situation")} right={_t("QTs · value")}>
+              {barRows(fsList, fsMax)}
+            </MgCard>
+            <MgCard title={_t("% Win of the open quotes")} right={_t("QTs · value")}>
+              {barRows(winList, winMax)}
+            </MgCard>
+            <MgCard title={_t("10 biggest open quotes")} pad={false}>
+              <MgTable
+                cols={[
+                  { k: "c", l: _t("Customer"), left: true },
+                  { k: "seller", l: _t("Salesperson"), left: true, v: (r) => groupOf(r.sp) || "—" },
+                  { k: "age", l: _t("Age"), v: (r) => daysBetween(r.d, today), f: (r) => _t("{0} d", daysBetween(r.d, today)) },
+                  { k: "next", l: _t("Next FUP"), v: (r) => r.next || "", f: (r) => (!r.fup ? <span style={{ color: X.sub }}>{_t("No FUP")}</span> : r.next && r.next < today ? <span style={{ color: X.redDk, fontWeight: 700 }}>{fmtDay(r.next)}</span> : r.next ? fmtDay(r.next) : "—") },
+                  { k: "quoted", l: _t("Value"), f: (r) => <b>{moneyShort(r.quoted)}</b> },
+                ]}
+                rows={bigOpen}
+                sort0={{ k: "quoted", dir: -1 }}
+                onRow={goQ(bigOpen)}
+              />
+            </MgCard>
+          </div>
+        </>
+      )}
+      {sec === "customers" && (
+        <MgCard
+          pad={false}
+          title={_t("By customer")}
+          right={
+            <span style={{ position: "relative", display: "inline-block" }}>
+              <Search size={13} color={X.sub} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)" }} />
+              <input value={cSrch} onChange={(e) => setCSrch(e.target.value)} placeholder={_t("Search customer…")} style={{ ...inp, height: 30, width: mob ? 170 : 220, paddingLeft: 26, fontSize: 12 }} />
+            </span>
+          }
+        >
+          <MgTable cols={custCols} rows={custShown} sort0={{ k: "q", dir: -1 }} max={25} empty={_t("No customer found.")} />
+        </MgCard>
+      )}
+      {sec === "reasons" && (
+        <div style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))", gap: 12, alignItems: "start" }}>
+          {reasonCard("lost")}
+          {reasonCard("cancelled")}
+          <MgCard title={_t("Product Groups with the most losses")} right={_t("lost + cancelled")} pad={false} style={mob ? null : { gridColumn: "1 / -1" }}>
+            <MgTable
+              cols={[
+                { k: "name", l: "Product Group", left: true },
+                { k: "lc", l: _t("Lost + canc.") },
+                { k: "n", l: _t("QTs of the group") },
+                { k: "rate", l: _t("% of the group"), f: (r) => <b>{pctS(r.rate)}</b> },
+              ]}
+              rows={pgLoss}
+              sort0={{ k: "lc", dir: -1 }}
+              max={10}
+            />
+          </MgCard>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ManagerOverview({ rows, quotes, meta, thermo, acts, sales, cls, line, dailyGoal, dayGoals, today, groupOf, periodTxt, filtersTxt, onOpenQuote, onGo }) {
   const mob = useMobile();
   // meta do mês: soma da meta de cada dia útil (ou a digitada no dia), como no Calendar
@@ -4495,25 +5170,18 @@ function ManagerOverview({ rows, quotes, meta, thermo, acts, sales, cls, line, d
     if (d <= today) dueSoFar += g;
   }
   const bookedM = useMemo(() => bookedRange(mFrom, today, quotes, sales, cls, line), [mFrom, today, quotes, sales, cls, line]);
-  const bookedT = useMemo(() => bookedRange(today, today, quotes, sales, cls, line), [today, quotes, sales, cls, line]);
-  const goalT = goalOf(today);
-  const pctM = monthGoal ? Math.min(1, bookedM.v / monthGoal) : 0;
+  const pctM = monthGoal ? bookedM.v / monthGoal : 0;
   const pace = bookedM.v - dueSoFar; // > 0 = à frente do esperado até hoje
   const monthName = MON_SHORT[+ym.slice(5) - 1] + "/" + ym.slice(0, 4);
 
   // carteira do período e o que precisa de atenção (cotações abertas do período, com o FUP de cada uma)
   const k = useMemo(() => {
-    const o = { open: { n: 0, v: 0 }, won: { n: 0, v: 0, q: 0 }, lost: { n: 0, v: 0 }, late: { n: 0, v: 0 }, due: { n: 0, v: 0 }, nofup: { n: 0, v: 0 } };
+    const o = { open: { n: 0, v: 0 }, won: { n: 0 }, lost: { n: 0 }, late: { n: 0, v: 0 }, due: { n: 0, v: 0 }, nofup: { n: 0, v: 0 } };
     const top = [];
     rows.forEach((r) => {
-      if (r.st === "won") {
-        o.won.n++;
-        o.won.v += r.sold || 0;
-        o.won.q += r.quoted || 0;
-      } else if (r.st === "lost") {
-        o.lost.n++;
-        o.lost.v += r.lostV || 0;
-      } else if (r.st === "open") {
+      if (r.st === "won") o.won.n++;
+      else if (r.st === "lost") o.lost.n++;
+      else if (r.st === "open") {
         o.open.n++;
         o.open.v += r.open || 0;
         const m = meta[r.id] || {};
@@ -4526,176 +5194,134 @@ function ManagerOverview({ rows, quotes, meta, thermo, acts, sales, cls, line, d
         else if (next && next < today) add(o.late);
         else if (next === today) add(o.due);
         const t = thermo[r.nn];
-        const temp = t ? t.temp : "";
-        top.push({ ...r, win: m.win || 0, temp, prio: priorityOn({ win: m.win || 0, temp }).score, next, fup: m.fup || "" });
+        top.push({ ...r, prio: priorityOn({ win: m.win || 0, temp: t ? t.temp : "" }).score, next, fup: m.fup || "" });
       }
     });
     const quotedN = o.open.n + o.won.n + o.lost.n;
     o.hit = quotedN ? o.won.n / quotedN : null;
-    o.top = top.sort((a, b) => b.prio - a.prio || b.open - a.open).slice(0, mob ? 6 : 8);
+    o.top = top.sort((a, b) => b.prio - a.prio || b.open - a.open).slice(0, 8);
     return o;
-  }, [rows, meta, thermo, today, mob]);
+  }, [rows, meta, thermo, today]);
 
   // equipe hoje: follow-ups do dia atualizados por vendedor (a mesma conta da aba Team)
   const team = useMemo(() => sellerFupReport(quotes, meta, acts, today, today, groupOf), [quotes, meta, acts, today, groupOf]);
   const teamTot = team.reduce((t, x) => ({ total: t.total + x.total, upd: t.upd + x.upd }), { total: 0, upd: 0 });
-  const teamRows = team
-    .map((x) => ({ ...x, over: x.items.filter((i) => i.overdue).length }))
-    .sort((a, b) => b.pend - a.pend || b.total - a.total)
-    .slice(0, mob ? 6 : 8);
+  const teamRows = team.map((x) => ({ ...x, over: x.items.filter((i) => i.overdue).length })).sort((a, b) => b.pend - a.pend || b.total - a.total);
 
-  const sec = { ...card, padding: mob ? "14px 14px" : "16px 18px", display: "flex", flexDirection: "column", gap: 12, minWidth: 0 };
-  const secTitle = (t, right) => (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>{t}</div>
-      {right && <div style={{ marginLeft: "auto", fontSize: 12.5, color: X.sub }}>{right}</div>}
-    </div>
-  );
-  const linkBtn = (label, onClick) => (
-    <button onClick={onClick} style={{ border: "none", background: "transparent", color: X.tealDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 2, padding: 0 }}>
-      {label} <ChevronRight size={14} />
+  const link = (label, onClick) => (
+    <button onClick={onClick} style={{ border: "none", background: "transparent", color: X.tealDk, fontWeight: 700, fontSize: 12, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 1, padding: 0 }}>
+      {label} <ChevronRight size={13} />
     </button>
   );
-  const kpi = (label, value, caption, color) => (
-    <div style={{ background: X.head, borderRadius: 12, padding: "10px 12px", minWidth: 0 }}>
-      <div style={{ fontSize: 11.5, fontWeight: 700, color: X.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
-      <div style={{ fontSize: 19, fontWeight: 800, color, letterSpacing: -0.4, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
-      <div style={{ fontSize: 11.5, color: X.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{caption}</div>
-    </div>
-  );
-  const alert = (key, label, x, col, bg, hint) => (
-    <button
-      key={key}
-      onClick={() => onGo("portfolio", [key])}
-      className="qp-card-btn"
-      style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", border: `1px solid ${x.n ? bg : X.line}`, background: x.n ? bg : "#fff", borderRadius: 12, padding: "11px 12px", cursor: "pointer" }}
-    >
-      <span style={{ fontSize: 22, fontWeight: 800, color: x.n ? col : X.sub, minWidth: 34, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{x.n.toLocaleString("pt-BR")}</span>
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: X.ink }}>{label}</span>
-        <span style={{ display: "block", fontSize: 12, color: X.sub }}>{x.n ? _t("{0} open · {1}", moneyShort(x.v), hint) : hint}</span>
-      </span>
-      <ChevronRight size={16} color={X.sub} />
-    </button>
-  );
-
-  const goalCard = (
-    <div style={sec}>
-      {secTitle(_t("Goal · {0}", monthName), linkBtn(_t("Calendar"), () => onGo("goal")))}
-      {monthGoal > 0 ? (
-        <>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.6, color: X.ink, fontVariantNumeric: "tabular-nums" }}>{moneyShort(bookedM.v)}</span>
-            <span style={{ fontSize: 13.5, color: X.sub }}>{_t("of")}{" "}{moneyShort(monthGoal)}</span>
-            <span style={{ marginLeft: "auto", fontSize: 15, fontWeight: 800, color: pctM >= 1 ? X.green : X.tealDk }}>{Math.round((bookedM.v / monthGoal) * 100)}%</span>
-          </div>
-          <div style={{ position: "relative", height: 10, borderRadius: 9, background: X.head, overflow: "hidden" }}>
-            <div style={{ width: `${pctM * 100}%`, height: "100%", background: X.teal, borderRadius: 9 }} />
-            {/* onde deveria estar hoje */}
-            <div title={_t("Where the month should be today")} style={{ position: "absolute", top: 0, bottom: 0, left: `${Math.min(100, (dueSoFar / monthGoal) * 100)}%`, width: 2, background: X.ink, opacity: 0.55 }} />
-          </div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12.5, color: X.sub }}>
-            <span style={{ fontWeight: 700, color: pace >= 0 ? X.green : X.redDk }}>{pace >= 0 ? _t("{0} ahead of the pace", moneyShort(pace)) : _t("{0} behind the pace", moneyShort(-pace))}</span>
-            <span>{_t("Today")}{" "}{moneyShort(bookedT.v)}
-              {goalT ? _t(" of {0}", moneyShort(goalT)) : ""}
-            </span>
-          </div>
-        </>
-      ) : (
-        <div style={{ fontSize: 13, color: X.sub }}>
-          {moneyShort(bookedM.v)}{" "}{_t("booked this month · no goal set yet.")}{" "}{linkBtn(_t("Set the goal"), () => onGo("goal"))}
-        </div>
-      )}
-      {bookedM.src === "partial" && <div style={{ fontSize: 11.5, color: X.amber }}>{_t("The Sales Report does not cover the whole month yet.")}</div>}
-    </div>
-  );
-  const pipeCard = (
-    <div style={sec}>
-      {secTitle(_t("Portfolio"), periodTxt)}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
-        {kpi(_t("Open"), moneyShort(k.open.v), _t("{0} quotes", k.open.n.toLocaleString("pt-BR")), X.amber)}
-        {kpi(_t("Won"), moneyShort(k.won.v), _t("{0} quotes", k.won.n.toLocaleString("pt-BR")), X.green)}
-        {kpi(_t("Hit rate"), k.hit == null ? "—" : `${Math.round(k.hit * 100)}%`, _t("won ÷ quoted (QTs)"), X.tealDk)}
-        {kpi(_t("Lost"), moneyShort(k.lost.v), _t("{0} quotes", k.lost.n.toLocaleString("pt-BR")), X.redDk)}
+  const goalExtra =
+    monthGoal > 0 ? (
+      <div style={{ position: "relative", height: 5, borderRadius: 4, background: "#EEF2F5", marginTop: 7, overflow: "hidden" }} title={_t("The mark is where the month should be today")}>
+        <div style={{ width: `${Math.min(1, pctM) * 100}%`, height: "100%", background: MG_W, borderRadius: 4 }} />
+        <div style={{ position: "absolute", top: 0, bottom: 0, left: `${Math.min(100, (dueSoFar / monthGoal) * 100)}%`, width: 2, background: X.ink, opacity: 0.5 }} />
       </div>
-      <div style={{ fontSize: 11.5, color: X.sub }}>{filtersTxt}</div>
-    </div>
+    ) : (
+      <div style={{ marginTop: 3 }}>{link(_t("Set the goal"), () => onGo("goal"))}</div>
+    );
+  const strip = (
+    <MgStrip
+      items={[
+        [_t("Booked · {0}", monthName), moneyShort(bookedM.v), monthGoal > 0 ? `${_t("{0}% of {1}", Math.round(pctM * 100), moneyShort(monthGoal))} · ${pace >= 0 ? _t("{0} ahead", moneyShort(pace)) : _t("{0} behind", moneyShort(-pace))}` : _t("no goal yet"), "", goalExtra],
+        [_t("Open"), moneyShort(k.open.v), _t("{0} quotes", nS(k.open.n))],
+        [_t("Hit rate"), pctS(k.hit), _t("won ÷ quoted (QTs)")],
+        [_t("Overdue follow-ups"), nS(k.late.n), k.late.n ? _t("{0} open", moneyShort(k.late.v)) : _t("none"), k.late.n ? "bad" : ""],
+        [_t("Follow-ups for today"), nS(k.due.n), k.due.n ? _t("{0} open", moneyShort(k.due.v)) : _t("none")],
+      ]}
+    />
   );
+  // o que precisa de atenção: uma linha por item, um ponto de cor só para dizer o tipo
+  const attn = [
+    ["late", _t("Overdue follow-ups"), k.late, X.redDk, _t("past the FUP date")],
+    ["due", _t("Follow-ups for today"), k.due, "#B7791F", _t("due today")],
+    ["nofup", _t("Open quotes without FUP"), k.nofup, "#94A3B8", _t("never show up in the plan")],
+  ];
+  const rowS = { display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: `1px solid #EEF2F5`, minWidth: 0 };
   const attnCard = (
-    <div style={sec}>
-      {secTitle(_t("Needs attention"), periodTxt)}
-      {alert("late", _t("Overdue follow-ups"), k.late, X.redDk, X.redSoft, _t("past the FUP date"))}
-      {alert("due", _t("Follow-ups for today"), k.due, X.amber, X.amberSoft, _t("due today"))}
-      {alert("nofup", _t("Open quotes without FUP"), k.nofup, "#475569", "#EEF2F5", _t("never show up in the plan"))}
-    </div>
+    <MgCard title={_t("Needs attention")} right={periodTxt}>
+      {attn.map(([key, l, x, dot, hint]) => (
+        <div key={key} className="qp-card-btn" onClick={() => onGo("portfolio", [key])} style={{ ...rowS, cursor: "pointer" }}>
+          <span style={{ width: 8, height: 8, borderRadius: 99, background: x.n ? dot : "#D5DCE3", flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>{l}</span>
+            <span style={{ display: "block", fontSize: 11.5, color: X.sub }}>{hint}</span>
+          </span>
+          <span style={{ textAlign: "right" }}>
+            <span style={{ display: "block", fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: key === "late" && x.n ? X.redDk : X.ink }}>{nS(x.n)}</span>
+            <span style={{ display: "block", fontSize: 11, color: X.sub }}>{x.n ? moneyShort(x.v) : ""}</span>
+          </span>
+          <ChevronRight size={15} color="#A0AEC0" />
+        </div>
+      ))}
+    </MgCard>
   );
   const teamCard = (
-    <div style={sec}>
-      {secTitle(_t("Team today"), linkBtn(_t("Team"), () => onGo("sellers")))}
-      <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-        <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: -0.5 }}>{teamTot.upd}</span>
-        <span style={{ fontSize: 13.5, color: X.sub }}>{_t("of")}{" "}{teamTot.total}{" "}{_t("follow-ups updated today")}</span>
+    <MgCard title={_t("Team today")} right={link(_t("Team"), () => onGo("sellers"))}>
+      <div style={{ fontSize: 12.5, color: X.sub, paddingBottom: 6 }}>
+        <b style={{ color: X.ink, fontSize: 15 }}>{nS(teamTot.upd)}</b> {_t("of")} {nS(teamTot.total)} {_t("follow-ups updated today")}
       </div>
       {teamRows.length ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {teamRows.map((x) => (
-            <div key={x.name} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13 }}>
-                <span style={{ fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || _t("(no salesperson)")}</span>
-                {x.over > 0 && <span style={{ fontSize: 11.5, fontWeight: 700, color: X.redDk, whiteSpace: "nowrap" }}>{x.over}{" "}{_t("overdue")}</span>}
-                <span style={{ fontWeight: 800, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
-                  {x.upd}
-                  <span style={{ color: X.sub, fontWeight: 600 }}>/{x.total}</span>
-                </span>
-              </div>
-              <div style={{ height: 6, borderRadius: 9, background: X.head, overflow: "hidden" }}>
-                <div style={{ width: `${x.total ? (x.upd / x.total) * 100 : 0}%`, height: "100%", background: x.upd >= x.total ? X.green : X.teal }} />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div style={{ fontSize: 13, color: X.sub }}>{_t("No follow-up due today.")}</div>
-      )}
-    </div>
-  );
-  const topCard = (
-    <div style={sec}>
-      {secTitle(_t("Highest priority open quotes"), linkBtn(_t("All quotes"), () => onGo("portfolio", [])))}
-      {k.top.length ? (
-        k.top.map((r) => (
-          <div key={r.id} className="qp-card-btn" onClick={() => onOpenQuote(r.id, false, k.top.map((x) => x.id))} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", minWidth: 0, padding: "2px 0" }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.c}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4, flexWrap: "wrap", fontSize: 11.5, color: X.sub }}>
-                <PrioBadge v={r.prio} />
-                <TempPill v={r.temp} />
-                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{groupOf(r.sp) || r.id}</span>
-              </div>
-            </div>
-            <div style={{ textAlign: "right", flexShrink: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{moneyShort(r.open)}</div>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: !r.fup ? X.amber : r.next && r.next < today ? X.redDk : X.sub, whiteSpace: "nowrap" }}>
-                {!r.fup ? _t("No FUP") : r.next && r.next < today ? _t("Overdue · {0}", fmtDay(r.next)) : r.next === today ? _t("Today") : r.next ? _t("Next {0}", fmtDay(r.next)) : FUP[r.fup].label}
-              </div>
-            </div>
+        teamRows.slice(0, mob ? 6 : 10).map((x) => (
+          <div key={x.name} style={{ ...rowS, padding: "7px 0" }}>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name || _t("(no salesperson)")}</span>
+            {x.over > 0 && <span style={{ fontSize: 11.5, fontWeight: 700, color: X.redDk, whiteSpace: "nowrap" }}>{x.over === 1 ? _t("1 overdue") : _t("{0} overdue", x.over)}</span>}
+            {!mob && <MgBar v={x.upd} max={x.total} w={70} color={MG_W} />}
+            <span style={{ fontSize: 12.5, fontWeight: 800, fontVariantNumeric: "tabular-nums", minWidth: 42, textAlign: "right" }}>
+              {x.upd}
+              <span style={{ color: X.sub, fontWeight: 500 }}>/{x.total}</span>
+            </span>
           </div>
         ))
       ) : (
-        <div style={{ fontSize: 13, color: X.sub }}>{_t("No open quote in this period.")}</div>
+        <div style={{ fontSize: 12.5, color: X.sub }}>{_t("No follow-up due today.")}</div>
       )}
-    </div>
+    </MgCard>
+  );
+  const topCard = (
+    <MgCard title={_t("Highest priority open quotes")} right={link(_t("All quotes"), () => onGo("portfolio", []))}>
+      {k.top.length ? (
+        k.top.map((r) => {
+          const late = r.next && r.next < today;
+          return (
+            <div key={r.id} className="qp-card-btn" onClick={() => onOpenQuote(r.id, false, k.top.map((x) => x.id))} style={{ ...rowS, cursor: "pointer" }}>
+              <span style={{ fontSize: 11.5, fontWeight: 800, color: X.sub, minWidth: 24, textAlign: "center", fontVariantNumeric: "tabular-nums" }} title={_t("Priority (0–100)")}>
+                {Math.round(r.prio)}
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.c}</span>
+                <span style={{ display: "block", fontSize: 11.5, color: X.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {r.id} · {groupOf(r.sp) || "—"}
+                </span>
+              </span>
+              <span style={{ textAlign: "right", flexShrink: 0 }}>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{moneyShort(r.open)}</span>
+                <span style={{ display: "block", fontSize: 11, fontWeight: late ? 700 : 500, color: late ? X.redDk : X.sub, whiteSpace: "nowrap" }}>
+                  {!r.fup ? _t("No FUP") : late ? _t("Overdue · {0}", fmtDay(r.next)) : r.next === today ? _t("Today") : r.next ? _t("Next {0}", fmtDay(r.next)) : FUP[r.fup].label}
+                </span>
+              </span>
+            </div>
+          );
+        })
+      ) : (
+        <div style={{ fontSize: 12.5, color: X.sub }}>{_t("No open quote in this period.")}</div>
+      )}
+    </MgCard>
   );
   return (
-    <div style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "repeat(auto-fit, minmax(380px, 1fr))", gap: 12, alignItems: "start" }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-        {goalCard}
-        {attnCard}
-        {pipeCard}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+      {strip}
+      <div style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "minmax(0, 1fr) minmax(0, 1.15fr)", gap: 12, alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          {attnCard}
+          {teamCard}
+        </div>
         {topCard}
-        {teamCard}
+      </div>
+      <div style={{ fontSize: 11.5, color: X.sub }}>
+        {periodTxt} · {filtersTxt}
       </div>
     </div>
   );
@@ -5484,7 +6110,8 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                           <input
                             type="checkbox"
                             checked={!r.off}
-                            onChange={() => onToggleExcl(r.id, r.c, !r.off)}
+                            disabled={!onToggleExcl}
+                            onChange={() => onToggleExcl && onToggleExcl(r.id, r.c, !r.off)}
                             title={r.off ? _t("Put back in the plan") : _t("Leave out of the plan")}
                             style={{ accentColor: X.teal, cursor: "pointer" }}
                           />
@@ -6220,7 +6847,7 @@ const SRV_NAME = _t("the server");
 const SRV_REPVER = "qp_srv_repver"; // versão das cotações guardadas no cache deste navegador
 const SRV_SAVE_DELAY = 1200; // ms depois da última mudança
 const SRV_PULL_EVERY = 20000; // ms entre as olhadas no servidor
-const REPORT_KINDS = new Set(["status", "amount", "order"]); // histórico que vem do Quote Report (só a gerência grava)
+const REPORT_KINDS = new Set(["status", "amount", "order"]); // histórico que vem do Quote Report (vai junto com a importação, de qualquer perfil)
 async function api(path, { body, timeout = 60000 } = {}) {
   const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
   const tm = ctl && setTimeout(() => ctl.abort(), timeout);
@@ -6318,6 +6945,8 @@ export default function App() {
   const setPref = (k, v) => setPrefs((p) => ({ ...p, [k]: v }));
   const restoreRef = useRef(null);
   const loadDataRef = useRef(null);
+  const quoteInRef = useRef(null), // celular: importar pelo menu do usuário
+    salesInRef = useRef(null);
   const handleRef = useRef(null); // pasta dos arquivos de dados (FileSystemDirectoryHandle)
   const skipSave = useRef(0);
   const stateRef = useRef(null);
@@ -6975,7 +7604,8 @@ export default function App() {
         e1 = new Set(st0.excl || []);
       const add = [...e1].filter((id) => !e0.has(id) && ok(id)),
         del = [...e0].filter((id) => !e1.has(id) && ok(id));
-      const acts = (st0.acts || []).filter((a) => !savedActs.current.has(actKey(a)) && (REPORT_KINDS.has(a.k) ? sc.mgr : ok(a.id)));
+      // registros da importação (Entrou no programa, Quote Report…): vão junto com o relatório, de qualquer perfil
+      const acts = (st0.acts || []).filter((a) => !savedActs.current.has(actKey(a)) && (REPORT_KINDS.has(a.k) ? sc.mgr || (needR && sc.rep) : ok(a.id)));
       if (Object.keys(meta).length) body.meta = meta;
       if (add.length || del.length) body.excl = { add, del };
       if (acts.length) body.acts = acts;
@@ -6986,7 +7616,7 @@ export default function App() {
         if (Object.keys(dg).length) body.dayGoals = dg;
       }
     }
-    if (needR && sc.mgr) {
+    if (needR && (sc.mgr || sc.rep)) {
       const ids = new Set(qs.map((q) => q.id));
       const qr = st0.quotesRep || {},
         sr = st0.salesRep;
@@ -7026,7 +7656,8 @@ export default function App() {
       if (body.rep && !othersR) kv.set(SRV_REPVER, r.rep).catch(() => {});
       srvRetry.current = 0;
       setDf((d) => ({ ...d, st: "on", part: "", savedAt: nowStamp(), err: "" }));
-      if (r.skipped && r.skipped.length) say("warn", r.skipped.length === 1 ? _t("1 change was not saved: {0} is not in your portfolio.", r.skipped[0]) : _t("{0} changes were not saved: {1}{2} are not in your portfolio.", r.skipped.length, r.skipped.slice(0, 5).join(", "), r.skipped.length > 5 ? "…" : ""));
+      if (r.skipped && r.skipped.length && sc.mgr) say("warn", _t("{0} change(s) not saved: the management only views the quotes (the follow-up is done by the salesperson).", r.skipped.length));
+      else if (r.skipped && r.skipped.length) say("warn", r.skipped.length === 1 ? _t("1 change was not saved: {0} is not in your portfolio.", r.skipped[0]) : _t("{0} changes were not saved: {1}{2} are not in your portfolio.", r.skipped.length, r.skipped.slice(0, 5).join(", "), r.skipped.length > 5 ? "…" : ""));
       if (othersD || othersR) setTimeout(() => pullRef.current && pullRef.current(false), 30);
     } catch (e) {
       console.warn("Quote Follow Up · could not save on the server", e);
@@ -7344,7 +7975,7 @@ export default function App() {
   const scopedToday = useMemo(() => scopeQuotes(quotes, { who }), [quotes, who]);
   // servidor: o vendedor só grava nas próprias cotações (o servidor confere também)
   const myIds = useMemo(() => (role === "manager" ? null : new Set(scopedToday.map((q) => q.id))), [role, scopedToday]);
-  scopeRef.current = { mgr: role === "manager", ids: myIds };
+  scopeRef.current = { mgr: role === "manager", ids: myIds, rep: !!ROLES[role] }; // rep: os três perfis importam os relatórios
   // Sales Report no recorte da tela: booked por dia só do vendedor e da linha escolhidos
   const salesView = useMemo(() => salesForLine(salesForSeller(salesRep, who), line), [salesRep, who, line]);
   // período como no pulz: ano fiscal inteiro ou um mês dele (padrão: o ano fiscal atual)
@@ -7722,7 +8353,7 @@ export default function App() {
   }, [srv]);
   const repInfo = (r, kind) =>
     r ? _t("{0} · {1}–{2} · last file {3}{4}", kind === "q" ? r.quotes.length.toLocaleString("pt-BR") + _t(" quotes stored") : r.rows.length.toLocaleString("pt-BR") + _t(" booked rows stored"), fmtDate(r.minD), fmtDate(r.maxD), r.fileName || "—", r.at ? _t(" imported ") + fmtStamp(r.at) : "") : "";
-  const selS = { ...inp, background: "#FEF6EA", borderColor: "#E9C48A", color: "#8A5A12", fontWeight: 600, maxWidth: 230 };
+  const selS = { ...inp, background: "#fff", borderColor: X.line, color: X.ink, fontWeight: 600, maxWidth: 230 }; // filtros neutros (sem cor chamando a atenção)
 
   /* ---------- botão Save (ao lado das abas) ---------- */
   const saveBtn = (() => {
@@ -7934,7 +8565,7 @@ export default function App() {
   );
   const periodSel = showPeriod && (
     <div style={{ position: "relative", display: "flex", alignItems: "center", minWidth: 0, ...(mob ? { flex: 1 } : null) }} title={_t("Period: all, a whole fiscal year or one month")}>
-      <CalendarDays size={15} color="#8A5A12" style={{ position: "absolute", left: 11, pointerEvents: "none" }} />
+      <CalendarDays size={15} color={X.sub} style={{ position: "absolute", left: 11, pointerEvents: "none" }} />
       <select value={period} onChange={(e) => setPref("period", e.target.value)} style={{ ...selS, maxWidth: "none", minWidth: mob ? 0 : 250, width: mob ? "100%" : undefined, paddingLeft: 34, height: mob ? 40 : 36 }}>
         {periodOpts}
       </select>
@@ -7963,7 +8594,7 @@ export default function App() {
             <button
               key={v || "all"}
               onClick={() => setPref("line", v)}
-              style={{ flex: mob ? 1 : "none", border: "none", borderRadius: 7, padding: mob ? "9px 11px" : "5px 11px", fontSize: 12, fontWeight: on ? 700 : 500, cursor: "pointer", background: on ? (v ? "#FDE9CF" : X.tealSoft) : "transparent", color: on ? (v ? "#8A5A12" : X.tealDk) : X.sub }}
+              style={{ flex: mob ? 1 : "none", border: "none", borderRadius: 7, padding: mob ? "9px 11px" : "5px 11px", fontSize: 12, fontWeight: on ? 700 : 500, cursor: "pointer", background: on ? X.tealSoft : "transparent", color: on ? X.tealDk : X.sub }}
             >
               {v || _t("All")}
             </button>
@@ -8014,7 +8645,7 @@ export default function App() {
     <label style={{ display: "flex", flexDirection: mob ? "column" : "row", alignItems: mob ? "stretch" : "center", gap: mob ? 5 : 8, fontSize: 12.5, fontWeight: 600, color: X.ink }}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 7, ...(mob ? fLbl : null) }}>
         <UserRound size={15} color={X.sub} />{" "}{_t("Salesperson")}</span>
-      <select value={seller} onChange={(e) => setPref("seller", e.target.value)} title={_t("Outside = Sales Person column · Inside = Quoted By column")} style={{ ...selS, maxWidth: "none", minWidth: mob ? 0 : 230, width: mob ? "100%" : undefined, height: mob ? 40 : 36, background: seller ? "#FEF6EA" : "#FDE9CF" }}>
+      <select value={seller} onChange={(e) => setPref("seller", e.target.value)} title={_t("Outside = Sales Person column · Inside = Quoted By column")} style={{ ...selS, maxWidth: "none", minWidth: mob ? 0 : 230, width: mob ? "100%" : undefined, height: mob ? 40 : 36, ...(seller ? { background: X.tealSoft, borderColor: "#9FD6C9", color: X.tealDk } : null) }}>
         {sellerOpts}
       </select>
     </label>
@@ -8100,7 +8731,7 @@ export default function App() {
     </Sheet>
   );
   const filterBar =
-    mob || !quotesRep || tab === "data" || tab === "today" ? null : (
+    mob || !quotesRep || tab === "data" || tab === "today" || tab === "forms" ? null : (
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         {periodSel}
         {clsSel}
@@ -8251,6 +8882,9 @@ export default function App() {
       ? _t("Saving…")
       : _t("No data folder: the changes are only in this browser");
   const menuItems = [
+    mob && ROLES[role] && { label: busy === "quote" ? _t("Reading…") : _t("Import the Quote Report"), icon: FileSpreadsheet, onClick: () => quoteInRef.current && quoteInRef.current.click() },
+    mob && ROLES[role] && { label: busy === "sales" ? _t("Reading…") : _t("Import the Sales Report"), icon: Upload, onClick: () => salesInRef.current && salesInRef.current.click() },
+    mob && role === "manager" && { label: _t("DCS / Value Added forms"), icon: FileText, onClick: () => setTab("forms") },
     mob && role === "manager" && { label: isAdmin ? _t("Data and users") : _t("Data and reports"), icon: Database, onClick: () => setTab("data") },
     connected && { label: checkSt.busy ? _t("Checking…") : _t("Bring the latest changes"), icon: RefreshCw, onClick: () => pullIfChanged(true) },
     connected && !srv && { label: _t("Save now"), icon: Save, onClick: () => saveNow(!unsaved) },
@@ -8370,8 +9004,11 @@ export default function App() {
     setTab(k);
     window.scrollTo(0, 0);
   };
-  const tableProps = { onAskClose: askClose, thermo, rows, cancelRows, meta, onMeta, today, periodLabel: periodLabelOf(period), qIndex, sales: salesView, acts, onNote, onDone, onResched, onReq, user, onUser: setUser, notesBy, openQ, onOpenQuote: openQuote };
-  const calProps = { goalEdit: role === "manager", thermo, quotes: scoped, sales: salesView, cls, line, meta, onMeta, onAskClose: askClose, onDone, onToggleExcl, onOpenQuote: openQuote, notesBy, dailyGoal, setDailyGoal, dayGoals, setDayGoals, excl, prefs, setPref, today };
+  // gerência: só visualiza (nada de FUP, % Win, notas, fechar, plano ou DCS) — as funções de gravação não chegam às telas
+  const ro = role === "manager";
+  const W = ro ? { onMeta: noop, onAskClose: noop, onNote: null, onDone: null, onResched: null, onReq: null, onReopen: null, onWhy: null, onDcs: null, onToggleExcl: null } : { onMeta, onAskClose: askClose, onNote, onDone, onResched, onReq, onReopen: doReopen, onWhy: doWhy, onDcs, onToggleExcl };
+  const tableProps = { onAskClose: W.onAskClose, thermo, rows, cancelRows, meta, onMeta: W.onMeta, today, periodLabel: periodLabelOf(period), qIndex, sales: salesView, acts, onNote: W.onNote, onDone: W.onDone, onResched: W.onResched, onReq: W.onReq, user, onUser: setUser, notesBy, openQ, onOpenQuote: openQuote };
+  const calProps = { goalEdit: role === "manager", thermo, quotes: scoped, sales: salesView, cls, line, meta, onMeta: W.onMeta, onAskClose: W.onAskClose, onDone: W.onDone, onToggleExcl: W.onToggleExcl, onOpenQuote: openQuote, notesBy, dailyGoal, setDailyGoal, dayGoals, setDayGoals, excl, prefs, setPref, today };
   const content = !loaded || (srv && !srvData) ? (
     srv && df.st === "err" ? (
       <div style={{ ...card, padding: "32px 18px", textAlign: "center", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
@@ -8389,8 +9026,10 @@ export default function App() {
     )
   ) : tab === "data" ? (
     dataTab
+  ) : tab === "forms" ? (
+    <DcsFormsReport acts={acts} today={today} onOpenQuote={openQuote} />
   ) : !quotesRep ? (
-    role === "manager" ? (
+    ROLES[role] ? (
       <EmptyState onFile={importFile} srv={srv} />
     ) : (
       <div style={{ ...card, padding: "32px 18px", textAlign: "center", display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
@@ -8408,14 +9047,14 @@ export default function App() {
   ) : tab === "sellers" ? (
     <SellerReport quotes={scoped} periodRows={rows} meta={meta} acts={acts} groupOf={groupOf} today={today} filtersTxt={filtersTxt} periodTxtMain={periodLabelOf(period)} onOpenQuote={openQuote} />
   ) : tab === "analysis" ? (
-    <AnalysisModal
-      inline
+    <MgrAnalysis
       rows={rows}
       cancelRows={cancelRows}
       meta={meta}
       qIndex={qIndex}
       groupOf={groupOf}
       periodTxt={periodLabelOf(period)}
+      today={today}
       sellerTxt={seller ? seller.slice(3) : _t("All salespeople")}
       filtersTxt={`${cls || _t("All classifications")} · ${line ? _t("line ") + line : _t("all lines")}`}
       onOpenQuote={openQuote}
@@ -8425,6 +9064,7 @@ export default function App() {
   );
 
   return (
+    <ROCtx.Provider value={ro}>
     <div className="qp-shell" style={{ minHeight: "100%", background: X.bg, display: "flex", flexDirection: "column", color: X.ink }}>
       {css}
       {/* ---------- erro do arquivo de dados (fica até fechar) ---------- */}
@@ -8499,7 +9139,7 @@ export default function App() {
         {mob ? null : (
           <div className="no-print" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {dfChip}
-            {role === "manager" && (
+            {ROLES[role] && (
               <>
                 <div style={{ width: 1, height: 26, background: X.line, margin: "0 2px" }} />
                 {imports}
@@ -8538,6 +9178,23 @@ export default function App() {
             if (f) restore(f);
           }}
         />
+        {[
+          [quoteInRef, "quote"],
+          [salesInRef, "sales"],
+        ].map(([r, k]) => (
+          <input
+            key={k}
+            ref={r}
+            type="file"
+            accept=".xlsx,.xls,.xlsm,.csv"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files && e.target.files[0];
+              e.target.value = "";
+              if (f) importFile(f, k);
+            }}
+          />
+        ))}
         <input
           ref={loadDataRef}
           type="file"
@@ -8591,15 +9248,15 @@ export default function App() {
           sales={salesView}
           acts={acts}
           thermo={qIndex.get(openQ) ? thermo[qIndex.get(openQ).nn] : null}
-          onNote={onNote}
-          onDone={onDone}
-          onResched={onResched}
-          onReq={onReq}
-          onAskClose={askClose}
-          onReopen={doReopen}
-          onWhy={doWhy}
-          onDcs={onDcs}
-          focusDone={openDone}
+          onNote={W.onNote}
+          onDone={W.onDone}
+          onResched={W.onResched}
+          onReq={W.onReq}
+          onAskClose={W.onAskClose === noop ? null : W.onAskClose}
+          onReopen={W.onReopen}
+          onWhy={W.onWhy}
+          onDcs={W.onDcs}
+          focusDone={!ro && openDone}
           user={user}
           onUser={setUser}
           onClose={() => setOpenQ("")}
@@ -8623,6 +9280,7 @@ export default function App() {
 
       {toastEl}
     </div>
+    </ROCtx.Provider>
   );
 }
 

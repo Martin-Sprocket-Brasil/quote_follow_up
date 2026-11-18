@@ -1301,7 +1301,7 @@ ORDER.forEach((name) => {
     </div>`);
 
   card(`<h3>Consultas prontas</h3>
-    <div class="desc">Para rodar no HeidiSQL ou no <code>mysql.exe</code>, dentro do banco <code>quote_follow_up</code>.</div>
+    <div class="desc">No programa, a gerência vê a mesma lista na aba <b>Formulários</b> (com exportação para Excel). Para consultar direto no banco, rode no HeidiSQL ou no <code>mysql.exe</code>, dentro do banco <code>quote_follow_up</code>.</div>
     <h4>Última versão de cada formulário</h4>
     ${sql(`-- uma linha por QT: só a versão mais recente
 SELECT at, quote_id, to_value AS tipo, created_by,

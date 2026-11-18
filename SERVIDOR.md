@@ -126,7 +126,8 @@ Sem o Access, qualquer pessoa com o link vê a tela de login, e nela a lista de 
 ## O que o servidor garante
 
 - **Vendedor só grava nas próprias cotações:** externo pelo Sales Person, interno pelo Quoted By, com o mesmo agrupamento de nomes da tela. Tentativas fora da carteira são ignoradas.
-- **Só a gerência** importa relatórios e muda as metas. **Só o Admin** escolhe a tela de cada pessoa e zera senhas.
+- **Os três perfis** (vendedor externo, interno e gerência) importam o Quote Report e o Sales Report. **Só a gerência** muda as metas. **Só o Admin** escolhe a tela de cada pessoa e zera senhas.
+- **Gerência só visualiza as cotações:** follow-up, % Win, notas, fechamento, plano do dia e formulário DCS vindos da gerência são recusados (só os vendedores gravam).
 - O **histórico** continua só crescendo: o banco recusa alteração e exclusão, e o mesmo registro mandado duas vezes não entra de novo.
 - **Duas pessoas gravando ao mesmo tempo:** as gravações entram uma de cada vez, e o que cada uma mudou em cotações diferentes fica. Na mesma cotação, vale a última.
 - **Login:**

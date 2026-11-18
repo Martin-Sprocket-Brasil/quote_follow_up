@@ -19,9 +19,13 @@ Tudo roda no navegador, sem servidor. Os arquivos não saem do computador.
 | Papel | Abas |
 |---|---|
 | Vendedor externo (Sales Person) e vendedor interno (Quoted By) | **Today** (follow-ups do dia, da maior prioridade para a menor) · **Quotes** (as cotações dele) · **Calendar** (o plano dos dias e a meta) |
-| Gerência | **Overview** · **Quotes** · **Team** (FUP por vendedor) · **Goal** · **Analysis** · **Data** (no celular, fica no menu do usuário) |
+| Gerência | **Overview** · **Quotes** · **Team** (FUP por vendedor) · **Goal** · **Analysis** · **Forms** · **Data** (no celular, Forms e Data ficam no menu do usuário) |
 
-**Overview (gerência):** a meta do mês (vendido × meta, e se está à frente ou atrás do ritmo), o que precisa de atenção (follow-ups atrasados, de hoje e cotações sem FUP — tocar abre a lista já filtrada), a carteira do período (em aberto, ganho, taxa de conversão, perdido), as cotações em aberto de maior prioridade e a equipe hoje.
+**Importar relatórios:** os três perfis (vendedor externo, interno e gerência) importam o Quote Report e o Sales Report: no computador pelos botões do topo; no celular pelo menu do usuário (*Importar o Quote Report* / *Importar o Sales Report*). Cada importação vale para todo mundo. Um relatório filtrado (só as cotações de um vendedor, por exemplo) não apaga as outras: só entram as cotações do arquivo.
+
+**Gerência só visualiza as cotações:** não faz FUP, não muda % Win, não escreve notas, não fecha (Lost/Cancelled), não mexe no plano do dia e não preenche o formulário DCS. Ao abrir uma QT/SO aparece o **Resumo da cotação**: vendedor interno e externo, datas (criada, entrou no programa, último follow-up e quem fez, próximo follow-up ou quando fechou e em quantos dias), valores (cotado, vendido, pedidos, linhas), follow-ups feitos, notas, última atividade, requisição e motivo de fechamento, além do histórico completo e do PDF do DCS. Na tabela e no calendário, FUP e % Win aparecem como texto. O servidor também recusa essas gravações vindas da gerência.
+
+**Overview (gerência):** uma faixa com os números do dia (vendido no mês × meta e o ritmo, em aberto, taxa de conversão, follow-ups atrasados e de hoje), o que precisa de atenção (tocar abre a lista já filtrada), a equipe hoje e as cotações em aberto de maior prioridade. Visual enxuto: cor só para o que é problema (atrasado em vermelho).
 
 **Prioridade (0 a 100):** 70% do % Win + 30% do Thermometer (a mesma conta do Calendar; mude os pesos em `PRIO_WIN` / `PRIO_TEMP` no `core.js`). Aparece em cada cotação, com o Thermometer, e a lista vem da maior para a menor. No computador é uma coluna que dá para ordenar.
 
@@ -316,6 +320,8 @@ O PDF gerado é o formulário oficial, com os campos preenchidos e ainda editáv
 - **Windows 10:** Configurações → Aplicativos → Aplicativos padrão → *Escolher aplicativos padrão por protocolo* → **MAILTO** → **Outlook**.
 - Ou, no próprio Outlook clássico: Arquivo → Opções → Geral → marque *Tornar o Outlook o programa padrão para Email, Contatos e Calendário*.
 
+**Gerência → aba Formulários** (no celular: menu do usuário → *Formulários DCS / Value Added*): todos os formulários salvos, a última versão de cada QT (ou *Todas as versões*). Filtros de período (data em que foi salvo), tipo, vendedor e busca (QT, SO, cliente, distribuidor, cidade, descrição). Mostra quantos de cada tipo, o valor monetizado (BRL e USD, sem somar versões antigas), os subgrupos mais usados e, em cada linha, o PDF; clicar abre a QT. **Exportar para Excel** gera duas abas: *Formulários* (todos os campos, um por linha, valor como número) e *Resumo* (por tipo e por subgrupo), sempre com os filtros da tela. O programa sabe quando o formulário foi salvo; se o e-mail foi enviado, não (o envio acontece no Outlook / WhatsApp).
+
 O formulário fica no **histórico** da QT como uma entrada que não pode ser alterada nem excluída. *Corrigir* grava uma versão nova; o quadro e o PDF mostram sempre a última.
 
 Observação sobre o modelo: no PDF original, as listas *Economia (monetizado ou não)* e *Documentado* eram o mesmo campo, ou seja, escolher uma mudava a outra. O `dcs-va-template.pdf` já vem corrigido e vazio.
@@ -426,10 +432,12 @@ Quando a vendedora já sabe que a cotação não vai sair (antes do Quote Report
 - Se o Quote Report depois disser Won, vale o Won.
 
 ## Analysis
-O botão **Analysis** (junto das abas) abre um card grande no centro da tela, com o resto desfocado (Esc ou o X fecham). Segue os filtros da tela e inclui as canceladas. No topo: **vendedor** (All salespeople ou um só), **cliente** (All customers ou um só; a lista mostra só os clientes do vendedor escolhido) e **QTs / Value**.
-- **Resultado**: % de Open, Won, Lost e Cancelled (com QTs e valor — o valor da ganha é o **Sold**, o Booked do pedido, igual à coluna Sold da carteira; das outras, o valor cotado), barra com a divisão e o cartão do **hit rate** = ganho ÷ total cotado (Open + Won + Lost, sem as canceladas, como o total Quoted da carteira): em QTs, QTs ganhas ÷ QTs cotadas; em Value, Sold ÷ valor cotado.
-- **Lost · reasons / Cancelled · reasons**: rosca e % de cada motivo entre as QTs que já têm motivo; o selo vermelho *N without reason ›* abre essas QTs no painel (as setas passam por elas) para escolher o motivo.
-- **Top 10 customers** e **Top 10 product groups**: os 10 com mais Lost + Cancelled. Embaixo do nome, a barra com todas as situações do cliente/grupo (Open, Won, Lost, Cancelled); ao lado do nome, o motivo mais comum; à direita, o lost + cancelled em vermelho e "% of total". Clique num cliente do Top 10 para ver só ele; com um cliente escolhido, o quadro da esquerda vira a lista de **todas** as QTs perdidas e canceladas dele (filtro All / Lost / Cancelled, com data, situação, motivo — *set reason ›* quando falta — e valor; clique para abrir a QT e escolher o motivo).
+Segue os filtros do topo (período, classificação, linha e vendedor) e mostra uma parte por vez, escolhida no topo. Em cima, a faixa com cotado, ganho, taxa de conversão (QTs ganhas ÷ QTs cotadas; canceladas ficam fora), em aberto e perdidas + canceladas. O botão **Excel** baixa todas as partes, uma aba para cada.
+- **Vendedores**: por vendedor externo (Sales Person) ou interno (Quoted By): QTs, cotado, ganho, conversão, em aberto, follow-ups atrasados, cotações sem FUP e a média de dias da cotação até o pedido. Clique no cabeçalho para ordenar.
+- **Mês a mês**: gráfico cotado × ganho pelo mês da cotação (passe o mouse num mês para ver os números) e a tabela com conversão, ainda em aberto, perdidas e canceladas.
+- **Carteira em aberto**: valor em aberto, valor ponderado pelo % Win, idade média, atrasados; idade das cotações (0–15 até mais de 90 dias), situação do follow-up (em dia, hoje, atrasado, sem FUP), % Win e as 10 maiores cotações em aberto (clique para abrir).
+- **Clientes**: cotado, ganho, conversão, em aberto, perdidas + canceladas e o motivo principal, com busca.
+- **Motivos**: motivos das perdidas e das canceladas (quantas ainda estão sem motivo) e os Product Groups com mais perdas.
 
 ## Login (usuários e senhas)
 Ao abrir o programa aparece a tela de login: escolha o seu nome (os vendedores da coluna **Sales Person** do Quote Report) e digite a senha.
@@ -443,3 +451,4 @@ Ao abrir o programa aparece a tela de login: escolha o seu nome (os vendedores d
 - **Arquivos antigos** com a aba *Users* aberta são lidos normalmente e, no próximo Save, ela vira a aba Config cifrada.
 - **Esqueceu a senha do Admin?** Feche o programa em todos os PCs, apague a aba *Config* do data.xlsx, limpe os dados do site no seu navegador e crie a nova senha do Admin antes de os outros abrirem o programa (os vendedores também criam senhas novas).
 - **Limite**: o login organiza o acesso dentro do programa, mas não é uma proteção forte — quem tem acesso à pasta da rede consegue abrir os arquivos Excel direto. Para proteger de verdade, a pasta precisa ter permissão de acesso na rede (TI).
+
