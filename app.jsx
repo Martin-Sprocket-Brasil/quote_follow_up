@@ -1053,6 +1053,53 @@ function dcsMailto(f) {
   const subj = `Formulário ${DCS_KINDS[f.kind] ? DCS_KINDS[f.kind].pt : "DCS / VA"} · ${f.qt} · ${f.endUser || ""}`;
   return `mailto:${DCS_MAIL}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(dcsMailText(f) + "\n\n(PDF do formulário em anexo)")}`;
 }
+/* e-mail pronto (.eml) com o PDF JÁ ANEXADO: abrindo o arquivo baixado, o Outlook clássico mostra um e-mail novo
+   (X-Unsent: 1 = rascunho, com o botão Enviar), com destinatário, assunto, texto e anexo. Não depende do
+   programa de e-mail padrão do Windows (o mailto: pode cair no Outlook novo) e dispensa anexar à mão. */
+const b64 = (bytes) => {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+};
+const b64utf8 = (str) => b64(new TextEncoder().encode(str));
+const wrap76 = (str) => str.replace(/.{1,76}/g, "$&\r\n").trimEnd();
+// cabeçalho com acento: palavras codificadas (RFC 2047) de até ~30 caracteres cada
+const hdrWord = (str) => {
+  const chars = Array.from(String(str));
+  if (chars.every((c) => c >= " " && c <= "~")) return str;
+  const parts = [];
+  for (let i = 0; i < chars.length; i += 30) parts.push(`=?UTF-8?B?${b64utf8(chars.slice(i, i + 30).join(""))}?=`);
+  return parts.join("\r\n ");
+};
+const asciiName = (str) => String(str).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "").replace(/"/g, "");
+async function dcsEml(f) {
+  const pdf = await dcsPdf(f);
+  const bytes = new Uint8Array(await pdf.arrayBuffer());
+  const subj = `Formulário ${DCS_KINDS[f.kind] ? DCS_KINDS[f.kind].pt : "DCS / VA"} · ${f.qt} · ${f.endUser || ""}`.trim();
+  const att = asciiName(pdf.name), bd = "qfu-" + Math.random().toString(36).slice(2);
+  const eml = [
+    `To: ${DCS_MAIL}`,
+    `Subject: ${hdrWord(subj)}`,
+    "X-Unsent: 1",
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${bd}"`,
+    "",
+    `--${bd}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrap76(b64utf8((dcsMailText(f) + "\n\n(PDF do formulário em anexo)").replace(/\n/g, "\r\n"))),
+    `--${bd}`,
+    `Content-Type: application/pdf; name="${att}"`,
+    `Content-Disposition: attachment; filename="${att}"`,
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrap76(b64(bytes)),
+    `--${bd}--`,
+    "",
+  ].join("\r\n");
+  return new File([eml], pdf.name.replace(/\.pdf$/i, ".eml"), { type: "message/rfc822" });
+}
 /* compartilhar (celular: Outlook, Gmail, WhatsApp… com o PDF anexado) ou, sem isso, baixar o PDF */
 async function dcsShare(f) {
   const file = await dcsPdf(f);
@@ -1093,12 +1140,14 @@ function DcsForm({ open, onClose, q, acts, onSave }) {
   const mob = useMobile();
   const [f, setF] = useState(null);
   const [step, setStep] = useState("form"); // form → done (salvo: compartilhar / baixar / e-mail)
+  const [emlHint, setEmlHint] = useState(false);
   const [busy, setBusy] = useState("");
   const [tried, setTried] = useState(false);
   // abre: o último formulário desta cotação (nova versão) ou um novo, já preenchido com o que dá
   useEffect(() => {
     if (!open || !q) return;
     setStep("form");
+    setEmlHint(false);
     setTried(false);
     const last = dcsLast(acts, q.id);
     if (last && dcsParse(last)) return setF({ ...dcsParse(last), qt: q.id });
@@ -1178,7 +1227,10 @@ function DcsForm({ open, onClose, q, acts, onSave }) {
     try {
       if (what === "share") await dcsShare(f);
       else if (what === "pdf") saveFile(await dcsPdf(f));
-      else if (what === "mail") {
+      else if (what === "eml") {
+        saveFile(await dcsEml(f));
+        setEmlHint(true);
+      } else if (what === "mail") {
         saveFile(await dcsPdf(f)); // o PDF baixa para anexar; o e-mail abre já com o assunto, o destinatário e o texto
         window.location.href = dcsMailto(f);
       }
@@ -1211,9 +1263,21 @@ function DcsForm({ open, onClose, q, acts, onSave }) {
               {busy === "share" ? <RefreshCw size={16} className="qp-spin" /> : <Share2 size={16} />} {_t("Share the PDF (e-mail, WhatsApp…)")}
             </button>
           )}
-          <button onClick={() => act("mail")} disabled={!!busy} style={bigBtn(!(canShare && mob), true)} title={_t("Downloads the PDF and opens a new e-mail to {0}: attach the downloaded file", DCS_MAIL)}>
-            {busy === "mail" ? <RefreshCw size={16} className="qp-spin" /> : <Mail size={16} />} {_t("E-mail to {0}", DCS_MAIL)}
-          </button>
+          {mob ? (
+            <button onClick={() => act("mail")} disabled={!!busy} style={bigBtn(!canShare, true)} title={_t("Downloads the PDF and opens a new e-mail to {0}: attach the downloaded file", DCS_MAIL)}>
+              {busy === "mail" ? <RefreshCw size={16} className="qp-spin" /> : <Mail size={16} />} {_t("E-mail to {0}", DCS_MAIL)}
+            </button>
+          ) : (
+            <button onClick={() => act("eml")} disabled={!!busy} style={{ ...bigBtn(true, true), whiteSpace: "normal", textAlign: "center" }} title={_t("Downloads a ready e-mail (.eml) to {0} with the PDF attached. Open it: it opens in Outlook (classic) as a new message.", DCS_MAIL)}>
+              {busy === "eml" ? <RefreshCw size={16} className="qp-spin" /> : <Mail size={16} />} {_t("E-mail in Outlook, with the PDF attached")}
+            </button>
+          )}
+          {emlHint && !mob && (
+            <div style={{ fontSize: 12.5, lineHeight: 1.45, color: X.ink, background: X.amberSoft, borderRadius: 10, padding: "10px 12px" }}>
+              {_t("Now open the downloaded file (Chrome's download bar, or the Downloads folder). It opens in Outlook as a new e-mail with the PDF attached: check it and click Send.")}
+              <div style={{ color: X.sub, marginTop: 4 }}>{_t("If it opens in another program: right-click the .eml file → Open with → Outlook → Always.")}</div>
+            </div>
+          )}
           <button onClick={() => act("pdf")} disabled={!!busy} style={bigBtn(false, true)}>
             {busy === "pdf" ? <RefreshCw size={16} className="qp-spin" /> : <Download size={16} />} {_t("Download the PDF")}
           </button>

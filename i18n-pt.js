@@ -984,4 +984,8 @@ export const PT = {
   "New version": "Nova versão",
   "Fill in": "Preencher",
   "The database needs an update to save the DCS / Value Added form: run the new schema.sql (see SERVIDOR.md). Nothing was lost: the page sends it again by itself.": "O banco precisa de uma atualização para salvar o formulário DCS / Value Added: rode o schema.sql novo (veja SERVIDOR.md). Nada se perdeu: a página manda de novo sozinha.",
+  "Downloads a ready e-mail (.eml) to {0} with the PDF attached. Open it: it opens in Outlook (classic) as a new message.": "Baixa um e-mail pronto (.eml) para {0} com o PDF anexado. Abra o arquivo: ele abre no Outlook (clássico) como mensagem nova.",
+  "E-mail in Outlook, with the PDF attached": "E-mail no Outlook, com o PDF anexado",
+  "Now open the downloaded file (Chrome's download bar, or the Downloads folder). It opens in Outlook as a new e-mail with the PDF attached: check it and click Send.": "Agora abra o arquivo baixado (na barra de downloads do Chrome ou na pasta Downloads). Ele abre no Outlook como e-mail novo, já com o PDF anexado: confira e clique em Enviar.",
+  "If it opens in another program: right-click the .eml file → Open with → Outlook → Always.": "Se abrir em outro programa: clique com o botão direito no arquivo .eml → Abrir com → Outlook → Sempre.",
 };
