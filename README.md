@@ -305,10 +305,16 @@ No registro da QT (seta na lista ou número da QT no plano do dia) há o quadro 
 4. Complete o resto: descrição, se foi monetizado (Sim/Não), valor e moeda (BRL/USD), se está documentado. Ao clicar em salvar, o que faltar fica em vermelho.
 5. Depois de salvo:
    - **Compartilhar** (celular): abre o WhatsApp, e-mail etc. já com o PDF anexado;
-   - **E-mail para jmartins@martinsprocket.com**: baixa o PDF e abre o e-mail com assunto e texto prontos. Pelo computador o anexo precisa ser colocado à mão (o navegador não consegue anexar sozinho);
+   - **E-mail para jmartins@martinsprocket.com**: baixa o PDF e abre o e-mail com assunto e texto prontos. Pelo computador o anexo precisa ser colocado à mão (o navegador não consegue anexar sozinho). O e-mail abre no programa de e-mail padrão do Windows: para ser o **Outlook clássico**, veja abaixo;
    - **Baixar o PDF**.
 
 O PDF gerado é o formulário oficial, com os campos preenchidos e ainda editáveis.
+
+**Abrir o e-mail no Outlook clássico (e não no novo):** quem decide é o Windows, não o programa. Faça uma vez em cada computador:
+
+- **Windows 11:** Configurações → Aplicativos → Aplicativos padrão → role até *Escolher padrões por tipo de link* → **MAILTO** → escolha **Outlook (clássico)**.
+- **Windows 10:** Configurações → Aplicativos → Aplicativos padrão → *Escolher aplicativos padrão por protocolo* → **MAILTO** → **Outlook**.
+- Ou, no próprio Outlook clássico: Arquivo → Opções → Geral → marque *Tornar o Outlook o programa padrão para Email, Contatos e Calendário*.
 
 O formulário fica no **histórico** da QT como uma entrada que não pode ser alterada nem excluída. *Corrigir* grava uma versão nova; o quadro e o PDF mostram sempre a última.
 
@@ -437,4 +443,3 @@ Ao abrir o programa aparece a tela de login: escolha o seu nome (os vendedores d
 - **Arquivos antigos** com a aba *Users* aberta são lidos normalmente e, no próximo Save, ela vira a aba Config cifrada.
 - **Esqueceu a senha do Admin?** Feche o programa em todos os PCs, apague a aba *Config* do data.xlsx, limpe os dados do site no seu navegador e crie a nova senha do Admin antes de os outros abrirem o programa (os vendedores também criam senhas novas).
 - **Limite**: o login organiza o acesso dentro do programa, mas não é uma proteção forte — quem tem acesso à pasta da rede consegue abrir os arquivos Excel direto. Para proteger de verdade, a pasta precisa ter permissão de acesso na rede (TI).
-
