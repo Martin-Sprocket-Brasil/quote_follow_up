@@ -430,8 +430,25 @@ async function applyFollowups(conn, me, b, okId, rep, skipped) {
   return n;
 }
 
+/* o banco aceita o tipo "dcs" (formulário DCS / Value Added)? Bancos criados antes precisam do schema.sql novo
+   (a regra ck_activities_kind). Sem isso, o formulário NÃO é gravado — a página avisa e manda de novo depois. */
+let dcsOk = null,
+  dcsCheckedAt = 0;
+async function dcsAllowed() {
+  if (dcsOk || Date.now() - dcsCheckedAt < 60000) return dcsOk;
+  dcsCheckedAt = Date.now();
+  try {
+    const r = await pool.query("SELECT CHECK_CLAUSE FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'ck_activities_kind'");
+    dcsOk = !r.length || /'dcs'/.test(r[0].CHECK_CLAUSE);
+  } catch {
+    dcsOk = true;
+  }
+  return dcsOk;
+}
 async function applyActs(conn, me, b, okId, skipped) {
   const mgr = MGR.has(me.role);
+  if (arr(b.acts).some((a) => isObj(a) && a.k === "dcs") && !(await dcsAllowed()))
+    throw httpErr(503, "db-old", "The database needs an update to save the DCS / Value Added form: run the new schema.sql (see SERVIDOR.md). Nothing was lost: the page sends it again by itself.");
   const rows = [];
   let bad = 0;
   for (const a of arr(b.acts)) {
@@ -802,8 +819,10 @@ app.use((req, res) => res.status(404).type("text").send("Not found"));
 // erros: a página recebe uma mensagem curta; o detalhe fica só no console do servidor
 app.use((err, req, res, next) => {
   const status = err.status || (err.type === "entity.too.large" ? 413 : err.type === "entity.parse.failed" ? 400 : 500);
-  if (status >= 500) console.error(`[erro] ${req.method} ${req.path}`, err);
-  res.status(status).json({ error: err.code || (status >= 500 ? "server" : "bad-request"), message: status >= 500 ? "Server error: try again in a moment." : err.message });
+  const known = !!err.code && !!err.status; // erro previsto (httpErr): a mensagem vai para a página
+  if (status >= 500 && !known) console.error(`[erro] ${req.method} ${req.path}`, err);
+  else if (status >= 500) console.warn(`[aviso] ${req.method} ${req.path}: ${err.message}`);
+  res.status(status).json({ error: err.code || (status >= 500 ? "server" : "bad-request"), message: status >= 500 && !known ? "Server error: try again in a moment." : err.message });
 });
 
 /* ---------- partida ---------- */
@@ -826,6 +845,17 @@ async function prepareDb() {
     if (!has.length) throw new Error("a tabela sessions não existe e o usuário do banco não pode criá-la: rode o schema.sql novo (mariadb -u root -p < schema.sql)");
   }
   await pool.query("INSERT IGNORE INTO settings (name, value) VALUES ('data_version', '1'), ('rep_version', '1'), ('quote_fill_at', '')");
+  // formulário DCS / Value Added: tenta liberar o tipo "dcs" no histórico (precisa de permissão ALTER; senão, avisa)
+  if (!(await dcsAllowed())) {
+    try {
+      await pool.query("ALTER TABLE activities DROP CONSTRAINT IF EXISTS ck_activities_kind");
+      await pool.query("ALTER TABLE activities ADD CONSTRAINT ck_activities_kind CHECK (kind IN ('note', 'fup', 'win', 'done', 'resched', 'req', 'plan', 'status', 'amount', 'order', 'close', 'reopen', 'why', 'dcs'))");
+      dcsOk = true;
+      console.info("[banco] histórico liberado para o formulário DCS / Value Added");
+    } catch {
+      console.warn("\n[AVISO] O banco ainda não aceita o formulário DCS / Value Added. Rode o schema.sql novo como root:\n        mariadb -u root -p < schema.sql\n");
+    }
+  }
   await pool.query("DELETE FROM sessions WHERE expires_at < NOW()");
 }
 

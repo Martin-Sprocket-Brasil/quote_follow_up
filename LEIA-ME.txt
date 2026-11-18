@@ -6,6 +6,8 @@ O QUE TEM NESTA PASTA
   core.js      -> as regras: leitura dos relatorios, calculos, agenda
   i18n.js      -> troca de idioma (ingles / portugues)
   i18n-pt.js   -> as traducoes para o portugues (texto em ingles -> texto em portugues)
+  dcs.js       -> o formulario DCS / Value Added (itens, campos obrigatorios, preenchimento do PDF)
+  dcs-va-template.pdf -> o modelo oficial do formulario, vazio (vai embutido no programa)
   entry.jsx    -> ponto de entrada (nao precisa mexer)
   styles.css   -> estilo base da pagina (nao precisa mexer)
   package.json -> lista das bibliotecas (nao precisa mexer)

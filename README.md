@@ -290,6 +290,32 @@ Clique na seta de uma QT no **Quote portfolio**, ou no número da QT no **plano 
 
 ---
 
+## Formulário DCS / Value Added
+
+No registro da QT (seta na lista ou número da QT no plano do dia) há o quadro **DCS / Value Added**. Ele aparece em qualquer situação da cotação, inclusive Won. Clique em **Preencher**:
+
+1. **O que houve?** Escolha *Valor adicionado (VA)*, *DCS* ou *Deslealdade*.
+2. Para VA ou DCS aparecem os **subgrupos** para marcar (um ou vários). VA: repasse de preço, desconto, devolução, frete cortesia, comissão, lead time, prazo de pagamento. DCS: os 19 itens do formulário (tempo inativo evitado, redução de estoque … pesquisa em campo). Deslealdade não tem subgrupos.
+3. **Preenchido sozinho:**
+   - QT e SO (se a QT tem mais de um pedido, escolha na lista);
+   - vendedor interno e externo, pelos nomes da cotação;
+   - cliente final e distribuidor: se a classificação do cliente for *Distribuidor*, ele vai como distribuidor; senão, como cliente final;
+   - cidade, estado, distribuidor e cliente final são lembrados do último formulário do mesmo cliente (o Quote Report não traz cidade e estado);
+   - descrição: o atalho *Usar a última anotação* copia a nota mais recente da QT.
+4. Complete o resto: descrição, se foi monetizado (Sim/Não), valor e moeda (BRL/USD), se está documentado. Ao clicar em salvar, o que faltar fica em vermelho.
+5. Depois de salvo:
+   - **Compartilhar** (celular): abre o WhatsApp, e-mail etc. já com o PDF anexado;
+   - **E-mail para jmartins@martinsprocket.com**: baixa o PDF e abre o e-mail com assunto e texto prontos. Pelo computador o anexo precisa ser colocado à mão (o navegador não consegue anexar sozinho);
+   - **Baixar o PDF**.
+
+O PDF gerado é o formulário oficial, com os campos preenchidos e ainda editáveis.
+
+O formulário fica no **histórico** da QT como uma entrada que não pode ser alterada nem excluída. *Corrigir* grava uma versão nova; o quadro e o PDF mostram sempre a última.
+
+Observação sobre o modelo: no PDF original, as listas *Economia (monetizado ou não)* e *Documentado* eram o mesmo campo, ou seja, escolher uma mudava a outra. O `dcs-va-template.pdf` já vem corrigido e vazio.
+
+---
+
 ## Instalação e build
 
 ```bash
@@ -297,7 +323,7 @@ npm install
 npm run build   # executa: node build.js
 ```
 
-No Windows, basta dar dois cliques em `build.bat`, como no pulz. O resultado é **`QuoteFollowUp.html`**, um arquivo único (~0,6 MB) que funciona sozinho no Chrome ou Edge.
+No Windows, basta dar dois cliques em `build.bat`, como no pulz. O resultado é **`QuoteFollowUp.html`**, um arquivo único (~1,5 MB, por causa do gerador de PDF e do modelo do formulário DCS / VA; pelo servidor ele vai compactado) que funciona sozinho no Chrome ou Edge.
 
 ## Estrutura
 
@@ -307,6 +333,8 @@ No Windows, basta dar dois cliques em `build.bat`, como no pulz. O resultado é 
 | `app.jsx` | Interface: tabela, aba Calendar, importação, backup |
 | `entry.jsx` | Ponto de entrada (monta `<App />`) |
 | `styles.css` | CSS global, embutido no HTML final |
+| `dcs.js` | Formulário DCS / Value Added: tipos, itens, campos obrigatórios e preenchimento do PDF (pdf-lib) |
+| `dcs-va-template.pdf` | Modelo oficial do formulário, vazio, embutido no HTML |
 | `build.js` / `build.bat` | Empacota tudo em `QuoteFollowUp.html` (esbuild) |
 
 ## Stack

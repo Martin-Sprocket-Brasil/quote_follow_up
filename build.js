@@ -13,7 +13,7 @@ const res = esbuild.buildSync({
   bundle: true,
   minify: true,
   format: "iife",
-  loader: { ".jsx": "jsx" },
+  loader: { ".jsx": "jsx", ".pdf": "binary" }, // o formulário DCS / Value Added (PDF) vai dentro da página
   write: false,
 });
 /* "</script", "</body", "</html" e "</head" dentro do código (a biblioteca de Excel tem "</body></html>" num texto)

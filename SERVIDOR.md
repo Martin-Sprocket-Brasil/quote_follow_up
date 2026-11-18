@@ -28,11 +28,11 @@ Fora do OneDrive: o "&" do nome da pasta da empresa atrapalha os comandos do Win
 
 ### 2. Bibliotecas e página
 
-Dê dois cliques em `build.bat`. Ele instala as bibliotecas novas do servidor (express, mariadb, compression) e gera o `QuoteFollowUp.html`.
+Dê dois cliques em `build.bat`. Ele instala as bibliotecas que faltarem (express, mariadb, compression e, para o formulário DCS / Value Added, pdf-lib) e gera o `QuoteFollowUp.html`.
 
 ### 3. Atualizar o banco
 
-O `schema.sql` novo acrescenta a tabela `sessions` (logins) e os contadores de versão. Não apaga nada.
+O `schema.sql` novo acrescenta a tabela `sessions` (logins), os contadores de versão e libera o tipo `dcs` no histórico (o formulário DCS / Value Added). Não apaga nada e pode ser rodado de novo quantas vezes quiser.
 
 ```
 mariadb -u root -p < schema.sql
@@ -144,6 +144,7 @@ Todo mundo que entra recebe **todas** as cotações, porque o Thermometer de cad
 |---|---|
 | `Não foi possível falar com o banco de dados` | Confira o MariaDB ligado e o usuário e a senha no `server.config.json`. |
 | `a tabela sessions não existe…` | Rode o `schema.sql` novo como root (passo 3). |
+| `[AVISO] O banco ainda não aceita o formulário DCS / Value Added` ou, na página, *The database needs an update…* | Rode o `schema.sql` novo como root (passo 3). Não precisa reiniciar: em até 1 minuto o servidor percebe e a página reenvia o formulário sozinha. |
 | `EADDRINUSE` | A porta 8080 já está em uso, talvez por outro servidor aberto. Feche o outro ou troque o `port`. |
 | Página abre, mas pede a pasta de dados | Ela foi aberta como arquivo, não pelo servidor. Use http://localhost:8080 ou o endereço do túnel. |
 | Túnel mostra erro 502 | O servidor não está rodando nesta máquina (passo 6 ou 7). |

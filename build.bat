@@ -13,9 +13,12 @@ if errorlevel 1 (
   pause
   exit /b
 )
-if not exist node_modules\express (
+set FALTA=
+if not exist node_modules\express set FALTA=1
+if not exist node_modules\pdf-lib set FALTA=1
+if defined FALTA (
   echo.
-  echo Primeira vez: instalando as bibliotecas ^(pode demorar 1-2 min^)...
+  echo Instalando as bibliotecas ^(pode demorar 1-2 min^)...
   call npm install
   if errorlevel 1 ( echo. & echo [ERRO] Falha ao instalar. Verifique sua internet. & pause & exit /b )
 )

@@ -1580,6 +1580,7 @@ export const ACT_TYPES = {
   close: "Closed by hand",
   reopen: "Reopened",
   why: "Close reason",
+  dcs: "DCS / Value Added form", // o formulário inteiro (JSON) fica na nota; n = Value Added / DCS / Deslealdade
 };
 const ACT_BY_LABEL = Object.fromEntries(Object.entries(ACT_TYPES).map(([k, v]) => [v, k]));
 const sheetFrom = (rows, head, widths) => {

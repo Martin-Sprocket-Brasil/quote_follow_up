@@ -111,6 +111,8 @@ import {
   normName,
 } from "./core.js";
 import { _t, whyTxt, LANG, setLang } from "./i18n.js";
+import { DCS_KINDS, DCS_ITEMS, DCS_ITEM, DCS_MAIL, UFS, dcsMissing, fillDcsPdf, dcsFileName } from "./dcs.js";
+import DCS_TEMPLATE from "./dcs-va-template.pdf"; // o formulário oficial (entra no QuoteFollowUp.html)
 const periodLabelOf = (p) => _t(corePeriodLabelOf(p)); // "All periods" no idioma da tela
 
 import {
@@ -161,6 +163,10 @@ import {
   Lock,
   History,
   StickyNote,
+  FileText,
+  Pencil,
+  Share2,
+  Mail,
   ArrowRight,
   RefreshCw,
   Link2,
@@ -633,7 +639,7 @@ function ColFilter({ label, options, selected, onChange, width = 240, iconOnly, 
 /* ===== folha (sheet) =====
    Tudo o que não precisa ficar à vista (filtros, ordem, exportar) fica numa folha que sobe de baixo no celular
    (no computador, uma janela no centro). A tela fica só com a lista e a ação principal. */
-function Sheet({ open, title, onClose, children, footer }) {
+function Sheet({ open, title, onClose, children, footer, wide }) {
   const mob = useMobile();
   useEffect(() => {
     if (!open) return;
@@ -651,7 +657,7 @@ function Sheet({ open, title, onClose, children, footer }) {
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1600, background: "rgba(15,23,42,.38)", display: "flex", alignItems: mob ? "flex-end" : "center", justifyContent: "center" }}>
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ background: "#fff", width: mob ? "100%" : "min(480px, 94vw)", maxHeight: "88vh", borderRadius: mob ? "20px 20px 0 0" : 16, display: "flex", flexDirection: "column", boxShadow: "0 -10px 40px rgba(15,23,42,.25)", paddingBottom: mob ? "env(safe-area-inset-bottom)" : 0 }}
+        style={{ background: "#fff", width: mob ? "100%" : wide ? "min(680px, 94vw)" : "min(480px, 94vw)", maxHeight: mob ? "92vh" : "88vh", borderRadius: mob ? "20px 20px 0 0" : 16, display: "flex", flexDirection: "column", boxShadow: "0 -10px 40px rgba(15,23,42,.25)", paddingBottom: mob ? "env(safe-area-inset-bottom)" : 0 }}
       >
         {mob && <div style={{ width: 40, height: 4, borderRadius: 9, background: "#D5DCE3", margin: "8px auto 0", flexShrink: 0 }} />}
         <div style={{ display: "flex", alignItems: "center", padding: "10px 16px 6px", flexShrink: 0 }}>
@@ -839,6 +845,7 @@ const ACT_META = {
   close: { icon: XCircle, title: _t("Closed by hand"), tag: "follow", color: X.redDk, bg: X.redSoft },
   reopen: { icon: RotateCcw, title: _t("Reopened"), tag: "follow", color: X.tealDk, bg: X.tealSoft },
   why: { icon: XCircle, title: _t("Close reason"), tag: "follow", color: "#64748B", bg: "#EEF2F5" },
+  dcs: { icon: FileText, title: _t("DCS / Value Added form"), tag: "follow", color: "#0E7490", bg: "#E0F2FE" },
   status: { icon: FileSpreadsheet, title: _t("Status changed"), tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
   amount: { icon: FileSpreadsheet, title: _t("Quoted value changed"), tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
   order: { icon: FileSpreadsheet, title: _t("New order"), tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
@@ -853,7 +860,7 @@ const HIST_FILTERS = [
   ["follow", _t("Follow-up")],
   ["report", _t("Quote Report")],
 ];
-const histGroup = (a) => (a.k === "note" ? "note" : ["fup", "win", "done", "resched", "req", "plan", "close", "reopen", "why"].includes(a.k) ? "follow" : "report");
+const histGroup = (a) => (a.k === "note" ? "note" : ["fup", "win", "done", "resched", "req", "plan", "close", "reopen", "why", "dcs"].includes(a.k) ? "follow" : "report");
 // "Today", "Yesterday" ou o dia da semana com a data
 const dayLabel = (d) => {
   const t = todayISO();
@@ -866,6 +873,20 @@ const arrow = <ArrowRight size={12} style={{ verticalAlign: -2, margin: "0 3px" 
 // texto do registro (o título e a etiqueta vêm de ACT_META)
 function actText(a) {
   switch (a.k) {
+    case "dcs": {
+      const f = dcsParse(a);
+      if (!f) return <b>{a.n}</b>;
+      return (
+        <>
+          <b>{dcsKindTxt(f.kind)}</b>
+          {(f.items || []).length ? ` · ${f.items.map(dcsItemTxt).join(", ")}` : ""}
+          {f.desc ? <span style={{ display: "block", color: X.sub, marginTop: 2, whiteSpace: "pre-wrap" }}>{f.desc}</span> : null}
+          <span style={{ display: "flex", marginTop: 5 }}>
+            <DcsPdfButton f={f} />
+          </span>
+        </>
+      );
+    }
     case "fup":
       return <>{fupTxt(a.o)} {arrow} <b>{fupTxt(a.n)}</b></>;
     case "win":
@@ -974,7 +995,370 @@ function StepHead({ n, title, sub, ok }) {
     </div>
   );
 }
-function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq, onAskClose, onReopen, onWhy, focusDone, compact, m, user, onUser, headRight }) {
+/* ===== Formulário DCS / Value Added =====
+   Pergunta se a cotação tem Value Added, DCS ou Deslealdade; com VA ou DCS mostra os tipos de economia para
+   escolher. O resto vem preenchido: cotação, pedido (SO), vendedores interno e externo, cliente — e cidade, estado
+   e distribuidor do último formulário do mesmo cliente. Salvar grava no Histórico de Atividades (tipo "dcs") e
+   gera o formulário oficial em PDF, para compartilhar (celular), baixar ou mandar por e-mail. */
+const dcsParse = (a) => {
+  try {
+    const f = JSON.parse(a.txt || "{}");
+    return f && typeof f === "object" ? f : null;
+  } catch {
+    return null;
+  }
+};
+const dcsKindTxt = (k) => (DCS_KINDS[k] ? (LANG === "pt" ? DCS_KINDS[k].pt : DCS_KINDS[k].en) : "");
+const dcsItemTxt = (k) => (DCS_ITEM[k] ? (LANG === "pt" ? DCS_ITEM[k].pt : DCS_ITEM[k].en) : k);
+const dcsLast = (acts, id) => {
+  for (let i = acts.length - 1; i >= 0; i--) if (acts[i].k === "dcs" && acts[i].id === id) return acts[i];
+  return null;
+};
+async function dcsPdf(f) {
+  const bytes = await fillDcsPdf(DCS_TEMPLATE, f);
+  return new File([bytes], dcsFileName(f), { type: "application/pdf" });
+}
+const saveFile = (file) => {
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+};
+// texto do e-mail: o formulário inteiro (para quem lê no celular) — o PDF vai anexado
+const dcsMailText = (f) =>
+  [
+    `Formulário ${DCS_KINDS[f.kind] ? DCS_KINDS[f.kind].pt : ""} · ${f.qt}`,
+    "",
+    `Ordem de Venda (SO): ${f.so || "—"}`,
+    `Nº de cotação: ${f.qt}`,
+    `Value Added / DCS / Deslealdade: ${DCS_KINDS[f.kind] ? DCS_KINDS[f.kind].pt : ""}`,
+    (f.items || []).length ? `Tipos de Economia: ${f.items.map((k) => (DCS_ITEM[k] ? DCS_ITEM[k].pt : k)).join(", ")}` : null,
+    `Economia (monetizado ou não): ${f.monetized || "—"}`,
+    `Vendedor Interno Martin: ${f.inside || "—"}`,
+    `Vendedor Externo Martin: ${f.outside || "—"}`,
+    `Usuário Final (AX): ${f.endUser || "—"}`,
+    `Distribuidor: ${f.distributor || "—"}`,
+    `Cidade / Estado: ${f.city || "—"} / ${f.state || "—"}`,
+    `Descrição: ${f.desc || "—"}`,
+    `Valor: ${f.value ? `${f.currency || "BRL"} ${f.value}` : "—"}`,
+    `Documentado: ${f.documented || "—"}`,
+  ]
+    .filter((x) => x != null)
+    .join("\n");
+function dcsMailto(f) {
+  const subj = `Formulário ${DCS_KINDS[f.kind] ? DCS_KINDS[f.kind].pt : "DCS / VA"} · ${f.qt} · ${f.endUser || ""}`;
+  return `mailto:${DCS_MAIL}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(dcsMailText(f) + "\n\n(PDF do formulário em anexo)")}`;
+}
+/* compartilhar (celular: Outlook, Gmail, WhatsApp… com o PDF anexado) ou, sem isso, baixar o PDF */
+async function dcsShare(f) {
+  const file = await dcsPdf(f);
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: file.name, text: dcsMailText(f) });
+      return "shared";
+    } catch (e) {
+      if (e && e.name === "AbortError") return "cancel";
+    }
+  }
+  saveFile(file);
+  return "saved";
+}
+// botão "PDF" do histórico: o PDF de um formulário salvo
+function DcsPdfButton({ f, label }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      onClick={async (e) => {
+        e.stopPropagation();
+        setBusy(true);
+        try {
+          saveFile(await dcsPdf(f));
+        } finally {
+          setBusy(false);
+        }
+      }}
+      title={_t("Download the form as PDF")}
+      style={{ ...btn, height: 26, fontSize: 11.5, padding: "0 9px", gap: 4 }}
+    >
+      {busy ? <RefreshCw size={12} className="qp-spin" /> : <Download size={12} />}
+      {label || "PDF"}
+    </button>
+  );
+}
+function DcsForm({ open, onClose, q, acts, onSave }) {
+  const mob = useMobile();
+  const [f, setF] = useState(null);
+  const [step, setStep] = useState("form"); // form → done (salvo: compartilhar / baixar / e-mail)
+  const [busy, setBusy] = useState("");
+  const [tried, setTried] = useState(false);
+  // abre: o último formulário desta cotação (nova versão) ou um novo, já preenchido com o que dá
+  useEffect(() => {
+    if (!open || !q) return;
+    setStep("form");
+    setTried(false);
+    const last = dcsLast(acts, q.id);
+    if (last && dcsParse(last)) return setF({ ...dcsParse(last), qt: q.id });
+    let mem = null; // o último formulário do mesmo cliente: cidade, estado, distribuidor, usuário final
+    for (let i = acts.length - 1; i >= 0 && !mem; i--) if (acts[i].k === "dcs" && acts[i].c === q.c) mem = dcsParse(acts[i]);
+    const dist = /DIST/i.test(q.cls || "");
+    setF({
+      kind: "",
+      items: [],
+      so: (q.so || [])[0] || "",
+      qt: q.id,
+      inside: sellerDisplay(q.qb),
+      outside: sellerDisplay(q.sp),
+      endUser: mem ? mem.endUser || "" : dist ? "" : q.c,
+      distributor: mem ? mem.distributor || "" : dist ? q.c : "",
+      city: mem ? mem.city || "" : "",
+      state: mem ? mem.state || "" : "",
+      desc: "",
+      monetized: "",
+      value: "",
+      currency: "BRL",
+      documented: "",
+    });
+  }, [open, q && q.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!open || !q || !f) return null;
+  const set = (patch) => setF((x) => ({ ...x, ...patch }));
+  const miss = dcsMissing(f);
+  const bad = (k) => tried && miss.includes(k);
+  const lastNote = (() => {
+    for (let i = acts.length - 1; i >= 0; i--) if (acts[i].k === "note" && acts[i].id === q.id && acts[i].txt) return acts[i].txt;
+    return "";
+  })();
+  const missTxt = {
+    kind: _t("Value Added, DCS or Disloyalty"),
+    items: _t("type of savings"),
+    qt: "QT",
+    monetized: _t("savings (monetized?)"),
+    inside: _t("inside salesperson"),
+    endUser: _t("end user"),
+    city: _t("city"),
+    desc: _t("description"),
+    documented: _t("documented?"),
+  };
+  const field = (label, req, el, k) => (
+    <label style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: bad(k) ? X.redDk : X.sub }}>
+        {label}
+        {req && <span style={{ color: X.redDk }}> *</span>}
+      </span>
+      {el}
+    </label>
+  );
+  const tx = (k, ph, extra) => <input value={f[k] || ""} onChange={(e) => set({ [k]: e.target.value })} placeholder={ph} style={{ ...inp, height: 44, fontSize: 14, borderRadius: 10, width: "100%", ...(bad(k) ? { borderColor: X.redDk } : null), ...extra }} />;
+  const yesNo = (k) => (
+    <div style={{ display: "flex", gap: 6 }}>
+      {["Sim", "Não"].map((v) => {
+        const on = f[k] === v;
+        return (
+          <button key={v} onClick={() => set({ [k]: on ? "" : v })} style={{ flex: 1, height: 42, borderRadius: 10, border: `1.5px solid ${on ? X.teal : bad(k) ? X.redDk : X.line}`, background: on ? X.tealSoft : "#fff", color: X.ink, fontWeight: on ? 800 : 600, fontSize: 14, cursor: "pointer" }}>
+            {v === "Sim" ? _t("Yes") : _t("No")}
+          </button>
+        );
+      })}
+    </div>
+  );
+  const grid2 = { display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))", gap: 12 };
+  const save = async () => {
+    setTried(true);
+    if (miss.length) return;
+    const clean = { ...f, items: f.kind === "desl" ? [] : f.items.filter((k) => DCS_ITEMS[f.kind].some((x) => x[0] === k)), value: String(f.value || "").trim(), desc: String(f.desc || "").trim() };
+    onSave(q, clean);
+    setF(clean);
+    setStep("done");
+  };
+  const act = async (what) => {
+    setBusy(what);
+    try {
+      if (what === "share") await dcsShare(f);
+      else if (what === "pdf") saveFile(await dcsPdf(f));
+      else if (what === "mail") {
+        saveFile(await dcsPdf(f)); // o PDF baixa para anexar; o e-mail abre já com o assunto, o destinatário e o texto
+        window.location.href = dcsMailto(f);
+      }
+    } catch (e) {
+      console.error("Quote Follow Up · DCS PDF", e);
+      alert(_t("Could not create the PDF: {0}", (e && e.message) || e));
+    } finally {
+      setBusy("");
+    }
+  };
+  const canShare = typeof navigator !== "undefined" && !!navigator.canShare;
+  const bigBtn = (primary, col) => ({ ...btn, height: 48, minHeight: 48, borderRadius: 12, justifyContent: "center", fontSize: 14, fontWeight: 700, ...(col ? { width: "100%", flex: "none" } : { flex: 1 }), ...(primary ? { background: X.teal, borderColor: X.teal, color: "#fff" } : null) });
+
+  if (step === "done")
+    return (
+      <Sheet open title={_t("Form saved")} onClose={onClose}>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start", background: X.tealSoft, borderRadius: 12, padding: "12px 14px" }}>
+          <CheckCircle2 size={22} color={X.tealDk} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div style={{ fontSize: 13.5, lineHeight: 1.45 }}>
+            <b>
+              {dcsKindTxt(f.kind)} · {f.qt}
+            </b>
+            <div style={{ color: X.sub }}>{(f.items || []).map(dcsItemTxt).join(", ") || f.endUser}</div>
+            <div style={{ color: X.sub, marginTop: 4 }}>{_t("Saved in the Activities History of the quote. Now send the form (PDF) to {0}.", DCS_MAIL)}</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {canShare && mob && (
+            <button onClick={() => act("share")} disabled={!!busy} style={bigBtn(true, true)}>
+              {busy === "share" ? <RefreshCw size={16} className="qp-spin" /> : <Share2 size={16} />} {_t("Share the PDF (e-mail, WhatsApp…)")}
+            </button>
+          )}
+          <button onClick={() => act("mail")} disabled={!!busy} style={bigBtn(!(canShare && mob), true)} title={_t("Downloads the PDF and opens a new e-mail to {0}: attach the downloaded file", DCS_MAIL)}>
+            {busy === "mail" ? <RefreshCw size={16} className="qp-spin" /> : <Mail size={16} />} {_t("E-mail to {0}", DCS_MAIL)}
+          </button>
+          <button onClick={() => act("pdf")} disabled={!!busy} style={bigBtn(false, true)}>
+            {busy === "pdf" ? <RefreshCw size={16} className="qp-spin" /> : <Download size={16} />} {_t("Download the PDF")}
+          </button>
+          <button onClick={() => setStep("form")} style={{ ...btn, height: 40, borderRadius: 12, justifyContent: "center", border: "none", background: "transparent", color: X.tealDk, fontWeight: 700 }}>
+            <Pencil size={14} /> {_t("Fix something (saves a new version)")}
+          </button>
+        </div>
+      </Sheet>
+    );
+
+  return (
+    <Sheet
+      open
+      wide
+      title={_t("DCS / Value Added form")}
+      onClose={onClose}
+      footer={
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+          {tried && miss.length > 0 && (
+            <div style={{ fontSize: 12, color: X.redDk, fontWeight: 600 }}>
+              {_t("Missing:")} {miss.map((k) => missTxt[k] || k).join(", ")}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onClose} style={{ ...btn, height: 46, borderRadius: 12, justifyContent: "center", flex: 1 }}>
+              {_t("Cancel")}
+            </button>
+            <button onClick={save} style={{ ...bigBtn(true), flex: 2, opacity: miss.length && tried ? 0.6 : 1 }}>
+              <FileText size={16} /> {_t("Save and create the PDF")}
+            </button>
+          </div>
+        </div>
+      }
+    >
+      {/* 1. tem VA, DCS ou Deslealdade? */}
+      <SheetField label={_t("Does this quote have…")}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+          {[
+            ["va", _t("Value Added"), _t("added value")],
+            ["dcs", "DCS", _t("documented cost savings")],
+            ["desl", _t("Disloyalty"), _t("no types")],
+          ].map(([k, l, sub]) => {
+            const on = f.kind === k;
+            return (
+              <button
+                key={k}
+                onClick={() => set({ kind: k, items: k === f.kind ? f.items : [] })}
+                style={{ border: `2px solid ${on ? X.teal : bad("kind") ? X.redDk : X.line}`, background: on ? X.tealSoft : "#fff", borderRadius: 12, padding: "10px 6px", cursor: "pointer", textAlign: "center", display: "flex", flexDirection: "column", gap: 2, alignItems: "center" }}
+              >
+                <span style={{ fontSize: 14, fontWeight: 800, color: on ? X.tealDk : X.ink }}>{l}</span>
+                <span style={{ fontSize: 11, color: X.sub, lineHeight: 1.2 }}>{sub}</span>
+              </button>
+            );
+          })}
+        </div>
+      </SheetField>
+      {/* 2. os subgrupos (tipos de economia) */}
+      {(f.kind === "va" || f.kind === "dcs") && (
+        <SheetField label={<span style={{ color: bad("items") ? X.redDk : undefined }}>{_t("Types of savings · {0}", dcsKindTxt(f.kind))} *</span>}>
+          <MultiChips value={f.items} options={DCS_ITEMS[f.kind].map(([k]) => [k, dcsItemTxt(k)])} onChange={(v) => set({ items: v })} />
+        </SheetField>
+      )}
+      {f.kind && (
+        <>
+          <SheetField label={_t("Quote and salespeople")}>
+            <div style={grid2}>
+              {field(_t("Quote no."), true, <input value={f.qt} readOnly style={{ ...inp, height: 44, fontSize: 14, borderRadius: 10, width: "100%", background: X.head, color: X.sub }} />, "qt")}
+              {field(
+                _t("Sales order (SO)"),
+                false,
+                (q.so || []).length > 1 ? (
+                  <select value={f.so} onChange={(e) => set({ so: e.target.value })} style={{ ...inp, height: 44, fontSize: 14, borderRadius: 10, width: "100%" }}>
+                    <option value="">—</option>
+                    {q.so.map((x) => (
+                      <option key={x} value={x}>
+                        {x}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  tx("so", _t("no order yet"))
+                ),
+                "so",
+              )}
+              {field(_t("Inside salesperson (Martin)"), true, tx("inside", ""), "inside")}
+              {field(_t("Outside salesperson (if involved)"), false, tx("outside", ""), "outside")}
+            </div>
+          </SheetField>
+          <SheetField label={_t("Customer")}>
+            <div style={grid2}>
+              {field(_t("End user (as in AX)"), true, tx("endUser", ""), "endUser")}
+              {field(_t("Distributor"), false, tx("distributor", _t("if there is one")), "distributor")}
+              {field(_t("City"), true, tx("city", ""), "city")}
+              {field(
+                _t("State"),
+                false,
+                <select value={f.state} onChange={(e) => set({ state: e.target.value })} style={{ ...inp, height: 44, fontSize: 14, borderRadius: 10, width: "100%" }}>
+                  <option value="">—</option>
+                  {UFS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>,
+                "state",
+              )}
+            </div>
+          </SheetField>
+          <SheetField label={<span style={{ color: bad("desc") ? X.redDk : undefined }}>{_t("Description (objectively)")} *</span>}>
+            <textarea
+              value={f.desc}
+              onChange={(e) => set({ desc: e.target.value })}
+              rows={4}
+              placeholder={_t("e.g. 5% discount to close the purchase order")}
+              style={{ ...inp, height: "auto", minHeight: 96, padding: "10px 12px", fontSize: 14, borderRadius: 10, width: "100%", resize: "vertical", fontFamily: "inherit", lineHeight: 1.45, ...(bad("desc") ? { borderColor: X.redDk } : null) }}
+            />
+            {lastNote && !f.desc && (
+              <button onClick={() => set({ desc: lastNote })} style={{ ...btn, height: 32, fontSize: 12, alignSelf: "flex-start", borderRadius: 999 }} title={lastNote}>
+                <StickyNote size={13} /> {_t("Use the last note")}
+              </button>
+            )}
+          </SheetField>
+          <div style={grid2}>
+            <SheetField label={<span style={{ color: bad("monetized") ? X.redDk : undefined }}>{_t("Savings · monetized?")} *</span>}>{yesNo("monetized")}</SheetField>
+            <SheetField label={<span style={{ color: bad("documented") ? X.redDk : undefined }}>{_t("Documented? (signed document)")} *</span>}>{yesNo("documented")}</SheetField>
+          </div>
+          <SheetField label={_t("Value (if any)")}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={f.value}
+                inputMode="decimal"
+                onChange={(e) => set({ value: e.target.value, ...(e.target.value && !f.monetized ? { monetized: "Sim" } : null) })}
+                placeholder="0,00"
+                style={{ ...inp, height: 44, fontSize: 14, borderRadius: 10, flex: 1, minWidth: 0 }}
+              />
+              <Chips value={f.currency} options={[["BRL", "R$ BRL"], ["USD", "US$ USD"]]} onChange={(v) => set({ currency: v || "BRL" })} />
+            </div>
+          </SheetField>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq, onAskClose, onReopen, onWhy, focusDone, compact, m, user, onUser, headRight, onDcs }) {
   const mob = useMobile(); // celular: tudo numa coluna só, com uma rolagem para a tela inteira
   const [txt, setTxt] = useState("");
   // requisição do cliente (ex.: "RODRIGO - POLIAS"): campo da cotação, vai para o relatório de FUP
@@ -995,6 +1379,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
   }, [focusDone]);
   const [hf, setHf] = useState("all"); // filtro do histórico: all | note | follow | report
   const [showDet, setShowDet] = useState(false); // celular: "Details" recolhido
+  const [dcsOpen, setDcsOpen] = useState(false); // formulário DCS / Value Added
   const [showHist, setShowHist] = useState(false); // celular: "History" recolhido
   if (!q) return <div style={{ padding: 16, color: X.sub }}>{_t("Quote not found in the stored data.")}</div>;
   // situação considerando o fechamento à mão (FUP → Cancelled / Lost)
@@ -1171,6 +1556,27 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
         q.so && q.so.length ? (q.so.some((id) => soMap[id]) ? <span style={{ color: X.green, fontWeight: 700 }}>{_t("booked")}{" "}{moneyShort(q.so.reduce((t, id) => t + ((soMap[id] && soMap[id].v) || 0), 0))}</span> : _t("not in the Sales Report yet")) : null,
         { borderRight: "none" },
       )}
+    </div>
+  );
+  // DCS / Value Added: o último formulário desta cotação (ou o convite para preencher)
+  const dcsA = onDcs ? dcsLast(acts, q.id) : null;
+  const dcsF = dcsA && dcsParse(dcsA);
+  const dcsBox = onDcs && (
+    <div style={{ ...panelCard, padding: mob ? "12px 14px" : "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ width: 34, height: 34, borderRadius: 10, background: dcsF ? "#E0F2FE" : X.head, color: dcsF ? "#0E7490" : X.sub, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <FileText size={17} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 800, fontSize: 14.5 }}>{_t("DCS / Value Added")}</div>
+        <div style={{ fontSize: 12, color: X.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {dcsF ? `${dcsKindTxt(dcsF.kind)}${(dcsF.items || []).length ? " · " + dcsF.items.map(dcsItemTxt).join(", ") : ""} · ${fmtDay(dcsA.t.slice(0, 10))}` : _t("Has Value Added, DCS or Disloyalty? Fill in the form")}
+        </div>
+      </div>
+      {dcsF && <DcsPdfButton f={dcsF} />}
+      <button onClick={() => setDcsOpen(true)} style={{ ...btn, height: 34, borderRadius: 10, flexShrink: 0, ...(dcsF ? null : { background: X.teal, borderColor: X.teal, color: "#fff", fontWeight: 700 }) }}>
+        {dcsF ? <Pencil size={14} /> : <FileText size={14} />} {dcsF ? (mob ? _t("Edit") : _t("New version")) : _t("Fill in")}
+      </button>
+      <DcsForm open={dcsOpen} onClose={() => setDcsOpen(false)} q={q} acts={acts} onSave={onDcs} />
     </div>
   );
   const reqBox = onReq && (
@@ -1434,6 +1840,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
               </>
             )}
           </div>
+          {dcsBox}
           {!mob && reqBox}
           {/* celular: os dados da cotação e a requisição ficam recolhidos em "Details" */}
           {mob && (
@@ -1655,7 +2062,7 @@ function CloseDialog({ ask, onConfirm, onReopen, onCancel }) {
 /* gaveta lateral com o registro da cotação (usada no plano do dia) */
 /* Painel lateral da cotação (abre por cima da tela, do lado direito). nav = { i, n, go(delta) } quando veio
    da tabela: setas para a cotação anterior / próxima da lista (também com Alt+↑ / Alt+↓). */
-function QuoteDrawer({ q, m, sales, acts, thermo, onNote, onDone, onResched, onReq, onAskClose, onReopen, onWhy, focusDone, onClose, user, onUser, nav }) {
+function QuoteDrawer({ q, m, sales, acts, thermo, onNote, onDone, onResched, onReq, onAskClose, onReopen, onWhy, focusDone, onClose, user, onUser, nav, onDcs }) {
   const mob = useMobile(); // celular: o painel ocupa a tela inteira
   useEffect(() => {
     const k = (e) => {
@@ -1685,6 +2092,7 @@ function QuoteDrawer({ q, m, sales, acts, thermo, onNote, onDone, onResched, onR
           onAskClose={onAskClose}
           onReopen={onReopen}
           onWhy={onWhy}
+          onDcs={onDcs}
           focusDone={focusDone}
           user={user}
           onUser={onUser}
@@ -5837,7 +6245,7 @@ async function api(path, { body, timeout = 60000 } = {}) {
     try {
       j = await r.json();
     } catch {}
-    if (!r.ok) throw Object.assign(new Error((j && j.message) || _t("server error {0}", r.status)), { status: r.status, code: j && j.error });
+    if (!r.ok) throw Object.assign(new Error(j && j.message ? _t(j.message) : _t("server error {0}", r.status)), { status: r.status, code: j && j.error }); // mensagem do servidor no idioma da tela
     return j;
   } finally {
     if (tm) clearTimeout(tm);
@@ -6626,7 +7034,7 @@ export default function App() {
       else {
         srvRetry.current++;
         setDf((d) => ({ ...d, st: "err", part: "", err: e.message }));
-        if (e.status === 403 || e.status === 400 || e.status === 413) say("err", _t("Not saved: {0}", e.message));
+        if (e.status === 403 || e.status === 400 || e.status === 413 || (e.status === 503 && srvRetry.current === 1)) say("err", _t("Not saved: {0}", e.message));
       }
     } finally {
       writing.current = false;
@@ -7083,6 +7491,8 @@ export default function App() {
   };
   // anotação: entra no histórico com data e hora; não há como editar nem excluir
   const onNote = (id, name, txt) => log({ id, c: name, k: "note", txt });
+  // formulário DCS / Value Added: uma entrada no histórico com o formulário inteiro (corrigir = nova versão)
+  const onDcs = (q, f) => log({ id: q.id, c: q.c, k: "dcs", n: DCS_KINDS[f.kind] ? DCS_KINDS[f.kind].pt : "", txt: JSON.stringify({ v: 1, ...f }) });
 
   /* ---------- importar relatórios: as cotações novas se juntam às guardadas ---------- */
   const importFile = async (file, want) => {
@@ -8188,6 +8598,7 @@ export default function App() {
           onAskClose={askClose}
           onReopen={doReopen}
           onWhy={doWhy}
+          onDcs={onDcs}
           focusDone={openDone}
           user={user}
           onUser={setUser}

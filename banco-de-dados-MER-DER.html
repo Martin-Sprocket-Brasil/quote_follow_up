@@ -60,6 +60,18 @@
   .rules { margin: 10px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--sub); }
   .rules code { color: var(--ink); }
   code { font-family: ui-monospace, Consolas, monospace; }
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 6px 0 4px; }
+  .flow .st { flex: 1 1 170px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; background: #FBFCFD; font-size: 12.5px; color: var(--sub); }
+  .flow .st b { display: block; color: var(--ink); font-size: 13px; margin-bottom: 3px; }
+  .flow .st .n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 99px; background: #E0F2FE; color: #0E7490; font-weight: 800; font-size: 11px; margin-right: 6px; }
+  .flow .ar { align-self: center; color: #9AA5B1; font-size: 18px; }
+  pre.sql { background: #1D2B36; color: #E6EDF3; border-radius: 10px; padding: 12px 14px; overflow: auto; font-size: 12.5px; line-height: 1.5; margin: 8px 0 0; }
+  pre.sql .c { color: #8FA3B5; }
+  .src { font-size: 10.5px; font-weight: 800; padding: 1px 7px; border-radius: 99px; white-space: nowrap; }
+  .src.a { background: var(--tealSoft); color: var(--tealDk); }
+  .src.m { background: var(--amberSoft); color: var(--amber); }
+  .src.l { background: var(--violetSoft); color: var(--violet); }
+  .dt h4 { margin: 14px 0 6px; font-size: 13.5px; }
   @media (max-width: 700px) { header, main { padding-left: 14px; padding-right: 14px; } table.cols td.d { min-width: 200px; } }
   @media print {
     nav, .bar button { display: none; }
@@ -77,6 +89,7 @@
     <button data-tab="der" class="on">DER · tabelas</button>
     <button data-tab="mer">MER · conceitual</button>
     <button data-tab="dic">Dicionário de dados</button>
+    <button data-tab="dcs">Formulário DCS / VA</button>
   </nav>
 </header>
 <main>
@@ -114,12 +127,15 @@
       <div class="scroll"><svg id="merSvg"></svg></div>
       <div class="note">
         <b>Exemplo:</b> “COTAÇÃO — gera — PEDIDO”: perto de PEDIDO está <b>(0,N)</b> → uma cotação gera nenhum ou vários pedidos; perto de COTAÇÃO está <b>(1,N)</b> → um pedido vem de pelo menos uma cotação.
+        <b>FORMULÁRIO DCS / VA</b> (borda tracejada) é um tipo de ATIVIDADE: não tem tabela própria, fica numa linha de <code>activities</code>. Uma atividade é no máximo um formulário <b>(0,1)</b>; todo formulário é exatamente uma atividade <b>(1,1)</b>.<br>
         <b>META DO DIA</b> e <b>CONFIGURAÇÃO</b> não se ligam a nada: guardam a meta da equipe, as versões e os últimos relatórios importados.
       </div>
     </div>
   </section>
 
   <section id="dic"><div class="dict" id="dict"></div></section>
+
+  <section id="dcs"><div class="dict" id="dcsTab"></div></section>
 </main>
 
 <script>
@@ -636,7 +652,7 @@ const SCHEMA = {
     "null": false,
     "auto": false,
     "default": null,
-    "comment": "note, fup, win, done, resched, req, plan, status, amount, order, close, reopen, why"
+    "comment": "note, fup, win, done, resched, req, plan, status, amount, order, close, reopen, why, dcs (formulário DCS / VA)"
    },
    {
     "name": "from_value",
@@ -652,7 +668,7 @@ const SCHEMA = {
     "null": true,
     "auto": false,
     "default": null,
-    "comment": "Para (ex.: FUP B, data do próximo follow-up, valor novo)"
+    "comment": "Para (ex.: FUP B, data do próximo follow-up, valor novo; no dcs: Value Added, DCS ou Deslealdade)"
    },
    {
     "name": "note",
@@ -660,7 +676,7 @@ const SCHEMA = {
     "null": true,
     "auto": false,
     "default": null,
-    "comment": "Texto da anotação (ou o motivo, no fechamento)"
+    "comment": "Texto da anotação (ou o motivo, no fechamento; no dcs: o formulário inteiro em JSON)"
    },
    {
     "name": "created_by",
@@ -681,7 +697,7 @@ const SCHEMA = {
   ],
   "fks": [],
   "checks": [
-   "kind IN ('note', 'fup', 'win', 'done', 'resched', 'req', 'plan', 'status', 'amount', 'order', 'close', 'reopen', 'why')"
+   "kind IN ('note', 'fup', 'win', 'done', 'resched', 'req', 'plan', 'status', 'amount', 'order', 'close', 'reopen', 'why', 'dcs')"
   ],
   "idx": 3
  },
@@ -1019,9 +1035,20 @@ function drawRels() {
     txt(label, { x: lx, y: ly + 3.5, "font-size": 10.5, "font-weight": 600, fill: kind === "fk" ? C.fk : "#52606D", "text-anchor": "middle" }, g);
   });
 }
+// quadro do formulário DCS / VA: fica embaixo de activities e acompanha quando ela é arrastada
+function drawDcsNote() {
+  const [x, y, w] = pos.activities, top = y + boxH("activities") + 26, ny = colY("activities", "note");
+  const g = el("g", { class: "rel" }, gTbls);
+  el("path", { d: `M${x + w},${ny} h18 V${top + 20} H${x + w - 6}`, fill: "none", stroke: "#0E7490", "stroke-width": 1.4, "stroke-dasharray": "4 3" }, g);
+  el("rect", { x, y: top, width: w + 60, height: 112, rx: 10, fill: "#F0F9FF", stroke: "#7DD3FC" }, g);
+  el("rect", { x, y: top, width: 5, height: 112, rx: 2, fill: "#0E7490" }, g);
+  const L = [["Formulário DCS / Value Added", 800, "#0E7490", 13], ["linha com kind = 'dcs'", 600, C.ink, 12], ["to_value = Value Added · DCS · Deslealdade", 400, C.sub, 11.5], ["note = o formulário inteiro em JSON", 400, C.sub, 11.5], ["corrigir = linha nova (a última vale)", 400, C.sub, 11.5]];
+  L.forEach(([t, fw, fill, fs], i) => txt(t, { x: x + 16, y: top + 22 + i * 19, "font-size": fs, "font-weight": fw, fill }, g));
+}
 function drawAll() {
   gTbls.innerHTML = "";
   Object.keys(pos).forEach(drawTable);
+  drawDcsNote();
   drawRels();
 }
 drawAll();
@@ -1082,6 +1109,7 @@ const ENT = {
   VENDA: { label: "VENDA (Booked)", x: 150, y: 430, g: "rep", attrs: ["dia, cliente", "classificação, linha", "valor, vendedor"] },
   GRUPO: { label: "GRUPO DE PRODUTO", x: 380, y: 430, g: "rep", attrs: ["_nome_"] },
   ATIVIDADE: { x: 1010, y: 430, g: "acomp", attrs: ["data e hora, tipo", "de → para, nota"] },
+  DCSVA: { label: "FORMULÁRIO DCS / VA", x: 1375, y: 430, g: "acomp", sub: "guardado em activities (kind dcs)", attrs: ["tipo: VA, DCS, Deslealdade", "subgrupos (descontos, frete…)", "SO, vendedor interno/externo", "cliente final, distribuidor", "cidade, UF, descrição", "monetizado, valor, moeda", "documentado"] },
   USUARIO: { label: "USUÁRIO", x: 760, y: 690, g: "acesso", attrs: ["_nome_", "papel (tela), senha"] },
   SESSAO: { label: "SESSÃO", x: 1290, y: 690, g: "acesso", attrs: ["_código_", "validade"] },
   META: { label: "META DO DIA", x: 150, y: 690, g: "conf", attrs: ["_dia_", "valor"] },
@@ -1097,6 +1125,7 @@ const MRELS = [
   ["COTACAO", "ATIVIDADE", "histórico", "(0,1)", "(0,N)"],
   ["USUARIO", "COTACAO", "atende", "(0,1)", "(0,N)", "externo / interno"],
   ["USUARIO", "ATIVIDADE", "registra", "(0,1)", "(0,N)"],
+  ["ATIVIDADE", "DCSVA", "é um", "(1,1)", "(0,1)"],
   ["USUARIO", "SESSAO", "abre", "(1,1)", "(0,N)"],
 ];
 const EW = 190;
@@ -1138,7 +1167,8 @@ MRELS.forEach(([a, b, name, ca, cb, attr]) => {
 Object.entries(ENT).forEach(([k, e]) => {
   const g = el("g", {}, gE), G = GROUPS[e.g], h = entH(e), x = e.x - EW / 2, y = e.y - h / 2;
   el("rect", { x, y: y + 2, width: EW, height: h, rx: 8, fill: "rgba(16,24,40,.06)" }, g);
-  el("rect", { x, y, width: EW, height: h, rx: 8, fill: "#fff", stroke: C.ink, "stroke-width": 1.5 }, g);
+  el("rect", { x, y, width: EW, height: h, rx: 8, fill: "#fff", stroke: C.ink, "stroke-width": 1.5, "stroke-dasharray": e.sub ? "6 4" : "" }, g);
+  if (e.sub) txt(e.sub, { x: e.x, y: y + h + 16, "font-size": 11, "font-style": "italic", fill: C.sub, "text-anchor": "middle" }, g);
   el("path", { d: `M${x},${y + 8} a8,8 0 0 1 8,-8 h${EW - 16} a8,8 0 0 1 8,8 v22 h-${EW} z`, fill: G.soft }, g);
   el("line", { x1: x, y1: y + 30, x2: x + EW, y2: y + 30, stroke: C.ink, "stroke-width": 1 }, g);
   txt(e.label || k, { x: e.x, y: y + 20, "font-size": 13, "font-weight": 800, fill: G.color, "text-anchor": "middle", "letter-spacing": ".3" }, g);
@@ -1152,7 +1182,7 @@ Object.entries(ENT).forEach(([k, e]) => {
 /* ===================== Dicionário ===================== */
 const ORDER = ["quotes", "quote_orders", "quote_product_groups", "sales", "followups", "followup_done_days", "activities", "users", "sessions", "day_goals", "settings", "v_quote_state"];
 const EXTRA = {
-  activities: ["Somente inclusão: os gatilhos <code>tr_activities_no_update</code> e <code>tr_activities_no_delete</code> recusam qualquer alteração ou exclusão.", "<code>act_key</code> = SHA-256 do actKey do programa: o mesmo registro mandado duas vezes não entra de novo."],
+  activities: ["<b>Formulário DCS / Value Added</b>: é uma linha com <code>kind = 'dcs'</code>; o formulário inteiro fica em <code>note</code> (JSON). Veja a aba <b>Formulário DCS / VA</b>.", "Somente inclusão: os gatilhos <code>tr_activities_no_update</code> e <code>tr_activities_no_delete</code> recusam qualquer alteração ou exclusão.", "<code>act_key</code> = SHA-256 do actKey do programa: o mesmo registro mandado duas vezes não entra de novo."],
   followups: ["Sem FK para <code>quotes</code> de propósito: o follow-up continua mesmo se a cotação sair do Quote Report."],
   users: ["A senha nunca fica em texto: só o sal e o hash (SHA-256 repetido 5000 vezes, o mesmo cálculo do programa)."],
   sessions: ["O cookie do navegador guarda um código aleatório; aqui fica só o SHA-256 dele. Zerar a senha de alguém apaga as sessões dessa pessoa."],
@@ -1184,6 +1214,125 @@ ORDER.forEach((name) => {
     ${[...fks, ...inc, ...lks, ...uqs, ...cks, ...ext].length ? `<ul class="rules">${[...fks, ...inc, ...lks, ...uqs, ...cks, ...ext].join("")}</ul>` : ""}`;
   dict.appendChild(div);
 });
+
+
+/* ===================== Formulário DCS / VA ===================== */
+(() => {
+  const F = [
+    // [chave no JSON, o que é, de onde vem: a = automático, l = lembrado, m = a pessoa preenche, campo no PDF]
+    ["v", "Versão do formato do JSON (hoje 1)", "a", "—"],
+    ["kind", "<code>va</code> = Value Added · <code>dcs</code> = DCS · <code>desl</code> = Deslealdade", "m", "Value Added / DCS / Deslealdade"],
+    ["items", "Subgrupos marcados (lista). Vazia na Deslealdade", "m", "Tipos de Economia (caixas)"],
+    ["so", "Pedido (SO)", "a", "SO"],
+    ["qt", "Cotação (QT)", "a", "QT"],
+    ["inside", "Vendedor interno", "a", "Vendedor interno"],
+    ["outside", "Vendedor externo", "a", "Vendedor externo"],
+    ["endUser", "Cliente final", "a", "Cliente final (AX)"],
+    ["distributor", "Distribuidor", "a", "Distribuidor"],
+    ["city", "Cidade", "l", "Cidade"],
+    ["state", "Estado (UF)", "l", "Estado"],
+    ["desc", "Descrição do que foi feito", "m", "Descrição"],
+    ["monetized", "<code>Sim</code> ou <code>Não</code>", "m", "Economia (monetizado ou não)"],
+    ["value", "Valor, como foi digitado (ex.: 2.480,00)", "m", "Valor"],
+    ["currency", "<code>BRL</code> ou <code>USD</code>", "m", "Moeda"],
+    ["documented", "<code>Sim</code> ou <code>Não</code>", "m", "Documentado"],
+  ];
+  const SRC = { a: ["automático", "a"], l: ["lembrado", "l"], m: ["preenchido", "m"] };
+  const VA = [["pass", "Passar negócio ao distribuidor"], ["discount", "Descontos"], ["return", "Receber devolução sem custo"], ["freight", "Frete cortesia"], ["commission", "Comissão"], ["leadtime", "Prazo de entrega"], ["payment", "Condição de pagamento especial"]];
+  const DCS = [["downAvoid", "Tempo inativo evitado"], ["downReduce", "Tempo inativo reduzido"], ["emergency", "Atendimento de emergência"], ["afterHours", "Atendimento fora do horário"], ["productivity", "Aumento da produtividade"], ["labor", "Redução trabalhista"], ["oem", "Conversão de peças OEM"], ["priceDiff", "Diferenciação de preços"], ["rebuild", "Reconstrução/retrabalho de produto"], ["energy", "Economia de energia"], ["freightSave", "Economia de frete"], ["invReduce", "Redução de Inventário"], ["invCommit", "Inventário Comprometido"], ["maintTrain", "Treinamento de Manutenção"], ["engAssist", "Assistência da Engenharia"], ["install", "Assistência com Instalação"], ["reverse", "Engenharia Reversa"], ["prodTrain", "Treinamento em Produto"], ["field", "Pesquisa em Campo"]];
+  const items = (arr) => arr.map(([k, n]) => `<tr><td class="n">${k}</td><td>${n}</td></tr>`).join("");
+  const sql = (s) => `<pre class="sql">${s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/^(--.*)$/gm, '<span class="c">$1</span>')}</pre>`;
+  const card = (html) => { const d = document.createElement("div"); d.className = "card dt"; d.innerHTML = html; document.getElementById("dcsTab").appendChild(d); };
+
+  card(`<h3>Formulário DCS / Value Added<span class="chip" style="background:#E0F2FE;color:#0E7490">ACOMPANHAMENTO</span></h3>
+    <div class="desc">Sim, ele é gravado no banco. Não existe uma tabela só para ele: cada formulário salvo vira <b>uma linha</b> em <code>activities</code> (o histórico da cotação), com <code>kind = 'dcs'</code> e o formulário inteiro na coluna <code>note</code>, em JSON.</div>
+    <div class="flow">
+      <div class="st"><b><span class="n">1</span>Tela</b>No registro da QT, quadro <i>DCS / Value Added</i> → <i>Preencher</i>. O programa já completa QT, SO, vendedores, cliente final / distribuidor.</div>
+      <div class="ar">→</div>
+      <div class="st"><b><span class="n">2</span>Salvar</b>A página manda para o servidor (<code>/api/sync</code>), junto com o resto, cerca de 1 s depois.</div>
+      <div class="ar">→</div>
+      <div class="st"><b><span class="n">3</span>Banco</b><code>INSERT</code> de 1 linha em <code>activities</code>. Não dá para alterar nem apagar (gatilhos).</div>
+      <div class="ar">→</div>
+      <div class="st"><b><span class="n">4</span>PDF</b>Não fica no banco: é montado na hora, no navegador, com o modelo oficial + o JSON, toda vez que alguém clica em <i>PDF</i>.</div>
+    </div>
+    <ul class="rules">
+      <li><b>Corrigir</b> grava uma linha nova; a antiga continua no histórico. O quadro e o PDF usam sempre a mais recente (maior <code>at</code>, depois maior <code>id</code>) da mesma <code>quote_id</code>.</li>
+      <li><b>Lembrado por cliente:</b> cidade, estado, distribuidor e cliente final vêm do último formulário com o mesmo <code>customer</code> (o Quote Report não traz cidade e estado).</li>
+      <li><code>inside</code> e <code>outside</code> são o nome escrito no formulário (texto), sem ligação com <code>users</code>. Quem salvou de fato é o <code>created_by</code> (o usuário logado).</li>
+      <li>Banco criado antes desta versão: rode o <code>schema.sql</code> novo, que libera <code>'dcs'</code> na regra <code>ck_activities_kind</code>. Sem isso o servidor recusa o formulário (e a página tenta de novo sozinha).</li>
+    </ul>`);
+
+  card(`<h3>Como a linha fica em <code>activities</code></h3>
+    <div class="scroll"><table class="cols"><thead><tr><th>Coluna</th><th>No formulário DCS / VA</th><th>Exemplo</th></tr></thead><tbody>
+      <tr><td class="n">id</td><td>Número automático</td><td class="t">7576</td></tr>
+      <tr><td class="n">act_key</td><td>SHA-256 do registro: o mesmo formulário mandado duas vezes não entra de novo</td><td class="t">9f3c…</td></tr>
+      <tr><td class="n">at</td><td>Quando foi salvo</td><td class="t">2026-11-18 08:03:11</td></tr>
+      <tr><td class="n">quote_id</td><td>A QT</td><td class="t">QT00212304</td></tr>
+      <tr><td class="n">customer</td><td>Cliente da cotação (usado para lembrar cidade e estado)</td><td class="t">CRM PRODUTOS E SERVICOS…</td></tr>
+      <tr><td class="n">kind</td><td>Sempre <code>dcs</code></td><td class="t">dcs</td></tr>
+      <tr><td class="n">from_value</td><td>Não usado</td><td class="t">NULL</td></tr>
+      <tr><td class="n">to_value</td><td>O tipo, por extenso (para filtrar sem abrir o JSON)</td><td class="t">Value Added</td></tr>
+      <tr><td class="n">note</td><td>O formulário inteiro em JSON (campos abaixo)</td><td class="t">{"v":1,"kind":"va",…}</td></tr>
+      <tr><td class="n">created_by</td><td>Usuário logado que salvou</td><td class="t">Murilo H. Sales Cabral</td></tr>
+    </tbody></table></div>
+    <h4>Exemplo real do JSON em <code>note</code></h4>
+    ${sql(`{
+  "v": 1, "kind": "va", "items": ["discount", "freight"],
+  "so": "SO00100574", "qt": "QT00212304",
+  "inside": "Matheus Faria Gallo", "outside": "Murilo H. Sales Cabral",
+  "endUser": "USINA SANTA ADELIA S/A", "distributor": "CRM PRODUTOS E SERVICOS INDUSTRIAIS LTDA",
+  "city": "Jaboticabal", "state": "SP",
+  "desc": "Desconto de 5% e frete cortesia para fechar o pedido de compra.",
+  "monetized": "Sim", "value": "2.480,00", "currency": "BRL", "documented": "Não"
+}`)}`);
+
+  card(`<h3>Campos do JSON</h3>
+    <div class="desc"><span class="src a">automático</span> o programa preenche pela cotação · <span class="src l">lembrado</span> vem do último formulário do mesmo cliente · <span class="src m">preenchido</span> a pessoa escolhe ou digita. Tudo pode ser corrigido na tela antes de salvar.</div>
+    <div class="scroll"><table class="cols"><thead><tr><th>Chave</th><th>O que é</th><th>Origem</th><th>Campo no PDF</th></tr></thead><tbody>
+      ${F.map(([k, d, o, pdf]) => `<tr><td class="n">${k}</td><td>${d}</td><td><span class="src ${SRC[o][1]}">${SRC[o][0]}</span></td><td>${pdf}</td></tr>`).join("")}
+    </tbody></table></div>
+    <ul class="rules"><li>Obrigatórios para salvar: <code>kind</code>, <code>items</code> (no VA e no DCS), <code>qt</code>, <code>inside</code>, <code>endUser</code>, <code>city</code>, <code>desc</code>, <code>monetized</code>, <code>documented</code>.</li>
+    <li>Cliente final × distribuidor: se a classificação da cotação for <i>Distribuidor</i>, o cliente da QT vai em <code>distributor</code>; senão, em <code>endUser</code>.</li></ul>`);
+
+  card(`<h3>Códigos dos subgrupos (<code>items</code>)</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
+      <div><h4>Value Added (<code>kind = va</code>)</h4><table class="cols"><thead><tr><th>Código</th><th>No formulário</th></tr></thead><tbody>${items(VA)}</tbody></table></div>
+      <div><h4>DCS (<code>kind = dcs</code>)</h4><table class="cols"><thead><tr><th>Código</th><th>No formulário</th></tr></thead><tbody>${items(DCS)}</tbody></table></div>
+    </div>`);
+
+  card(`<h3>Consultas prontas</h3>
+    <div class="desc">Para rodar no HeidiSQL ou no <code>mysql.exe</code>, dentro do banco <code>quote_follow_up</code>.</div>
+    <h4>Última versão de cada formulário</h4>
+    ${sql(`-- uma linha por QT: só a versão mais recente
+SELECT at, quote_id, to_value AS tipo, created_by,
+       JSON_VALUE(note, '$.so')          AS so,
+       JSON_VALUE(note, '$.inside')      AS vendedor_interno,
+       JSON_VALUE(note, '$.outside')     AS vendedor_externo,
+       JSON_VALUE(note, '$.endUser')     AS cliente_final,
+       JSON_VALUE(note, '$.distributor') AS distribuidor,
+       JSON_VALUE(note, '$.city')        AS cidade,
+       JSON_VALUE(note, '$.state')       AS uf,
+       JSON_EXTRACT(note, '$.items')     AS subgrupos,
+       JSON_VALUE(note, '$.monetized')   AS monetizado,
+       JSON_VALUE(note, '$.value')       AS valor,
+       JSON_VALUE(note, '$.currency')    AS moeda,
+       JSON_VALUE(note, '$.documented')  AS documentado,
+       JSON_VALUE(note, '$.desc')        AS descricao
+FROM (
+  SELECT a.*, ROW_NUMBER() OVER (PARTITION BY quote_id ORDER BY at DESC, id DESC) AS rn
+  FROM activities a WHERE kind = 'dcs'
+) x
+WHERE rn = 1
+ORDER BY at DESC;`)}
+    <h4>Quantos por tipo e por mês</h4>
+    ${sql(`SELECT DATE_FORMAT(at, '%Y-%m') AS mes, to_value AS tipo, COUNT(DISTINCT quote_id) AS formularios
+FROM activities WHERE kind = 'dcs'
+GROUP BY mes, tipo ORDER BY mes DESC, tipo;`)}
+    <h4>Todas as versões de uma QT (o histórico das correções)</h4>
+    ${sql(`SELECT id, at, created_by, to_value AS tipo, note
+FROM activities WHERE kind = 'dcs' AND quote_id = 'QT00212304'
+ORDER BY at, id;`)}`);
+})();
 
 /* abas */
 document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => {

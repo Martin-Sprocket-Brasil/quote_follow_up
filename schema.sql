@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS activities (
   KEY ix_activities_quote (quote_id, at),
   KEY ix_activities_kind_at (kind, at),
   KEY ix_activities_by (created_by, at),
-  CONSTRAINT ck_activities_kind CHECK (kind IN ('note', 'fup', 'win', 'done', 'resched', 'req', 'plan', 'status', 'amount', 'order', 'close', 'reopen', 'why'))
+  CONSTRAINT ck_activities_kind CHECK (kind IN ('note', 'fup', 'win', 'done', 'resched', 'req', 'plan', 'status', 'amount', 'order', 'close', 'reopen', 'why', 'dcs'))
 ) ENGINE=InnoDB COMMENT='Activities History e anotações (somente inclusão)';
 
 -- -------------------------------------------------------------------------------------
@@ -192,6 +192,12 @@ CREATE TABLE IF NOT EXISTS users (
   PRIMARY KEY (name),
   CONSTRAINT ck_users_role CHECK (role IS NULL OR role IN ('admin', 'manager', 'outside', 'inside'))
 ) ENGINE=InnoDB COMMENT='Usuários, papel (tela) e senha';
+
+-- Bancos criados antes do formulário DCS / Value Added: a regra dos tipos de histórico passa a aceitar 'dcs'
+-- (o formulário inteiro fica na nota, em JSON). Pode rodar de novo sem problema.
+ALTER TABLE activities DROP CONSTRAINT IF EXISTS ck_activities_kind;
+ALTER TABLE activities ADD CONSTRAINT ck_activities_kind
+  CHECK (kind IN ('note', 'fup', 'win', 'done', 'resched', 'req', 'plan', 'status', 'amount', 'order', 'close', 'reopen', 'why', 'dcs'));
 
 -- Sessões do servidor (quem está logado em cada navegador / celular). O cookie guarda um código aleatório;
 -- aqui fica só o SHA-256 dele. Zerar a senha de alguém apaga as sessões dessa pessoa.
