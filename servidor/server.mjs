@@ -310,6 +310,8 @@ async function readData(me) {
     const acts = await conn.query("SELECT at, quote_id, customer, kind, from_value, to_value, note, created_by FROM activities ORDER BY at, id");
     const goals = await conn.query("SELECT day, goal FROM day_goals");
     const dg = await conn.query("SELECT value FROM settings WHERE name = 'daily_goal'");
+    // metas por linha: settings daily_goal_pt / _cp / _mh → na página, dayGoals["line:PT"]…
+    const lg = await conn.query("SELECT name, value FROM settings WHERE name IN ('daily_goal_pt', 'daily_goal_cp', 'daily_goal_mh')");
     const users = await conn.query("SELECT name, role, pass_hash FROM users");
     await conn.query("COMMIT");
     const logBy = new Map();
@@ -346,7 +348,10 @@ async function readData(me) {
         return a;
       }),
       dailyGoal: num(dg.length && dg[0].value),
-      dayGoals: Object.fromEntries(goals.map((g) => [g.day, g.goal])),
+      dayGoals: {
+        ...Object.fromEntries(goals.map((g) => [g.day, g.goal])),
+        ...Object.fromEntries(lg.filter((r) => num(r.value) > 0).map((r) => ["line:" + r.name.slice(-2).toUpperCase(), num(r.value)])),
+      },
       users: sanitizeUsers(users, me),
     };
   } catch (e) {
@@ -490,6 +495,15 @@ async function applyGoals(conn, b) {
   }
   if (isObj(b.dayGoals))
     for (const [d0, v] of Object.entries(b.dayGoals)) {
+      // meta diária de uma linha (PT, CP, MH)
+      const ln = /^line:(PT|CP|MH)$/.exec(d0);
+      if (ln) {
+        const val = v == null ? 0 : +v;
+        if (!Number.isFinite(val) || val < 0) continue;
+        await setSetting(conn, "daily_goal_" + ln[1].toLowerCase(), val);
+        n++;
+        continue;
+      }
       const d = day(d0);
       if (!d) continue;
       if (v == null) await conn.query("DELETE FROM day_goals WHERE day = ?", [d]);

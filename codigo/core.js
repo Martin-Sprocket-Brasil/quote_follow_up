@@ -1757,6 +1757,7 @@ export function parseDataWorkbook(wb) {
   rowsOf(wb, "Goals").forEach((r) => {
     const k = str(r[0]);
     if (k === "Daily goal") dailyGoal = toNum(r[1]);
+    else if (/^line:(PT|CP|MH)$/.test(k)) dayGoals[k] = toNum(r[1]); // meta diária de uma linha
     else if (/^\d{4}-\d{2}-\d{2}$/.test(isoOf(r[0]))) dayGoals[isoOf(r[0])] = toNum(r[1]);
   });
   return {

@@ -290,6 +290,22 @@ const ROLE_KEYS = ["outside", "inside", "manager"];
 /* gerência só visualiza as cotações: sem FUP, % Win, notas, fechamento, plano do dia ou DCS (quem faz é o vendedor).
    As células e o painel da QT leem isto e viram texto; o servidor também recusa essas gravações da gerência. */
 const ROCtx = React.createContext(false);
+/* metas por linha (PT, CP, MH): ficam dentro de dayGoals com as chaves "line:PT", "line:CP" e "line:MH" (assim viajam
+   junto com as outras metas: servidor → settings daily_goal_pt/cp/mh; arquivo → aba de metas). Quando há metas por
+   linha, a meta diária total = a soma delas. Um dia com meta digitada à mão vale para o total; filtrando uma linha,
+   ele se divide na mesma proporção das metas por linha. */
+const GOAL_LINES = ["PT", "CP", "MH"];
+const lineGoalsOf = (dayGoals) => Object.fromEntries(GOAL_LINES.map((k) => [k, Math.max(0, +((dayGoals || {})["line:" + k] || 0))]));
+const lineGoalSum = (lg) => GOAL_LINES.reduce((t, k) => t + (lg[k] || 0), 0);
+// meta de um dia (da linha filtrada, ou o total) · base = meta de um dia útil comum
+function goalRules(dailyGoal, dayGoals, line) {
+  const lg = lineGoalsOf(dayGoals);
+  const sum = lineGoalSum(lg);
+  const tot = sum > 0 ? sum : dailyGoal || 0;
+  const share = line && sum > 0 ? (lg[line] || 0) / sum : 1;
+  const goalOf = (d) => (dayGoals[d] != null ? Math.max(0, dayGoals[d]) : isOffDay(d) ? 0 : tot) * share;
+  return { goalOf, base: tot * share, total: tot, lines: lg, byLine: sum > 0, share };
+}
 const noop = () => {};
 // por enquanto o vendedor externo usa as mesmas telas do interno (com o Calendar)
 const SELLER_TABS = [
@@ -5248,7 +5264,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
 function ManagerOverview({ rows, quotes, meta, thermo, acts, sales, cls, line, dailyGoal, dayGoals, today, groupOf, periodTxt, filtersTxt, onOpenQuote, onGo }) {
   const mob = useMobile();
   // meta do mês: soma da meta de cada dia útil (ou a digitada no dia), como no Calendar
-  const goalOf = (d) => (dayGoals[d] != null ? Math.max(0, dayGoals[d]) : isOffDay(d) ? 0 : dailyGoal || 0);
+  const { goalOf } = goalRules(dailyGoal, dayGoals, line);
   const ym = today.slice(0, 7),
     mFrom = ym + "-01",
     mTo = lastDayOfMonth(ym);
@@ -5436,9 +5452,43 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
   const weighted = cands.reduce((s, c) => s + (c.v * c.win) / 100, 0);
   /* Meta de um dia: o valor digitado para aquele dia, senão a meta diária padrão (só em dia útil;
      sábado e domingo ficam sem meta, a não ser que você digite uma). */
-  const goalOf = (d) => (dayGoals[d] != null ? Math.max(0, dayGoals[d]) : isOffDay(d) ? 0 : dailyGoal || 0);
+  const GR = goalRules(dailyGoal, dayGoals, line);
+  const goalOf = GR.goalOf;
   const bookedToday = useMemo(() => bookedRange(today, today, quotes, sales, cls, line), [today, quotes, sales, cls, line]);
   const goalToday = goalOf(today);
+  // metas por linha: muda uma linha e a meta diária total passa a ser a soma
+  const setLineGoal = (k, n) => {
+    const next = { ...GR.lines, [k]: Math.max(0, n || 0) };
+    setDayGoals((g) => {
+      const x = { ...g };
+      if (next[k]) x["line:" + k] = next[k];
+      else delete x["line:" + k];
+      return x;
+    });
+    const sum = lineGoalSum(next);
+    setDailyGoal(sum > 0 ? sum : dailyGoal || 0);
+  };
+  const goalLbl = line && GR.byLine ? _t("Goal {0} per business day", line) : _t("Goal per business day");
+  const lineSplit = GR.byLine ? GOAL_LINES.map((k) => `${k} ${moneyShort(GR.lines[k])}`).join(" · ") : _t("no split by line");
+  const goalEditor = (
+    <div style={{ display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : "repeat(4, minmax(0, 1fr))", gap: 10, alignItems: "end" }}>
+      {GOAL_LINES.map((k) => (
+        <div key={k} style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{_t("Line {0}", k)}</div>
+          <MoneyInput value={GR.lines[k]} onCommit={(n) => setLineGoal(k, n)} />
+        </div>
+      ))}
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{GR.byLine ? _t("Total (sum of the lines)") : _t("Total")}</div>
+        {GR.byLine ? (
+          <div style={{ display: "flex", alignItems: "center", height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 18, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: X.navy }}>{money(GR.total)}</div>
+        ) : (
+          <MoneyInput value={dailyGoal} onCommit={(n) => setDailyGoal(n)} />
+        )}
+      </div>
+      <div style={{ gridColumn: "1 / -1", fontSize: 11.5, color: X.sub }}>{GR.byLine ? _t("Each line has its own goal; the total is the sum. Filter Line: PT, CP or MH at the top to compare each one with what was booked.") : _t("Fill PT, CP and MH to have a goal per line (the total becomes the sum), or type only the total.")}</div>
+    </div>
+  );
   const missingToday = Math.max(0, Math.round((goalToday - bookedToday.v) * 100) / 100);
   const partial = bookedToday.src === "partial";
 
@@ -5456,8 +5506,8 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
   const horizon = [gEnd, lastDayOfMonth(today.slice(0, 7))].sort()[1];
   const plan = useMemo(
     () => planDays(cands, { today, horizon, goalOf, bookedToday: partial ? 0 : bookedToday.v, strategy, excluded: exclSet }),
-    // goalOf depende de dayGoals e dailyGoal
-    [cands, today, horizon, dayGoals, dailyGoal, bookedToday.v, partial, strategy, exclSet],
+    // goalOf depende de dayGoals, dailyGoal e da linha filtrada
+    [cands, today, horizon, dayGoals, dailyGoal, line, bookedToday.v, partial, strategy, exclSet],
   );
   const overdueN = plan.live.filter((x) => x.overdue).length;
   const monthCount = days.filter((d) => weekly || d.slice(0, 7) === ym).reduce((s, d) => s + ((plan.byDay[d] && plan.byDay[d].list.length) || 0), 0);
@@ -5554,7 +5604,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
           {editGoal && goalEdit && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{_t("Goal per business day")}</div>
-              <MoneyInput value={dailyGoal} onCommit={(n) => setDailyGoal(n)} />
+              {goalEditor}
             </div>
           )}
         </div>
@@ -5579,15 +5629,18 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
         </div>
         <div style={{ display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : "minmax(220px, 1.1fr) repeat(auto-fit, minmax(170px, 1fr))", gap: mob ? 8 : 12, alignItems: "stretch" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, justifyContent: "center", ...(mob ? { gridColumn: "1 / -1" } : null) }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{_t("Goal per business day")}</div>
-            {goalEdit ? (
-              <MoneyInput value={dailyGoal} onCommit={(n) => setDailyGoal(n)} />
-            ) : (
-              <div title={_t("Set by the management")} style={{ display: "flex", alignItems: "center", gap: 8, height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
-                {dailyGoal ? money(dailyGoal) : "—"}
+            <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{goalLbl}</div>
+            <div title={goalEdit ? "" : _t("Set by the management")} style={{ display: "flex", alignItems: "center", gap: 8, height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: X.navy }}>
+              {GR.base ? money(GR.base) : "—"}
+              {goalEdit ? (
+                <button onClick={() => setEditGoal((v) => !v)} style={{ marginLeft: "auto", border: "none", background: "transparent", color: X.tealDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <Pencil size={13} /> {editGoal ? _t("Close") : _t("Change")}
+                </button>
+              ) : (
                 <Lock size={14} color={X.sub} style={{ marginLeft: "auto" }} />
-              </div>
-            )}
+              )}
+            </div>
+            <div style={{ fontSize: 11.5, color: X.sub }}>{line && GR.byLine ? _t("of {0} in total · {1}", moneyShort(GR.total), lineSplit) : lineSplit}</div>
           </div>
           <Tile icon={Wallet} label={_t("Booked today")} value={partial ? "—" : moneyShort(bookedToday.v)} caption={goalToday ? _t("{0}% of today's goal", ((bookedToday.v / goalToday) * 100).toFixed(0)) : _t("no goal today")} color={X.green} tint={X.greenSoft} ink={X.green} title={money(bookedToday.v)} />
           <Tile icon={Crosshair} label={_t("Missing today")} value={goalToday ? moneyShort(missingToday) : "—"} caption={goalToday ? (missingToday ? _t("to close in quotes") : _t("goal reached")) : _t("no goal today")} color={missingToday ? X.redDk : X.green} tint={X.redSoft} ink={X.redDk} title={money(missingToday)} />
@@ -5602,6 +5655,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
           />
           <Tile icon={TrendingUp} label={_t("Expected (open × % Win)")} value={moneyShort(weighted)} caption={_t("{0} open quotes · {1} without FUP", cands.length, noFup)} tint="#E3EEFA" ink="#2B6CB8" title={money(weighted)} />
         </div>
+        {editGoal && goalEdit && <div style={{ borderTop: `1px solid ${X.line}`, paddingTop: 14 }}>{goalEditor}</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderRadius: 9, background: tone[1], color: tone[0], fontSize: 13, fontWeight: 600 }}>
           {React.createElement(tone[2], { size: 16, style: { flexShrink: 0 } })}
           {msg}
@@ -5847,9 +5901,11 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
   const hol = holidayOf(day);
   const partial = bookedOn.src === "partial";
   // meta do dia: a digitada para esse dia ou a meta diária padrão (fim de semana = sem meta)
-  const auto = { v: we ? 0 : dailyGoal || 0 };
+  const GRd = goalRules(dailyGoal, dayGoals, line);
+  const auto = { v: we ? 0 : GRd.base };
   const manual = dayGoals[day];
-  const target = manual != null ? Math.max(0, manual) : auto.v;
+  const target = manual != null ? Math.max(0, manual) * GRd.share : auto.v;
+  const lineLock = !!line && GRd.byLine; // filtrando uma linha: a meta do dia (do total) se muda em Linha: Todas
   const pd = plan.byDay[day] || null;
   const maxAge = prefs.maxAge ?? 365;
   const list = (pd && pd.list) || [];
@@ -6007,8 +6063,8 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
         <div style={{ display: mob ? "none" : "grid", gridTemplateColumns: "minmax(220px, 1.1fr) repeat(auto-fit, minmax(160px, 1fr))", gap: 12, alignItems: "stretch" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, justifyContent: "center" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{_t("Goal of the day")}</div>
-            {!goalEdit ? (
-              <div title={_t("Set by the management")} style={{ display: "flex", alignItems: "center", gap: 8, height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+            {!goalEdit || lineLock ? (
+              <div title={lineLock ? _t("Goal of line {0} on this day · to change the goal of the day choose Line: All", line) : _t("Set by the management")} style={{ display: "flex", alignItems: "center", gap: 8, height: 46, padding: "0 12px", borderRadius: 10, background: X.head, fontSize: 20, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
                 {target ? money(target) : "—"}
                 <Lock size={14} color={X.sub} style={{ marginLeft: "auto" }} />
               </div>
@@ -6025,7 +6081,8 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
               }
             />
             )}
-            {goalEdit && <div style={{ fontSize: 11.5, color: X.sub }}>
+            {goalEdit && lineLock && <div style={{ fontSize: 11.5, color: X.sub }}>{_t("Line {0} · to change only this day, choose Line: All at the top", line)}</div>}
+            {goalEdit && !lineLock && <div style={{ fontSize: 11.5, color: X.sub }}>
               {manual != null ? (
                 <span
                   onClick={() =>
@@ -6403,7 +6460,7 @@ function UnsavedList({ detail, onOpenQuote, onSave, saving }) {
       {detail.goals.map((g) => (
         <div key={g.d || "daily"} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, padding: "4px 10px" }}>
           <Target size={13} color={X.amber} />
-          <b>{g.d ? _t("Goal of {0}, {1}", dowName(g.d).slice(0, 3), fmtDate(g.d)) : _t("Daily goal")}</b>
+          <b>{/^line:/.test(g.d) ? _t("Daily goal of line {0}", g.d.slice(5)) : g.d ? _t("Goal of {0}, {1}", dowName(g.d).slice(0, 3), fmtDate(g.d)) : _t("Daily goal")}</b>
           <span style={{ color: X.sub, marginLeft: "auto", whiteSpace: "nowrap" }}>
             {goalTxt(g.o, !!g.d)} {arrow} <b style={{ color: X.ink }}>{goalTxt(g.n, !!g.d)}</b>
           </span>
@@ -8750,7 +8807,7 @@ export default function App() {
   const R = ROLES[role];
   const filtersTxt = `${seller ? seller.slice(3) : _t("All salespeople")} · ${cls || _t("All classifications")} · ${line ? _t("line ") + line : _t("all lines")}`;
   const showPeriod = ["portfolio", "analysis", "sellers", "overview"].includes(tab);
-  const canFupReport = role === "inside" || role === "manager";
+  const canFupReport = role === "inside" || role === "outside" || role === "manager"; // os três perfis
   const nFilters = [cls, line, !lockSeller && seller].filter(Boolean).length;
 
   /* ---------- filtros (período, classificação, linha, vendedor) ---------- */
@@ -8797,7 +8854,7 @@ export default function App() {
       <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
         <Layers size={14} />{" "}{_t("Line")}{mob ? "" : ":"}
       </span>
-      <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 9, border: `1px solid ${line ? "#E9C48A" : X.line}`, background: line ? "#FFFBEB" : "#fff" }}>
+      <div style={{ display: "flex", gap: 2, padding: 2, borderRadius: 9, border: `1px solid ${line ? "#A9C8EC" : X.line}`, background: "#fff" }}>
         {["", ...ALL_LINES].map((v) => {
           const on = line === v;
           return (

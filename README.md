@@ -114,6 +114,8 @@ Exemplo: um cliente cotou todo dia útil até 19/10, parou e só voltou em 30/10
 A aba tem três partes, nesta ordem:
 
 ### 1. Meta diária
+**Metas por linha (gerência):** em *Alterar*, preencha a meta de **PT**, **CP** e **MH** por dia útil; o total passa a ser a soma das três. Com *Linha: PT* (ou CP, MH) no topo, a meta, o calendário, o plano do dia e a Visão geral comparam o que foi vendido daquela linha com a meta daquela linha. Um dia com meta digitada à mão vale para o total e, filtrando uma linha, se divide na mesma proporção das metas por linha (para mudar só um dia, escolha *Linha: Todas*). Sem metas por linha, vale só o total, como antes.
+
 Digite a **meta por dia útil**. Ela vale para todos os dias de segunda a sexta; sábado, domingo e feriado ficam sem meta. No plano de um dia dá para trocar a meta **só daquele dia**: digitar o mesmo valor da meta diária volta o dia para a meta padrão, e digitar **0** deixa o dia sem meta. (Correção: versões anteriores gravavam meta 0 num dia só por clicar no campo e sair, e esses dias ficavam presos em 0; ao abrir esta versão esses 0 são apagados e os dias voltam a seguir a meta diária — clique em Save para gravar.) Os ladrilhos mostram:
 - **Booked today** e **Missing today**: o que já foi Booked hoje no Sales Report (na classificação escolhida) e quanto falta para a meta de hoje;
 - **Days on target**: em quantos dias úteis do mês, até ontem, a meta foi batida;
@@ -259,7 +261,7 @@ Assim o Save do dia a dia grava só o arquivo pequeno (rápido mesmo na rede); o
 | Sales | Linhas Booked somadas por pedido, dia, classificação, linha e cliente |
 | Follow-up | FUP, data de início do FUP, % Win, se está fora do plano e os follow-ups feitos |
 | Activities | Activities History e anotações, com data e hora |
-| Goals | Meta diária e metas digitadas para dias específicos |
+| Goals | Meta diária, metas por linha (linhas *line:PT*, *line:CP*, *line:MH*) e metas digitadas para dias específicos |
 | Info | Versão, data em que foi salvo e os últimos relatórios importados |
 
 Não edite o arquivo à mão: o programa o reescreve a cada mudança.
@@ -392,7 +394,7 @@ Tema azul da Martin: faixa **marinho** (#0D3D6E) no topo com o logo em branco, *
 
 
 ## Relatório de FUP (Excel, e-mail ou PDF)
-Botão **FUP report** na barra de filtros. Escolha o período (**Today**, **Previous business day**, **This week**, **Last week**, **This month** ou **Custom**) e:
+Botão **FUP report** na barra de filtros, para os três perfis (vendedor externo, interno e gerência; o vendedor vê só os follow-ups dele). Escolha o período (**Today**, **Previous business day**, **This week**, **Last week**, **This month** ou **Custom**) e:
 - **Download Excel**: baixa *FUP report <período>.xlsx* já formatado, com as cores do PDF: título, cabeçalho azul (*Comentário novo* rosa, *Termômetro* verde), bordas, linhas zebradas, comentário novo em rosa claro, R$ e %, linha de Total, filtro e cabeçalho fixo. A planilha é montada pelo próprio programa (o SheetJS gratuito não grava cores), sem precisar instalar nada;
 - **Copy for e-mail**: copia a tabela com as cores (cabeçalho azul, *Comentário novo* rosa, *Termômetro* verde); é só colar (Ctrl+V) no e-mail;
 - **PDF**: abre a página do relatório e o diálogo de impressão (*Salvar como PDF*), A4 deitada.

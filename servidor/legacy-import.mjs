@@ -116,8 +116,14 @@ export function buildLegacyImport(core, dataWb, repWb, opts = {}) {
   );
 
   /* metas */
-  insert("goals", "day_goals", ["day", "goal"], Object.entries(dayGoals).map(([d, v]) => [esc(d), num(v, 2)]), keep ? "" : upd(["goal"]), keep ? "INSERT IGNORE" : "INSERT");
+  insert("goals", "day_goals", ["day", "goal"], Object.entries(dayGoals).filter(([d]) => /^\d{4}-\d{2}-\d{2}$/.test(d)).map(([d, v]) => [esc(d), num(v, 2)]), keep ? "" : upd(["goal"]), keep ? "INSERT IGNORE" : "INSERT");
   const settings = [["program_version", D.ver || R.ver || ""]];
+  // metas diárias por linha (PT, CP, MH)
+  for (const k of ["PT", "CP", "MH"]) {
+    const v = +dayGoals["line:" + k] || 0;
+    const name = "daily_goal_" + k.toLowerCase();
+    if (v > 0 && (!keep || !+cur[name])) settings.push([name, String(v)]);
+  }
   if (dailyGoal && (!keep || !+cur.daily_goal)) settings.push(["daily_goal", String(dailyGoal)]);
   // nome e data do último relatório: só quando o do arquivo é mais novo que o do banco
   if (quotesRep.fileName && String(quotesRep.at || "") >= String(cur.quote_report_imported_at || ""))
