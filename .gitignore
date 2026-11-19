@@ -8,8 +8,8 @@ import.sql
 *.crswap
 
 # gerado pelo build.bat
-pagina/QuoteFollowUp.html
-QuoteFollowUp.html
+# pagina/QuoteFollowUp.html
+# QuoteFollowUp.html
 
 # servidor: senha do banco, registro e cópias temporárias
 servidor/server.config.json
