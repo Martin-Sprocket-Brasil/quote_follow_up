@@ -38,7 +38,7 @@ O `schema.sql` novo acrescenta a tabela `sessions` (logins), os contadores de ve
 mariadb -u root -p < schema.sql
 ```
 
-Para trazer os dados mais recentes das planilhas antes de trocar de vez, repita o `importar-banco.bat` e o `mariadb -u root -p < import.sql`. Veja `BANCO-DE-DADOS.md`.
+Para trazer os dados mais recentes das planilhas antes de trocar de vez, entre como **Admin** → aba **Dados** → **Importar da versão anterior** e escolha os dois arquivos (ou repita o `importar-banco.bat` e o `mariadb -u root -p < import.sql`). Veja `BANCO-DE-DADOS.md`.
 
 ### 4. Usuário do banco só para o programa
 

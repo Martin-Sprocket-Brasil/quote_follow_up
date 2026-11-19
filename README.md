@@ -345,6 +345,7 @@ No Windows, basta dar dois cliques em `build.bat`, como no pulz. O resultado é 
 | `app.jsx` | Interface: tabela, aba Calendar, importação, backup |
 | `entry.jsx` | Ponto de entrada (monta `<App />`) |
 | `styles.css` | CSS global, embutido no HTML final |
+| `legacy-import.mjs` / `import-xlsx.mjs` / `importar-banco.bat` | Planilhas da versão anterior para o banco. Pela página: Admin → aba Dados → **Importar da versão anterior** (veja `BANCO-DE-DADOS.md`) |
 | `dcs.js` | Formulário DCS / Value Added: tipos, itens, campos obrigatórios e preenchimento do PDF (pdf-lib) |
 | `dcs-va-template.pdf` | Modelo oficial do formulário, vazio, embutido no HTML |
 | `build.js` / `build.bat` | Empacota tudo em `QuoteFollowUp.html` (esbuild) |

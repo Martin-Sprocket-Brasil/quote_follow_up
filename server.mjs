@@ -19,6 +19,8 @@ import { fileURLToPath, pathToFileURL } from "url";
 import express from "express";
 import compression from "compression";
 import * as mariadb from "mariadb";
+import * as XLSX from "xlsx";
+import { buildLegacyImport } from "./legacy-import.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -812,6 +814,65 @@ app.post(
     await pool.query("UPDATE settings SET value = value + 1 WHERE name = 'data_version'");
     console.info(`[admin] senha de ${name} zerada`);
     res.json({ ok: true, users: sanitizeUsers(await pool.query("SELECT name, role, pass_hash FROM users"), req.user) });
+  }),
+);
+
+/* Admin: planilhas da versão anterior (Quote Follow Up data.xlsx e/ou reports.xlsx), direto pela página — o mesmo
+   que o importar-banco.bat faz, numa transação só. Corpo = os bytes dos dois arquivos, um depois do outro;
+   ?d=<bytes do data>&r=<bytes do reports>&mode=keep|replace. Histórico: só entra o que falta (quem fez é mantido). */
+app.post(
+  "/api/legacy-import",
+  auth,
+  needAdmin,
+  express.raw({ type: "application/octet-stream", limit: "150mb" }),
+  wrap(async (req, res) => {
+    const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    const dLen = Math.max(0, parseInt(req.query.d, 10) || 0),
+      rLen = Math.max(0, parseInt(req.query.r, 10) || 0);
+    const mode = req.query.mode === "replace" ? "replace" : "keep";
+    if (!dLen && !rLen) throw httpErr(400, "no-file", "Choose the data file and/or the reports file.");
+    if (dLen + rLen !== buf.length) throw httpErr(400, "bad-upload", "The upload was cut off: try again.");
+    const read = (b, bad) => {
+      if (!b.length) return null;
+      let wb = null;
+      try {
+        wb = XLSX.read(b, { type: "buffer" });
+      } catch {}
+      if (!wb || !core.isDataWorkbook(wb)) throw httpErr(400, "bad-file", bad);
+      return wb;
+    };
+    const dataWb = read(buf.subarray(0, dLen), "The data file is not a Quote Follow Up data file of the previous version."),
+      repWb = read(buf.subarray(dLen), "The reports file is not a Quote Follow Up reports file of the previous version.");
+    const t0 = Date.now();
+    const conn = await pool.getConnection();
+    let out;
+    try {
+      await conn.beginTransaction();
+      const prev = await lockVers(conn); // uma gravação por vez
+      const cur = Object.fromEntries((await conn.query("SELECT name, value FROM settings")).map((r) => [r.name, r.value]));
+      const { statements, counts, warnings } = buildLegacyImport(core, dataWb, repWb, { mode, cur });
+      const done = {};
+      for (const st of statements) {
+        const r = await conn.query(st.sql);
+        done[st.what] = (done[st.what] || 0) + Number((r && r.affectedRows) || 0);
+      }
+      // histórico novo = linhas que entraram de fato (INSERT IGNORE não conta as repetidas)
+      const next = { data: prev.data + 1, rep: prev.rep + (counts.quotes || counts.sales ? 1 : 0) };
+      await setSetting(conn, "data_version", next.data);
+      if (next.rep !== prev.rep) await setSetting(conn, "rep_version", next.rep);
+      await conn.commit();
+      out = { ok: true, mode, counts, newActs: done.acts || 0, warnings, data: next.data, rep: next.rep };
+      console.info(`[importação] ${req.user.name} (${mode}): ${counts.quotes} cotações · ${counts.sales} vendas · ${counts.followups} follow-ups · histórico ${done.acts || 0} novo(s) de ${counts.acts} · ${counts.users} usuários (${Date.now() - t0} ms)`);
+    } catch (e) {
+      try {
+        await conn.rollback();
+      } catch {}
+      throw e;
+    } finally {
+      conn.release();
+    }
+    if (out.rep) getRep().catch((e) => console.error("[rep] erro ao montar", e));
+    res.json(out);
   }),
 );
 

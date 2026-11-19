@@ -7,9 +7,18 @@ Arquivos:
 | `schema.sql` | Cria o banco `quote_follow_up` com as tabelas, os índices, as regras e a visão `v_quote_state`. Pode rodar de novo sem apagar nada. |
 | `import-xlsx.mjs` | Lê as duas planilhas da pasta de dados **com o próprio `core.js`**, inclusive a aba Config cifrada dos usuários, e gera o `import.sql`. |
 | `importar-banco.bat` | Roda o `import-xlsx.mjs` com dois cliques. |
+| `legacy-import.mjs` | As regras da importação das planilhas, usadas pelo `import-xlsx.mjs` e pela página (aba Dados → Importar da versão anterior). |
 | `.gitignore` | Impede que planilhas, `import.sql` e `node_modules` subam para o GitHub. |
 
 ## Passo a passo
+
+**Mais fácil, pela página:** com o servidor no ar, entre como **Admin** → aba **Dados** → **Importar da versão anterior**. Escolha o `Quote Follow Up data.xlsx` e/ou o `Quote Follow Up reports.xlsx` (dá para escolher os dois de uma vez) e clique em **Importar os arquivos**. O servidor grava tudo numa transação só (se algo falhar, nada muda) e a página mostra quantas cotações, vendas, follow-ups, registros novos no histórico e usuários entraram. Não precisa do `import.sql`.
+
+- **Completar** (recomendado): só acrescenta o que falta. FUP, % Win e metas que já estão no banco não mudam.
+- **Substituir**: o arquivo vale, como no `importar-banco.bat`.
+- Nos dois: o histórico só ganha o que falta (com o nome de quem fez cada registro), uma cotação só muda se o arquivo for mais novo que o que está no banco, e os usuários ficam com a senha e a tela mais recentes.
+
+**Pelo `importar-banco.bat`** (o caminho antigo, continua funcionando):
 
 1. **Criar o banco** (uma vez):
    ```
@@ -24,7 +33,7 @@ Arquivos:
    mariadb -u root -p < import.sql
    ```
 
-Pode repetir os passos 2 e 3 sempre que quiser, por exemplo para trazer os dados mais novos antes de trocar de vez. Cotações, vendas e follow-ups são atualizados, e o histórico só ganha os registros que ainda não estavam no banco. Nada é duplicado.
+Pode repetir os passos 2 e 3 sempre que quiser, por exemplo para trazer os dados mais novos antes de trocar de vez. Vendas e follow-ups são atualizados, uma cotação só muda se o arquivo for mais novo, e o histórico só ganha os registros que ainda não estavam no banco. Nada é duplicado.
 
 > O `import.sql` tem os dados da empresa e os códigos das senhas. Não mande para o GitHub nem por e-mail: apague depois de usar.
 

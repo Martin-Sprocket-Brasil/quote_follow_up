@@ -6528,6 +6528,124 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
    A lista vem das colunas Sales Person e Quoted By do Quote Report, mais as pessoas da gerência que o Admin
    acrescenta pelo nome (quem não aparece nos relatórios). Tirar o acesso de alguém acrescentado à mão tira a
    pessoa da lista. Reset = a pessoa cria outra senha no próximo login. */
+/* ===== Admin (servidor): importar as planilhas da versão anterior pela página =====
+   O mesmo que o importar-banco.bat, sem sair do site: escolhe "Quote Follow Up data.xlsx" e/ou
+   "Quote Follow Up reports.xlsx", manda para o servidor e ele grava tudo numa transação. */
+function LegacyImport({ onDone }) {
+  const mob = useMobile();
+  const [files, setFiles] = useState({ data: null, rep: null });
+  const [mode, setMode] = useState("keep");
+  const [st, setSt] = useState({ busy: "", pct: 0, err: "", res: null });
+  const pickRef = useRef(null);
+  // um ou dois arquivos de uma vez: o que tem "report" no nome vai para Reports, o outro para Data
+  const pick = (list) => {
+    const n = { ...files };
+    [...list].forEach((f) => {
+      if (/report/i.test(f.name)) n.rep = f;
+      else n.data = f;
+    });
+    setFiles(n);
+    setSt({ busy: "", pct: 0, err: "", res: null });
+  };
+  const run = () => {
+    const parts = [files.data, files.rep];
+    const blob = new Blob(parts.filter(Boolean));
+    const q = `d=${files.data ? files.data.size : 0}&r=${files.rep ? files.rep.size : 0}&mode=${mode}`;
+    setSt({ busy: "up", pct: 0, err: "", res: null });
+    const x = new window.XMLHttpRequest();
+    x.open("POST", "/api/legacy-import?" + q);
+    x.setRequestHeader("X-Requested-With", "qfu");
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.withCredentials = true;
+    x.timeout = 10 * 60 * 1000;
+    x.upload.onprogress = (e) => e.lengthComputable && setSt((s) => ({ ...s, pct: e.loaded / e.total, busy: e.loaded >= e.total ? "db" : "up" }));
+    x.upload.onload = () => setSt((s) => ({ ...s, busy: "db", pct: 1 }));
+    const fail = (msg) => setSt({ busy: "", pct: 0, err: msg, res: null });
+    x.onerror = () => fail(_t("No connection with the server. Nothing was changed: try again."));
+    x.ontimeout = () => fail(_t("The server took too long. Check the server window before trying again."));
+    x.onload = () => {
+      let j = null;
+      try {
+        j = JSON.parse(x.responseText);
+      } catch {}
+      if (x.status >= 200 && x.status < 300 && j && j.ok) {
+        setSt({ busy: "", pct: 1, err: "", res: j });
+        setFiles({ data: null, rep: null });
+        onDone && onDone(j);
+      } else fail(j && j.message ? _t(j.message) : _t("server error {0}", x.status));
+    };
+    x.send(blob);
+  };
+  const busy = !!st.busy;
+  const slot = (k, title, hint) => {
+    const f = files[k];
+    return (
+      <div style={{ flex: "1 1 240px", minWidth: 0, border: `1px dashed ${f ? X.teal : X.line}`, background: f ? X.tealSoft : "#FBFCFD", borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+        <FileSpreadsheet size={18} color={f ? X.tealDk : X.sub} style={{ flexShrink: 0 }} />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700 }}>{title}</div>
+          <div style={{ fontSize: 11.5, color: f ? X.tealDk : X.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f ? `${f.name} · ${(f.size / 1024 / 1024).toFixed(1)} MB` : hint}</div>
+        </div>
+        {f && !busy && (
+          <button onClick={() => setFiles((x) => ({ ...x, [k]: null }))} title={_t("Remove")} style={{ border: "none", background: "transparent", cursor: "pointer", color: X.sub, padding: 4 }}>
+            <XIcon size={14} />
+          </button>
+        )}
+      </div>
+    );
+  };
+  const radio = (k, title, text) => (
+    <label style={{ flex: "1 1 260px", display: "flex", gap: 9, alignItems: "flex-start", border: `1px solid ${mode === k ? X.teal : X.line}`, borderRadius: 10, padding: "9px 11px", cursor: busy ? "default" : "pointer", background: mode === k ? "#F3FBF8" : "#fff" }}>
+      <input type="radio" name="qfu-legacy-mode" checked={mode === k} disabled={busy} onChange={() => setMode(k)} style={{ marginTop: 2, accentColor: X.teal }} />
+      <span>
+        <span style={{ display: "block", fontSize: 12.5, fontWeight: 700 }}>{title}</span>
+        <span style={{ display: "block", fontSize: 11.5, color: X.sub, lineHeight: 1.4 }}>{text}</span>
+      </span>
+    </label>
+  );
+  const r = st.res;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <input
+        ref={pickRef}
+        type="file"
+        multiple
+        accept=".xlsx,.xls,.xlsm"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          pick(e.target.files || []);
+          e.target.value = "";
+        }}
+      />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {slot("data", DATA_FILE, _t("follow-ups, % Win, notes, history, goals, users"))}
+        {slot("rep", REP_FILE, _t("quotes and sales (optional)"))}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {radio("keep", _t("Complete (recommended)"), _t("Only adds what is missing. FUP, % Win and goals already in the database stay as they are."))}
+        {radio("replace", _t("Replace"), _t("The file wins: FUP, % Win, requisition and goals of the same quotes take the values of the file (like importar-banco.bat)."))}
+      </div>
+      <div style={{ fontSize: 11.5, color: X.sub, lineHeight: 1.45 }}>{_t("In both: the history only gains the records that are missing (who did each one is kept), a quote only changes if the file is newer, and users keep the most recent password and screen.")}</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button onClick={() => pickRef.current && pickRef.current.click()} disabled={busy} style={{ ...btn, ...(mob ? { flex: 1, justifyContent: "center" } : null) }}>
+          <FolderOpen size={15} /> {_t("Choose the files…")}
+        </button>
+        <button onClick={run} disabled={busy || (!files.data && !files.rep)} style={{ ...btn, background: X.teal, borderColor: X.teal, color: "#fff", fontWeight: 700, opacity: busy || (!files.data && !files.rep) ? 0.55 : 1, ...(mob ? { flex: 1, justifyContent: "center" } : null) }}>
+          {busy ? <RefreshCw size={15} className="qp-spin" /> : <Upload size={15} />} {st.busy === "up" ? _t("Sending… {0}%", Math.round(st.pct * 100)) : st.busy === "db" ? _t("Saving in the database…") : _t("Import the files")}
+        </button>
+      </div>
+      {st.err && <div style={{ fontSize: 12.5, color: X.redDk, background: X.redSoft, borderRadius: 8, padding: "8px 10px" }}>{st.err}</div>}
+      {r && (
+        <div style={{ fontSize: 12.5, color: X.ink, background: X.tealSoft, borderRadius: 8, padding: "9px 11px", lineHeight: 1.5 }}>
+          <b style={{ color: X.tealDk }}>{_t("Imported.")}</b>{" "}
+          {_t("{0} quotes · {1} sales · {2} follow-ups · {3} new history records (of {4} in the file) · {5} users.", nS(r.counts.quotes), nS(r.counts.sales), nS(r.counts.followups), nS(r.newActs), nS(r.counts.acts), nS(r.counts.users))}
+          {r.warnings && r.warnings.includes("users-bad") && <div style={{ color: X.redDk }}>{_t("The Config tab (users) was changed outside the program and could not be read: the users were left out.")}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
   const mob = useMobile();
   const [ask, setAsk] = useState("");
@@ -8981,6 +9099,12 @@ export default function App() {
           </span>
         </div>
       </div>
+      {srv && isAdmin && (
+        <div style={secCard}>
+          {secHead(Upload, _t("Import from the previous version"), _t("The spreadsheets of the folder version, straight into the database (no need for importar-banco.bat)"))}
+          <LegacyImport onDone={() => srvPull(true)} />
+        </div>
+      )}
       {isAdmin ? (
         <UsersPanel names={sellerNames} colOf={colOf} users={users || {}} onRole={setRole} onAdd={addUser} onReset={resetPassword} />
       ) : (

@@ -20,7 +20,8 @@ O QUE TEM NESTA PASTA
   BANCO DE DADOS (MariaDB) - veja BANCO-DE-DADOS.md
   schema.sql          -> cria o banco e as tabelas (mariadb -u root -p < schema.sql)
   import-xlsx.mjs     -> le as planilhas da pasta de dados e gera o import.sql
-  importar-banco.bat  -> CLIQUE AQUI para gerar o import.sql
+  importar-banco.bat  -> CLIQUE AQUI para gerar o import.sql (ou importe pela pagina: Admin -> aba Dados -> Importar da versao anterior)
+  legacy-import.mjs   -> as regras da importacao das planilhas (usado pelo .bat e pela pagina)
   .gitignore          -> impede que planilhas, import.sql e a senha do banco subam para o GitHub
 
   SERVIDOR (celular, varias pessoas ao mesmo tempo) - veja SERVIDOR.md

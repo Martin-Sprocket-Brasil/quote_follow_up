@@ -6,7 +6,7 @@
    Cada formulário salvo fica no Histórico de Atividades da cotação (tipo "dcs"), com todos os campos em JSON. */
 import { PDFDocument, PDFName, StandardFonts } from "pdf-lib";
 
-export const DCS_MAIL = "jmartins@martinsprocket.com"; // para onde o botão ENVIAR do formulário original manda
+export const DCS_MAIL = "GKrebski@martinsprocket.com"; // para onde o botão ENVIAR do formulário original manda
 
 // tipo → [rótulo oficial, escolha no grupo "Value Added / DCS / Deslealdade", escolha no grupo "Tipos de Economia"]
 export const DCS_KINDS = {
