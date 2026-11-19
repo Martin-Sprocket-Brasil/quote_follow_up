@@ -20,9 +20,10 @@ COMO A PASTA ESTA ORGANIZADA
       app.jsx              -> a interface: telas, tabelas, calendario
       core.js              -> as regras: relatorios, calculos, agenda de FUP, meta, prioridade
       dcs.js               -> o formulario DCS / Value Added
+      logo.jsx             -> o logo da Martin (cores do tema: bloco "const X = {" no app.jsx)
       i18n.js, i18n-pt.js  -> idioma e as traducoes para o portugues
       entry.jsx, styles.css, build.js -> nao precisa mexer
-      modelos\dcs-va-template.pdf     -> o formulario oficial, vazio
+      modelos\                       -> dcs-va-template.pdf (formulario oficial, vazio) e martin-logo.svg
 
     servidor\              -> O SERVIDOR
       server.mjs                 -> entrega a pagina, faz o login e grava no banco

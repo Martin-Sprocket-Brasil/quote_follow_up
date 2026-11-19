@@ -111,6 +111,7 @@ import {
   normName,
 } from "./core.js";
 import { _t, whyTxt, LANG, setLang } from "./i18n.js";
+import { MartinLogo } from "./logo.jsx";
 import { DCS_KINDS, DCS_ITEMS, DCS_ITEM, DCS_MAIL, UFS, dcsMissing, fillDcsPdf, dcsFileName } from "./dcs.js";
 import DCS_TEMPLATE from "./modelos/dcs-va-template.pdf"; // o formulário oficial (entra no QuoteFollowUp.html)
 const periodLabelOf = (p) => _t(corePeriodLabelOf(p)); // "All periods" no idioma da tela
@@ -193,13 +194,17 @@ import {
 
 /* ---------- paleta (mesma do Customer portfolio do pulz) ---------- */
 const X = {
-  bg: "#F4F7F9",
-  line: "#E4E9EE",
-  ink: "#1D2B36",
-  sub: "#6B7A86",
-  teal: "#1F9A84",
-  tealDk: "#15806B",
-  tealSoft: "#DDF1EC",
+  // tema azul (Martin): marinho na faixa do topo, azul principal nas ações e seleções, fundo levemente azulado.
+  // verde / âmbar / vermelho ficam só para situação (ganha, hoje, atrasada/perdida).
+  navy: "#0D3D6E", // faixa do topo, cabeçalho das tabelas, números principais
+  navy2: "#1A4A7A",
+  bg: "#F3F6FA",
+  line: "#DDE5EE",
+  ink: "#14263B",
+  sub: "#5E6E82",
+  teal: "#1A5FA8", // azul principal (o nome "teal" ficou do tema antigo: é a cor de destaque do programa)
+  tealDk: "#134A86",
+  tealSoft: "#E3EEFA",
   green: "#1E7B4F",
   greenSoft: "#E8F6EE",
   amber: "#B7791F",
@@ -207,8 +212,8 @@ const X = {
   red: "#EF8A8A",
   redDk: "#D64545",
   redSoft: "#FDE3E3",
-  track: "#EDF1F4",
-  head: "#F3F6F8",
+  track: "#EAF0F6",
+  head: "#F1F5FA",
   violet: "#5B52C9",
   violetSoft: "#ECEAFB",
 };
@@ -234,7 +239,7 @@ const dash = <span style={{ color: "#C7CFD6" }}>—</span>;
 const pill = (txt, fg, bg, extra) => (
   <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 600, color: fg, background: bg, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap", ...extra }}>{txt}</span>
 );
-const ST_PILL = { won: [_t("Won"), "#1F8A5B", "#DDF3E8"], lost: [_t("Lost"), X.redDk, X.redSoft], open: [_t("Open"), X.amber, X.amberSoft], cancelled: [_t("Cancelled"), "#64748B", "#EEF2F5"] };
+const ST_PILL = { won: [_t("Won"), "#1F8A5B", "#DDF3E8"], lost: [_t("Lost"), X.redDk, X.redSoft], open: [_t("Open"), X.amber, X.amberSoft], cancelled: [_t("Cancelled"), "#64748B", "#EAF0F6"] };
 
 /* ---------- mobile first ----------
    A tela é pensada primeiro para o celular (uma coluna, cartões no lugar das tabelas, abas embaixo) e
@@ -263,7 +268,7 @@ input:not([type="checkbox"]):not([type="radio"]), textarea, select { box-sizing:
 .qp-hscroll { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .qp-hscroll::-webkit-scrollbar { display: none; }
 .qp-card-btn { -webkit-tap-highlight-color: transparent; }
-.qp-card-btn:active { background: #F4FBF9 !important; }
+.qp-card-btn:active { background: #F2F6FC !important; }
 @keyframes qpspin { to { transform: rotate(360deg); } }
 .qp-spin { animation: qpspin 1s linear infinite; }
 @media (min-width: 761px) {
@@ -279,7 +284,7 @@ input:not([type="checkbox"]):not([type="radio"]), textarea, select { box-sizing:
 const ROLES = {
   outside: { label: _t("Outside sales"), icon: MapPin, fg: X.violet, bg: X.violetSoft, col: "sp", colTxt: "Sales Person" },
   inside: { label: _t("Inside sales"), icon: Headphones, fg: X.tealDk, bg: X.tealSoft, col: "qb", colTxt: "Quoted By" },
-  manager: { label: _t("Management"), icon: ShieldCheck, fg: "#2F6FDB", bg: "#E6EEFB", col: "", colTxt: "" },
+  manager: { label: _t("Management"), icon: ShieldCheck, fg: "#0D3D6E", bg: "#E2E9F3", col: "", colTxt: "" },
 };
 const ROLE_KEYS = ["outside", "inside", "manager"];
 /* gerência só visualiza as cotações: sem FUP, % Win, notas, fechamento, plano do dia ou DCS (quem faz é o vendedor).
@@ -541,7 +546,7 @@ const prioOf = (r) => (r.st && r.st !== "open" ? -1 : priorityOn({ win: r.win ||
 const PRIO_TIP = _t("Priority 0–100 = {0}% of the % Win + {1}% of the Thermometer (Hot 100 · Warm 67 · Cool 33 · Cold 0)", Math.round(PRIO_WIN * 100), Math.round(PRIO_TEMP * 100));
 function PrioBadge({ v, big }) {
   if (v == null || v < 0) return null;
-  const [fg, bg] = v >= 60 ? [X.redDk, X.redSoft] : v >= 30 ? [X.amber, X.amberSoft] : ["#64748B", "#EEF2F5"];
+  const [fg, bg] = v >= 60 ? [X.redDk, X.redSoft] : v >= 30 ? [X.amber, X.amberSoft] : ["#64748B", "#EAF0F6"];
   return (
     <span title={PRIO_TIP} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: big ? 12.5 : 11, fontWeight: 800, color: fg, background: bg, borderRadius: 999, padding: big ? "3px 10px" : "2px 8px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
       <span style={{ display: "inline-flex", gap: 1.5, alignItems: "flex-end" }}>
@@ -755,7 +760,7 @@ function ActiveChips({ items, onClearAll }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
       {items.map((x) => (
-        <span key={x.k} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#EEF2F5", color: X.ink, borderRadius: 999, padding: "3px 4px 3px 11px", fontSize: 12, fontWeight: 600, maxWidth: "100%" }}>
+        <span key={x.k} style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#EAF0F6", color: X.ink, borderRadius: 999, padding: "3px 4px 3px 11px", fontSize: 12, fontWeight: 600, maxWidth: "100%" }}>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.label}</span>
           <button onClick={x.onClear} title={_t("Remove this filter")} style={{ border: "none", background: "#fff", borderRadius: 999, width: 22, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: X.sub, flexShrink: 0 }}>
             <XIcon size={12} />
@@ -838,8 +843,8 @@ const ACT_TAG = {
   note: [_t("Note"), X.tealDk, X.tealSoft],
   follow: [_t("Follow-up"), X.violet, X.violetSoft],
   plan: [_t("Plan"), X.amber, X.amberSoft],
-  report: [_t("Quote Report"), "#2F6FDB", "#E6EEFB"],
-  import: [_t("Import"), "#64748B", "#EEF2F5"],
+  report: [_t("Quote Report"), "#2B6CB8", "#E3EEFA"],
+  import: [_t("Import"), "#64748B", "#EAF0F6"],
 };
 const ACT_META = {
   note: { icon: MessageSquare, title: _t("Note"), tag: "note", color: X.tealDk, bg: X.tealSoft },
@@ -851,13 +856,13 @@ const ACT_META = {
   plan: { icon: ListChecks, title: _t("Daily plan"), tag: "plan", color: X.amber, bg: X.amberSoft },
   close: { icon: XCircle, title: _t("Closed by hand"), tag: "follow", color: X.redDk, bg: X.redSoft },
   reopen: { icon: RotateCcw, title: _t("Reopened"), tag: "follow", color: X.tealDk, bg: X.tealSoft },
-  why: { icon: XCircle, title: _t("Close reason"), tag: "follow", color: "#64748B", bg: "#EEF2F5" },
+  why: { icon: XCircle, title: _t("Close reason"), tag: "follow", color: "#64748B", bg: "#EAF0F6" },
   dcs: { icon: FileText, title: _t("DCS / Value Added form"), tag: "follow", color: "#0E7490", bg: "#E0F2FE" },
-  status: { icon: FileSpreadsheet, title: _t("Status changed"), tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
-  amount: { icon: FileSpreadsheet, title: _t("Quoted value changed"), tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
-  order: { icon: FileSpreadsheet, title: _t("New order"), tag: "report", color: "#2F6FDB", bg: "#E6EEFB" },
-  _seen: { icon: Database, title: _t("Entered the program"), tag: "import", color: "#64748B", bg: "#EEF2F5" },
-  _created: { icon: FileSpreadsheet, title: _t("Quote created"), tag: "report", color: "#64748B", bg: "#EEF2F5" },
+  status: { icon: FileSpreadsheet, title: _t("Status changed"), tag: "report", color: "#2B6CB8", bg: "#E3EEFA" },
+  amount: { icon: FileSpreadsheet, title: _t("Quoted value changed"), tag: "report", color: "#2B6CB8", bg: "#E3EEFA" },
+  order: { icon: FileSpreadsheet, title: _t("New order"), tag: "report", color: "#2B6CB8", bg: "#E3EEFA" },
+  _seen: { icon: Database, title: _t("Entered the program"), tag: "import", color: "#64748B", bg: "#EAF0F6" },
+  _created: { icon: FileSpreadsheet, title: _t("Quote created"), tag: "report", color: "#64748B", bg: "#EAF0F6" },
 };
 const fupTxt = (v) => (FUP[v] ? `${v} · ${FUP[v].label}` : _t("not set"));
 // grupos do filtro do histórico
@@ -966,7 +971,7 @@ const recHead = { display: "flex", alignItems: "center", gap: 7, fontSize: 11, f
 const recRow = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "7px 0", borderBottom: "1px dashed #E9EEF3", minHeight: 36 };
 const recKey = { fontSize: 12, color: X.sub };
 const recLbl = { fontSize: 10.5, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.45 };
-const LINE_COLOR = { PT: ["#2F6FDB", "#E6EEFB"], CP: ["#B7791F", "#FDF0D9"], MH: ["#7A6AD8", "#EEEAFB"] };
+const LINE_COLOR = { PT: ["#2B6CB8", "#E3EEFA"], CP: ["#B7791F", "#FDF0D9"], MH: ["#7A6AD8", "#EEEAFB"] };
 const initials = (n) =>
   String(n || "")
     .split(/\s+/)
@@ -1461,9 +1466,9 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
     gap: 8,
     padding: open ? "10px 11px" : 0,
     borderRadius: 10,
-    border: open ? `1px solid ${ok ? "#BFE3D9" : "#F5D9B5"}` : "none",
+    border: open ? `1px solid ${ok ? "#C3D9F2" : "#F5D9B5"}` : "none",
     borderLeft: open ? `4px solid ${ok ? X.teal : "#F0A43A"}` : "none",
-    background: open ? (ok ? "#F6FBFA" : "#FFFBF5") : "transparent",
+    background: open ? (ok ? "#F5F8FD" : "#FFFBF5") : "transparent",
   });
   const subBtn = (on) => ({ ...btn, flex: mob ? "1 1 0" : "1 1 160px", minWidth: 0, justifyContent: "center", height: mob ? 38 : 32, fontSize: 12, color: on ? X.ink : "#A0AEC0", cursor: on ? "pointer" : "not-allowed", background: "#fff" });
   // vendido: valor Booked dos pedidos no Sales Report (sem eles, o Sales Amt da cotação)
@@ -1598,7 +1603,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
         lineHeight: 1.5,
         fontFamily: "inherit",
         borderRadius: 10,
-        borderColor: open && !hasNote ? "#F2C48D" : hasNote ? "#9FD6C9" : X.line,
+        borderColor: open && !hasNote ? "#F2C48D" : hasNote ? "#A9C8EC" : X.line,
         background: open && !hasNote ? "#FFFCF7" : "#fff",
       }}
     />
@@ -1796,7 +1801,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
               {open && (
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 5 }} title={_t("{0} of 3 steps filled in", nDone)}>
                   {[hasNote, ndOk, winOk].map((ok, i) => (
-                    <span key={i} style={{ width: 22, height: 6, borderRadius: 4, background: ok ? X.teal : "#E3E9EE" }} />
+                    <span key={i} style={{ width: 22, height: 6, borderRadius: 4, background: ok ? X.teal : "#DDE5EE" }} />
                   ))}
                   <span style={{ fontSize: 11.5, fontWeight: 700, color: nDone === 3 ? X.tealDk : X.sub, marginLeft: 4 }}>{nDone}/3</span>
                 </div>
@@ -1822,7 +1827,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                       value={nd}
                       min={addDays(today, 1)}
                       onChange={(e) => setNd(e.target.value)}
-                      style={{ ...inp, height: 32, fontSize: 13, width: 138, borderRadius: 9, borderColor: !ndOk ? "#F2C48D" : "#9FD6C9", background: !ndOk ? "#FFFCF7" : "#fff", fontWeight: ndOk ? 700 : 400 }}
+                      style={{ ...inp, height: 32, fontSize: 13, width: 138, borderRadius: 9, borderColor: !ndOk ? "#F2C48D" : "#A9C8EC", background: !ndOk ? "#FFFCF7" : "#fff", fontWeight: ndOk ? 700 : 400 }}
                     />
                     {quick.map(([l, v]) => {
                       const on = ndFix === v;
@@ -1831,7 +1836,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                           key={l}
                           onClick={() => setNd(v)}
                           title={`${dowName(v)}, ${fmtDate(v)}`}
-                          style={{ ...btn, height: 30, padding: "0 9px", fontSize: 11.5, borderRadius: 999, background: on ? X.tealSoft : "#fff", color: on ? X.tealDk : X.ink, borderColor: on ? "#9FD6C9" : X.line, fontWeight: on ? 700 : 600 }}
+                          style={{ ...btn, height: 30, padding: "0 9px", fontSize: 11.5, borderRadius: 999, background: on ? X.tealSoft : "#fff", color: on ? X.tealDk : X.ink, borderColor: on ? "#A9C8EC" : X.line, fontWeight: on ? 700 : 600 }}
                         >
                           {l}
                         </button>
@@ -1884,7 +1889,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                   </div>
                 </div>
                 {/* ações */}
-                <div style={{ ...sect, background: "#FAFBFC", borderRadius: "0 0 14px 14px" }}>
+                <div style={{ ...sect, background: "#F8FAFD", borderRadius: "0 0 14px 14px" }}>
                   <button
                     onClick={done}
                     disabled={!canDone}
@@ -1897,7 +1902,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                       fontSize: 14,
                       fontWeight: 700,
                       borderRadius: 11,
-                      background: canDone ? X.violet : "#EEF1F4",
+                      background: canDone ? X.violet : "#ECF0F6",
                       color: canDone ? "#fff" : "#8A97A3",
                       borderColor: canDone ? X.violet : X.line,
                       cursor: canDone ? "pointer" : "not-allowed",
@@ -1974,7 +1979,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
             {mob && <span style={{ fontSize: 12, fontWeight: 700, color: X.sub, background: X.head, borderRadius: 999, padding: "1px 8px" }}>{list.length}</span>}
             {mob && <ChevronDown size={17} color={X.sub} style={{ marginLeft: "auto", transform: showHist ? "rotate(180deg)" : "none", transition: "transform .14s" }} />}
             {(!mob || showHist) && (
-            <div onClick={(e) => e.stopPropagation()} className="qp-hscroll" style={{ marginLeft: mob ? 0 : "auto", display: "inline-flex", gap: 3, background: "#EEF2F5", borderRadius: 9, padding: 3, ...(mob ? { width: "100%" } : null) }}>
+            <div onClick={(e) => e.stopPropagation()} className="qp-hscroll" style={{ marginLeft: mob ? 0 : "auto", display: "inline-flex", gap: 3, background: "#EAF0F6", borderRadius: 9, padding: 3, ...(mob ? { width: "100%" } : null) }}>
               {HIST_FILTERS.map(([k, l]) => {
                 const on = hf === k;
                 const n = k === "all" ? list.length : list.filter((a) => histGroup(a) === k).length;
@@ -2037,7 +2042,7 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
                             lineHeight: 1.5,
                             whiteSpace: isNote ? "pre-wrap" : "normal",
                             wordBreak: "break-word",
-                            ...(isNote ? { background: "#F7FBFA", border: `1px solid ${X.line}`, borderLeft: `3px solid ${X.teal}`, borderRadius: 8, padding: "8px 10px", color: X.ink } : null),
+                            ...(isNote ? { background: "#F6F9FD", border: `1px solid ${X.line}`, borderLeft: `3px solid ${X.teal}`, borderRadius: 8, padding: "8px 10px", color: X.ink } : null),
                           }}
                         >
                           {isNote ? a.txt : actText(a)}
@@ -2142,7 +2147,7 @@ function CloseDialog({ ask, onConfirm, onReopen, onCancel }) {
           <button
             onClick={() => why && onConfirm(why)}
             disabled={!why}
-            style={{ ...btn, height: 36, fontWeight: 700, background: why ? fg : "#EEF1F4", borderColor: why ? fg : X.line, color: why ? "#fff" : "#8A97A3", cursor: why ? "pointer" : "not-allowed" }}
+            style={{ ...btn, height: 36, fontWeight: 700, background: why ? fg : "#ECF0F6", borderColor: why ? fg : X.line, color: why ? "#fff" : "#8A97A3", cursor: why ? "pointer" : "not-allowed" }}
           >
             <Check size={14} /> {ask.mode === "why" ? _t("Save reason") : _t("Mark as {0}", CLOSE_LABEL[ask.kind])}
           </button>
@@ -2432,7 +2437,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
               </button>
             )}
           </div>
-          <button onClick={() => setSheet(true)} title={_t("Filters, order and export")} style={iconBtn({ width: 44, height: 44, ...(nAll ? { background: X.tealSoft, borderColor: "#9FD6C9", color: X.tealDk } : null) })}>
+          <button onClick={() => setSheet(true)} title={_t("Filters, order and export")} style={iconBtn({ width: 44, height: 44, ...(nAll ? { background: X.tealSoft, borderColor: "#A9C8EC", color: X.tealDk } : null) })}>
             <SlidersHorizontal size={18} />
             {dotBadge(nAll)}
           </button>
@@ -2574,7 +2579,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
     );
   }
 
-  const manualBg = "#EEF7F4";
+  const manualBg = "#EDF3FB";
   return (
     <>
       <div style={{ ...card, overflow: "hidden" }}>
@@ -2672,7 +2677,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
               {vis.map((r, i) => {
                 const isOpen = openQ === r.id;
                 const closed = r.st !== "open";
-                const tdx = { ...td, background: isOpen ? "#F1F8F6" : i % 2 ? "#FBFCFD" : "#fff" };
+                const tdx = { ...td, background: isOpen ? "#EFF4FB" : i % 2 ? "#F9FBFE" : "#fff" };
                 const num = { ...tdN, background: tdx.background };
                 const overdue = r.next && r.next < today;
                 // abre a cotação no painel lateral (com as setas para ir à anterior / próxima da tabela)
@@ -2683,7 +2688,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
                     <tr className="qp-row" onClick={toggle} style={{ cursor: "pointer" }} title={_t("Click to open the quote: details, orders and Activities / History")}>
                       <td style={{ ...tdx, paddingLeft: 14, whiteSpace: "nowrap", boxShadow: isOpen ? `inset 3px 0 0 ${X.teal}` : undefined }}>
                         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, display: "inline-flex", alignItems: "center", justifyContent: "center", background: isOpen ? X.tealSoft : "#EEF2F5" }}>
+                          <span style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 6, display: "inline-flex", alignItems: "center", justifyContent: "center", background: isOpen ? X.tealSoft : "#EAF0F6" }}>
                             <ChevronRight size={14} style={{ color: isOpen ? X.tealDk : "#4B5563" }} />
                           </span>
                           <span style={{ fontWeight: 700 }}>{r.id}</span>
@@ -2766,7 +2771,7 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
               <tfoot>
                 <tr>
                   {PCOLS.map((c) => {
-                    const ft = { position: "sticky", bottom: 0, zIndex: 1, background: "#F3F6F8", borderTop: `2px solid ${X.line}`, padding: "11px 8px", fontSize: 12.5, fontWeight: 700, color: X.ink, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
+                    const ft = { position: "sticky", bottom: 0, zIndex: 1, background: "#F1F5FA", borderTop: `2px solid ${X.line}`, padding: "11px 8px", fontSize: 12.5, fontWeight: 700, color: X.ink, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
                     if (c.id === "id")
                       return (
                         <td key={c.id} style={{ ...ft, paddingLeft: 44 }} colSpan={1}>{_t("Total ·")}{" "}{shown.length.toLocaleString("pt-BR")} {shown.length === 1 ? _t("quote") : _t("quotes")}
@@ -2832,12 +2837,12 @@ const dowName = (iso) => DOW_LONG[(dowOf(iso) + 6) % 7];
 const REASON = {
   overdue: [X.redDk, X.redSoft],
   due: [X.tealDk, X.tealSoft],
-  fill: ["#2F6FDB", "#E6EEFB"],
-  other: ["#64748B", "#EEF2F5"],
+  fill: ["#2B6CB8", "#E3EEFA"],
+  other: ["#64748B", "#EAF0F6"],
   likely: ["#1F8A5B", "#DDF3E8"],
   hot: ["#C2410C", "#FDE6DC"],
   aging: [X.amber, X.amberSoft],
-  nowin: ["#64748B", "#EEF2F5"],
+  nowin: ["#64748B", "#EAF0F6"],
 };
 /* Botão Done do plano e da semana: abre a cotação direto na nota + data do próximo follow-up
    (o Done fica no Activities / History e só confirma com nota e data). */
@@ -2852,8 +2857,8 @@ function DoneButton({ id, onOpenQuote, small }) {
       title={_t("Mark Done in the Activities / History of the quote: write a note and choose the date of the next follow-up")}
       style={
         small
-          ? { ...btn, marginLeft: "auto", height: 22, padding: "0 7px", fontSize: 10.5, gap: 3, color: X.tealDk, borderColor: "#BFE3D9", borderRadius: 6 }
-          : { ...btn, height: 28, padding: "0 10px", fontSize: 11.5, color: X.tealDk, borderColor: "#BFE3D9" }
+          ? { ...btn, marginLeft: "auto", height: 22, padding: "0 7px", fontSize: 10.5, gap: 3, color: X.tealDk, borderColor: "#C3D9F2", borderRadius: 6 }
+          : { ...btn, height: 28, padding: "0 10px", fontSize: 11.5, color: X.tealDk, borderColor: "#C3D9F2" }
       }
     >
       <Check size={small ? 11 : 13} />{" "}{_t("Done")}</button>
@@ -2903,7 +2908,7 @@ function xlsxStyled(name, sheets) {
     if (!st) return 0;
     const k = JSON.stringify(st);
     if (xfOf[k] != null) return xfOf[k];
-    const f = idx(fonts, `<font>${st.b ? "<b/>" : ""}${st.i ? "<i/>" : ""}<sz val="${st.size || 10}"/><color rgb="${argb(st.color || "#1D2B36")}"/><name val="Calibri"/><family val="2"/></font>`);
+    const f = idx(fonts, `<font>${st.b ? "<b/>" : ""}${st.i ? "<i/>" : ""}<sz val="${st.size || 10}"/><color rgb="${argb(st.color || "#14263B")}"/><name val="Calibri"/><family val="2"/></font>`);
     const fl = st.fill ? idx(fills, `<fill><patternFill patternType="solid"><fgColor rgb="${argb(st.fill)}"/><bgColor indexed="64"/></patternFill></fill>`) : 0;
     const bc = st.border === false ? null : argb(st.border || "#C9D3DC");
     const bd = bc ? idx(borders, `<border><left style="thin"><color rgb="${bc}"/></left><right style="thin"><color rgb="${bc}"/></right><top style="thin"><color rgb="${bc}"/></top><bottom style="thin"><color rgb="${bc}"/></bottom><diagonal/></border>`) : 0;
@@ -2965,8 +2970,8 @@ const XS = {
   title: { b: true, size: 14, border: false },
   sub: { color: "#64748B", border: false },
   head: (fill) => ({ b: true, color: "#FFFFFF", fill: fill || "#00BFFF", h: "center", wrap: true, border: "#FFFFFF" }),
-  cell: (k, extra) => ({ ...(k % 2 ? { fill: "#F6F9FB" } : null), ...extra }),
-  total: (extra) => ({ b: true, fill: "#E3E9EE", ...extra }),
+  cell: (k, extra) => ({ ...(k % 2 ? { fill: "#F4F7FB" } : null), ...extra }),
+  total: (extra) => ({ b: true, fill: "#DDE5EE", ...extra }),
 };
 const copyRich = (html) => {
   const box = document.createElement("div");
@@ -2992,8 +2997,8 @@ const mailTable = (head, rows, { headBg = {}, align = {}, foot } = {}) => {
   const th = (h, i) => `<th style="${f}background:${headBg[i] || "#00BFFF"};color:#fff;font-weight:bold;padding:6px 8px;border:1px solid #ffffff;text-align:center">${esc(h)}</th>`;
   const td = (v, i, extra = "") => `<td style="${f}padding:5px 8px;border:1px solid #C9D3DC;vertical-align:middle;text-align:${align[i] || "left"};${extra}">${v == null || v === "" ? "—" : esc(String(v)).replace(/\n/g, "<br>")}</td>`;
   return `<table style="border-collapse:collapse;${f}"><thead><tr>${head.map(th).join("")}</tr></thead><tbody>${rows
-    .map((r, k) => `<tr>${r.map((v, i) => td(v, i, k % 2 ? "background:#F6F9FB;" : "")).join("")}</tr>`)
-    .join("")}</tbody>${foot ? `<tfoot><tr>${foot.map((v, i) => td(v, i, "font-weight:bold;background:#EEF2F5;")).join("")}</tr></tfoot>` : ""}</table>`;
+    .map((r, k) => `<tr>${r.map((v, i) => td(v, i, k % 2 ? "background:#F4F7FB;" : "")).join("")}</tr>`)
+    .join("")}</tbody>${foot ? `<tfoot><tr>${foot.map((v, i) => td(v, i, "font-weight:bold;background:#EAF0F6;")).join("")}</tr></tfoot>` : ""}</table>`;
 };
 const noteTxt = (n) => (n ? `${fmtDate(String(n.t).slice(0, 10))}: ${n.txt}` : "");
 const FUP_HEAD = ["Quotation", "New net amount", "Name", "Comentário antigo", "Comentário novo", "Requisição do cliente", "Termômetro", "Follow-up date", "Quoted by", "Vendedor"];
@@ -3058,13 +3063,13 @@ function fupReportHtml(rows, { title, periodTxt, filtersTxt, generated }) {
 <style>
   @page { size: A4 landscape; margin: 10mm; }
   * { box-sizing: border-box; }
-  body { font-family: "Segoe UI", Arial, sans-serif; color: #1D2B36; margin: 0; padding: 16px; font-size: 10px; background: #fff; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #14263B; margin: 0; padding: 16px; font-size: 10px; background: #fff; }
   .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
-  .bar button { font: inherit; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid #1F9A84; background: #1F9A84; color: #fff; cursor: pointer; }
-  .bar span { color: #6B7A86; font-size: 12px; }
+  .bar button { font: inherit; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid #1A5FA8; background: #1A5FA8; color: #fff; cursor: pointer; }
+  .bar span { color: #5E6E82; font-size: 12px; }
   h1 { font-size: 17px; margin: 0 0 3px; }
   .sub { color: #475569; font-size: 11px; margin-bottom: 10px; }
-  .sub b { color: #1D2B36; }
+  .sub b { color: #14263B; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
   thead { display: table-header-group; }
   th { background: #00BFFF; color: #fff; font-size: 10px; font-weight: 700; text-decoration: underline; padding: 7px 5px; border: 1px solid #fff; text-align: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -3072,12 +3077,12 @@ function fupReportHtml(rows, { title, periodTxt, filtersTxt, generated }) {
   th.thermo { background: #008000; }
   td { border: 1px solid #C9D3DC; padding: 6px 5px; vertical-align: middle; word-wrap: break-word; line-height: 1.35; }
   tr { break-inside: avoid; page-break-inside: avoid; }
-  tbody tr:nth-child(even) td { background: #F6F9FB; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  tbody tr:nth-child(even) td { background: #F4F7FB; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   td.new { background: #FFF1F6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .c { text-align: center; } .r { text-align: right; } .b { font-weight: 700; }
-  .nt { white-space: normal; } .dt { color: #6B7A86; font-size: 9px; margin-top: 2px; } .na { color: #A0AEC0; }
-  tfoot td { font-weight: 700; background: #EEF2F5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .empty { padding: 30px; text-align: center; color: #6B7A86; font-size: 13px; }
+  .nt { white-space: normal; } .dt { color: #5E6E82; font-size: 9px; margin-top: 2px; } .na { color: #A0AEC0; }
+  tfoot td { font-weight: 700; background: #EAF0F6; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .empty { padding: 30px; text-align: center; color: #5E6E82; font-size: 13px; }
   @media print { .bar { display: none; } body { padding: 0; } }
 </style></head><body>
 <div class="bar"><button onclick="window.print()">Print / Save as PDF</button><span>In the print window, choose "Save as PDF" (or "Microsoft Print to PDF").</span></div>
@@ -3154,7 +3159,7 @@ function FupReportButton({ acts, quotes, meta, thermo, today, filtersTxt }) {
             {RANGES.map(([k, l]) => {
               const on = rk === k;
               return (
-                <button key={k} onClick={() => setRk(k)} style={{ ...btn, height: 28, padding: "0 10px", fontSize: 11.5, borderRadius: 999, background: on ? X.tealSoft : "#fff", color: on ? X.tealDk : X.ink, borderColor: on ? "#9FD6C9" : X.line, fontWeight: on ? 700 : 600 }}>
+                <button key={k} onClick={() => setRk(k)} style={{ ...btn, height: 28, padding: "0 10px", fontSize: 11.5, borderRadius: 999, background: on ? X.tealSoft : "#fff", color: on ? X.tealDk : X.ink, borderColor: on ? "#A9C8EC" : X.line, fontWeight: on ? 700 : 600 }}>
                   {l}
                 </button>
               );
@@ -3356,11 +3361,11 @@ function SellerReport({ quotes, periodRows, meta, acts, groupOf, today, filtersT
       )
       .join("");
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>FUP by salesperson</title><style>
-@page { size: A4 landscape; margin: 12mm; } body { font-family: "Segoe UI", Arial, sans-serif; color: #1D2B36; font-size: 11px; margin: 0; padding: 16px; }
-.bar { margin-bottom: 12px; } .bar button { font: inherit; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid #1F9A84; background: #1F9A84; color: #fff; cursor: pointer; }
+@page { size: A4 landscape; margin: 12mm; } body { font-family: "Segoe UI", Arial, sans-serif; color: #14263B; font-size: 11px; margin: 0; padding: 16px; }
+.bar { margin-bottom: 12px; } .bar button { font: inherit; font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid #1A5FA8; background: #1A5FA8; color: #fff; cursor: pointer; }
 h1 { font-size: 17px; margin: 0 0 3px; } .sub { color: #475569; margin-bottom: 10px; }
 table { width: 100%; border-collapse: collapse; } th { background: #00BFFF; color: #fff; padding: 7px 6px; border: 1px solid #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { font-weight: 700; } tfoot td { font-weight: 700; background: #EEF2F5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { font-weight: 700; } tfoot td { font-weight: 700; background: #EAF0F6; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 @media print { .bar { display: none; } body { padding: 0; } }</style></head><body>
 <div class="bar"><button onclick="window.print()">Print / Save as PDF</button></div>
 <h1>FUP by salesperson</h1><div class="sub"><b>${esc(periodTxt)}</b> · ${esc(filtersTxt)} · generated ${esc(fmtStamp(nowStamp()))} · after ${LATE_HOUR}h = first Done of the period at ${LATE_HOUR}:00 or later</div>
@@ -3386,7 +3391,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
   const head = { fontSize: 12.5, fontWeight: 800, color: X.ink, textTransform: "uppercase", letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 9, paddingBottom: 4 };
   const headSub = { fontWeight: 500, color: X.sub, textTransform: "none", letterSpacing: 0 };
   const colH = { fontSize: 11, fontWeight: 600, color: X.sub, padding: "0 0 7px", borderBottom: `1px solid ${X.line}` };
-  const rowB = { borderBottom: `1px solid #EEF2F5` };
+  const rowB = { borderBottom: `1px solid #EAF0F6` };
   const MiniBar = ({ v, color, w = 80, h = 6 }) => (
     <span style={{ display: "inline-block", width: w, height: h, borderRadius: 4, background: X.track, overflow: "hidden", verticalAlign: "middle" }}>
       <span style={{ display: "block", height: h, width: Math.max(v > 0 ? 3 : 0, Math.min(1, v) * 100) + "%", background: color, borderRadius: 4 }} />
@@ -3464,7 +3469,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
           )}
           {detail && (
             <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: X.sub }}>
-              <span style={{ width: 14, height: 6, borderRadius: 4, background: "#2F6FDB" }} />{" "}{_t("Share of line value ·")}{" "}{detail.n}{" "}{_t("quotes")}</div>
+              <span style={{ width: 14, height: 6, borderRadius: 4, background: "#2B6CB8" }} />{" "}{_t("Share of line value ·")}{" "}{detail.n}{" "}{_t("quotes")}</div>
           )}
         </div>
         {/* Product Groups */}
@@ -3635,7 +3640,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
           {RANGES.map(([k, l]) => {
             const on = rk === k;
             return (
-              <button key={k} onClick={() => setRk(k)} style={{ ...btn, height: 30, padding: "0 12px", fontSize: 12, borderRadius: 999, background: on ? X.tealSoft : "#fff", color: on ? X.tealDk : X.ink, borderColor: on ? "#9FD6C9" : X.line, fontWeight: on ? 700 : 600 }}>
+              <button key={k} onClick={() => setRk(k)} style={{ ...btn, height: 30, padding: "0 12px", fontSize: 12, borderRadius: 999, background: on ? X.tealSoft : "#fff", color: on ? X.tealDk : X.ink, borderColor: on ? "#A9C8EC" : X.line, fontWeight: on ? 700 : 600 }}>
                 {l}
               </button>
             );
@@ -3658,7 +3663,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
           {rep.map((x) => {
             const isOpen = open === x.name;
             return (
-              <div key={x.name} style={{ border: `1px solid ${isOpen ? "#9FD6C9" : X.line}`, borderRadius: 12, background: isOpen ? "#F7FBFA" : "#fff", overflow: "hidden" }}>
+              <div key={x.name} style={{ border: `1px solid ${isOpen ? "#A9C8EC" : X.line}`, borderRadius: 12, background: isOpen ? "#F6F9FD" : "#fff", overflow: "hidden" }}>
                 <div className="qp-card-btn" onClick={() => setOpen(isOpen ? "" : x.name)} style={{ padding: "12px 13px", display: "flex", flexDirection: "column", gap: 7, cursor: "pointer" }}>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
                     <b style={{ fontSize: 14.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{x.name || _t("(no salesperson)")}</b>
@@ -3705,7 +3710,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
               const isOpen = open === x.name;
               return (
                 <React.Fragment key={x.name}>
-                  <tr className="qp-row" onClick={() => setOpen(isOpen ? "" : x.name)} style={{ cursor: "pointer", background: isOpen ? "#F1F8F6" : "#fff" }}>
+                  <tr className="qp-row" onClick={() => setOpen(isOpen ? "" : x.name)} style={{ cursor: "pointer", background: isOpen ? "#EFF4FB" : "#fff" }}>
                     <td style={{ ...td, textAlign: "center" }}>
                       <ChevronRight size={15} style={{ color: isOpen ? X.tealDk : X.sub, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .14s" }} />
                     </td>
@@ -3723,7 +3728,7 @@ td { border: 1px solid #C9D3DC; padding: 6px; } .r { text-align: right; } .b { f
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td colSpan={8} style={{ padding: "12px 16px 16px 46px", background: "#F7FBFA", borderBottom: `1px solid ${X.line}` }}>
+                      <td colSpan={8} style={{ padding: "12px 16px 16px 46px", background: "#F6F9FD", borderBottom: `1px solid ${X.line}` }}>
                         {detailBlock(x)}
                       </td>
                     </tr>
@@ -3816,7 +3821,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
           ink={elapsed.length && !partial ? (wBooked >= goalSoFar ? X.green : X.redDk) : X.ink}
           title={money(wBooked)}
         />
-        <WeekStat label={_t("With FUP from today")} value={ahead.length ? moneyShort(fupAhead) : "—"} sub={ahead.length ? _t("value of the quotes with FUP on these days") : _t("week is over")} ink="#2F6FDB" title={money(fupAhead)} />
+        <WeekStat label={_t("With FUP from today")} value={ahead.length ? moneyShort(fupAhead) : "—"} sub={ahead.length ? _t("value of the quotes with FUP on these days") : _t("week is over")} ink="#2B6CB8" title={money(fupAhead)} />
         <WeekStat label={_t("Follow-ups")} value={nItems || "—"} sub={nOver ? _t("{0} overdue, brought to today", nOver) : ahead.length ? _t("planned from today") : "—"} ink={nOver ? X.redDk : X.ink} />
         <WeekStat label={_t("Done")} value={nDone || "—"} sub={_t("follow-ups marked Done this week")} ink={X.tealDk} />
       </div>
@@ -3835,7 +3840,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
           const showBooked = !partial && booked != null && d <= today;
           const bv = showBooked ? booked : pd ? pd.planned : 0;
           const pct = goal ? Math.min(1, bv / goal) : 0;
-          const barCol = showBooked ? (bv >= goal ? X.green : isT ? X.amber : X.redDk) : "#2F6FDB";
+          const barCol = showBooked ? (bv >= goal ? X.green : isT ? X.amber : X.redDk) : "#2B6CB8";
           return (
             <div
               key={d}
@@ -3844,9 +3849,9 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
               title={isSel ? _t("Click again to close the plan of this day") : _t("Click to see the plan of this day")}
               style={{
                 borderRadius: 10,
-                border: `1px solid ${isSel ? X.teal : isT ? "#9FD6C9" : X.line}`,
+                border: `1px solid ${isSel ? X.teal : isT ? "#A9C8EC" : X.line}`,
                 boxShadow: isSel ? `0 0 0 3px ${X.tealSoft}` : "none",
-                background: past ? "#FAFBFC" : "#fff",
+                background: past ? "#F8FAFD" : "#fff",
                 cursor: "pointer",
                 display: "flex",
                 flexDirection: "column",
@@ -3856,7 +3861,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
               }}
             >
               {/* cabeçalho do dia */}
-              <div style={{ padding: "9px 11px 10px", background: isT ? "#EEF8F5" : isSel ? "#F4FBF9" : X.head, borderBottom: `1px solid ${X.line}` }}>
+              <div style={{ padding: "9px 11px 10px", background: isT ? "#EEF8F5" : isSel ? "#F2F6FC" : X.head, borderBottom: `1px solid ${X.line}` }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 10.5, fontWeight: 700, color: isT ? X.tealDk : X.sub, textTransform: "uppercase", letterSpacing: 0.35 }}>{dowName(d)}</span>
                   {isT && tag(_t("Today"), "#fff", X.teal)}
@@ -3874,7 +3879,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
                       </span>
                     </div>
                     {goal > 0 && (
-                      <div style={{ height: 5, borderRadius: 4, background: "#E3E9EE", marginTop: 4, overflow: "hidden" }}>
+                      <div style={{ height: 5, borderRadius: 4, background: "#DDE5EE", marginTop: 4, overflow: "hidden" }}>
                         <div style={{ height: 5, width: Math.max(bv > 0 ? 3 : 0, pct * 100) + "%", background: barCol, borderRadius: 4 }} />
                       </div>
                     )}
@@ -3894,7 +3899,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
                     : e.fup === "B"
                     ? tag(fupPending(e.meta || {}).length > 1 ? _t("1st follow-up") : _t("2nd follow-up"), f.color, f.bg)
                     : e.kind === "fill"
-                    ? tag(_t("Pulled in"), "#2F6FDB", "#E6EEFB")
+                    ? tag(_t("Pulled in"), "#2B6CB8", "#E3EEFA")
                     : f
                     ? tag(f.label, f.color, f.bg)
                     : null;
@@ -3920,7 +3925,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                        <span style={{ fontSize: 10.5, fontWeight: 800, color: f ? f.color : "#2F6FDB", background: f ? f.bg : "#E6EEFB", borderRadius: 5, padding: "1px 6px", flexShrink: 0 }}>{e.fup || "+"}</span>
+                        <span style={{ fontSize: 10.5, fontWeight: 800, color: f ? f.color : "#2B6CB8", background: f ? f.bg : "#E3EEFA", borderRadius: 5, padding: "1px 6px", flexShrink: 0 }}>{e.fup || "+"}</span>
                         <span style={{ fontSize: 12.5, fontWeight: 700, color: X.ink, whiteSpace: "nowrap", flexShrink: 0 }}>{e.id}</span>
                         <NoteBadge info={notesBy && notesBy[e.id]} />
                         <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={money(e.v)}>
@@ -3953,7 +3958,7 @@ function WeekView({ days, plan, today, sel, pick, goalOf, dayBooked, partial, me
                           onOpenQuote(x.id);
                         }}
                         title={_t("{0} · {1} — follow-up done on {2}", x.id, x.c, fmtDate(d))}
-                        style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: X.sub, padding: "3px 6px", borderRadius: 6, background: "#F1F8F6", minWidth: 0 }}
+                        style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: X.sub, padding: "3px 6px", borderRadius: 6, background: "#EFF4FB", minWidth: 0 }}
                       >
                         <Check size={11} color={X.teal} style={{ flexShrink: 0 }} />
                         <span style={{ fontWeight: 600, color: X.ink, flexShrink: 0 }}>{x.id}</span>
@@ -4581,14 +4586,14 @@ function DcsFormsReport({ acts, today, onOpenQuote }) {
 /* ===== peças das telas da gerência (Visão geral e Análise) =====
    Visual enxuto: fundo branco, números em tinta escura, uma cor só para barras de tamanho (azul) e o verde
    apenas para "ganho" no gráfico mensal. Vermelho só em texto de problema (atrasado, perdido, mais de 90 dias). */
-const MG_Q = "#5B8AD9"; // cotado / tamanho (validado com o verde abaixo: lightness, croma, daltonismo e contraste)
+const MG_Q = "#6FA0DE"; // cotado / tamanho (validado com o verde abaixo: lightness, croma, daltonismo e contraste)
 const MG_W = "#0F8A70"; // ganho
 const MG = {
   card: { background: "#fff", border: `1px solid ${X.line}`, borderRadius: 12, minWidth: 0 },
   title: { fontSize: 13, fontWeight: 800, color: X.ink },
   sub: { fontSize: 11.5, color: X.sub },
   th: { padding: "8px 10px", fontSize: 11, fontWeight: 700, color: X.sub, textAlign: "right", whiteSpace: "nowrap", borderBottom: `1px solid ${X.line}`, background: "#fff", position: "sticky", top: 0 },
-  td: { padding: "8px 10px", fontSize: 12.5, textAlign: "right", whiteSpace: "nowrap", borderBottom: `1px solid #EEF2F5`, fontVariantNumeric: "tabular-nums" },
+  td: { padding: "8px 10px", fontSize: 12.5, textAlign: "right", whiteSpace: "nowrap", borderBottom: `1px solid #EAF0F6`, fontVariantNumeric: "tabular-nums" },
 };
 const pctS = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
 const nS = (n) => (n || 0).toLocaleString("pt-BR");
@@ -4596,7 +4601,7 @@ const nS = (n) => (n || 0).toLocaleString("pt-BR");
 function MgBar({ v, max, color = MG_Q, w = 90 }) {
   const f = max > 0 ? Math.max(0, Math.min(1, v / max)) : 0;
   return (
-    <span style={{ display: "inline-block", width: w, height: 6, borderRadius: 4, background: "#EEF2F5", verticalAlign: "middle", overflow: "hidden" }}>
+    <span style={{ display: "inline-block", width: w, height: 6, borderRadius: 4, background: "#EAF0F6", verticalAlign: "middle", overflow: "hidden" }}>
       <span style={{ display: "block", height: 6, width: `${f * 100}%`, minWidth: v > 0 ? 3 : 0, background: color, borderRadius: 4 }} />
     </span>
   );
@@ -4672,7 +4677,7 @@ function MgTable({ cols, rows, sort0, total, onRow, max = 0, empty, mobSub, mobV
       else setSort({ k: c.k, dir: c.left ? 1 : -1 });
     };
     const others = (r) => (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "6px 12px", marginTop: 8, padding: "8px 10px", background: "#F7F9FB", borderRadius: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "6px 12px", marginTop: 8, padding: "8px 10px", background: "#F5F8FC", borderRadius: 8 }}>
         {cols.slice(1).map((c) => (
           <div key={c.k} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, minWidth: 0 }}>
             <span style={{ color: X.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.ls || c.l}</span>
@@ -4699,7 +4704,7 @@ function MgTable({ cols, rows, sort0, total, onRow, max = 0, empty, mobSub, mobV
           const v = valOf(mainCol, r);
           const isOpen = !onRow && openRow === key;
           return (
-            <div key={key} className="qp-card-btn" onClick={() => (onRow ? onRow(r) : setOpenRow(isOpen ? null : key))} style={{ padding: "11px 14px", borderTop: `1px solid #EEF2F5`, cursor: "pointer" }}>
+            <div key={key} className="qp-card-btn" onClick={() => (onRow ? onRow(r) : setOpenRow(isOpen ? null : key))} style={{ padding: "11px 14px", borderTop: `1px solid #EAF0F6`, cursor: "pointer" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: X.sub, minWidth: 16, fontVariantNumeric: "tabular-nums" }}>{k + 1}</span>
                 <span style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{cell(cols[0], r)}</span>
@@ -4715,7 +4720,7 @@ function MgTable({ cols, rows, sort0, total, onRow, max = 0, empty, mobSub, mobV
           );
         })}
         {total && (
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "11px 14px", borderTop: `1px solid ${X.line}`, background: "#F7F9FB" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "11px 14px", borderTop: `1px solid ${X.line}`, background: "#F5F8FC" }}>
             <span style={{ fontSize: 13.5, fontWeight: 800, flex: 1, paddingLeft: 26 }}>{total[cols[0].k]}</span>
             <span style={{ fontSize: 14, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{total[mainCol.k]}</span>
           </div>
@@ -4910,7 +4915,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
       </div>
       <div style={{ position: "relative", height: 150, display: "flex", alignItems: "flex-end", gap: mob ? 4 : 10, borderBottom: `1px solid ${X.line}` }} onMouseLeave={() => setHov(-1)}>
         {[0.5, 1].map((f) => (
-          <span key={f} style={{ position: "absolute", left: 0, right: 0, bottom: `${f * 100}%`, borderTop: `1px dashed #E8EDF2` }} />
+          <span key={f} style={{ position: "absolute", left: 0, right: 0, bottom: `${f * 100}%`, borderTop: `1px dashed #E4EBF3` }} />
         ))}
         {months.map((m, i) => (
           <div key={m.key} onMouseEnter={() => setHov(i)} onClick={() => setHov(i)} style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 2, position: "relative", cursor: "default", background: hov === i ? "rgba(29,43,54,.04)" : "transparent", borderRadius: "6px 6px 0 0" }}>
@@ -4983,7 +4988,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
   const barRows = (list, maxV, bad) => (
     <div style={{ display: "flex", flexDirection: "column" }}>
       {list.map(([l, o, isBad]) => (
-        <div key={l} style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr) 46px 84px" : "minmax(0, 1fr) 54px 96px minmax(60px, 120px)", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid #EEF2F5`, fontSize: 12.5 }}>
+        <div key={l} style={{ display: "grid", gridTemplateColumns: mob ? "minmax(0, 1fr) 46px 84px" : "minmax(0, 1fr) 54px 96px minmax(60px, 120px)", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid #EAF0F6`, fontSize: 12.5 }}>
           <span style={{ color: isBad && o.n ? X.redDk : X.ink, fontWeight: isBad && o.n ? 700 : 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l}</span>
           <span style={{ textAlign: "right", color: X.sub, fontVariantNumeric: "tabular-nums" }}>{nS(o.n)}</span>
           <b style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{moneyShort(o.v)}</b>
@@ -5064,7 +5069,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
     return (
       <MgCard title={kind === "lost" ? _t("Lost · reasons") : _t("Cancelled · reasons")} right={_t("{0} QTs", nS(R.n))}>
         {R.list.map(([k, o]) => (
-          <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 40px 44px minmax(50px, 110px)", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid #EEF2F5`, fontSize: 12.5 }}>
+          <div key={k} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 40px 44px minmax(50px, 110px)", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: `1px solid #EAF0F6`, fontSize: 12.5 }}>
             <span>{whyTxt(k)}</span>
             <b style={{ textAlign: "right" }}>{nS(o.n)}</b>
             <span style={{ textAlign: "right", color: X.sub }}>{R.n ? pctS(o.n / R.n) : "—"}</span>
@@ -5098,7 +5103,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
   };
 
   const segBar = (
-    <div style={{ display: "flex", flexWrap: mob ? "wrap" : "nowrap", gap: 3, background: "#EEF2F5", borderRadius: 10, padding: 3, maxWidth: "100%", ...(mob ? { width: "100%" } : null) }}>
+    <div style={{ display: "flex", flexWrap: mob ? "wrap" : "nowrap", gap: 3, background: "#EAF0F6", borderRadius: 10, padding: 3, maxWidth: "100%", ...(mob ? { width: "100%" } : null) }}>
       {MGA_SECS.map(([k, l]) => {
         const on = sec === k;
         return (
@@ -5135,7 +5140,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
           pad={false}
           title={_t("By salesperson")}
           right={
-            <span style={{ display: "inline-flex", gap: 3, background: "#EEF2F5", borderRadius: 8, padding: 2 }}>
+            <span style={{ display: "inline-flex", gap: 3, background: "#EAF0F6", borderRadius: 8, padding: 2 }}>
               {[
                 ["sp", _t("Outside")],
                 ["qb", _t("Inside")],
@@ -5300,7 +5305,7 @@ function ManagerOverview({ rows, quotes, meta, thermo, acts, sales, cls, line, d
   );
   const goalExtra =
     monthGoal > 0 ? (
-      <div style={{ position: "relative", height: 5, borderRadius: 4, background: "#EEF2F5", marginTop: 7, overflow: "hidden" }} title={_t("The mark is where the month should be today")}>
+      <div style={{ position: "relative", height: 5, borderRadius: 4, background: "#EAF0F6", marginTop: 7, overflow: "hidden" }} title={_t("The mark is where the month should be today")}>
         <div style={{ width: `${Math.min(1, pctM) * 100}%`, height: "100%", background: MG_W, borderRadius: 4 }} />
         <div style={{ position: "absolute", top: 0, bottom: 0, left: `${Math.min(100, (dueSoFar / monthGoal) * 100)}%`, width: 2, background: X.ink, opacity: 0.5 }} />
       </div>
@@ -5325,7 +5330,7 @@ function ManagerOverview({ rows, quotes, meta, thermo, acts, sales, cls, line, d
     ["due", _t("Follow-ups for today"), k.due, "#B7791F", _t("due today")],
     ["nofup", _t("Open quotes without FUP"), k.nofup, "#94A3B8", _t("never show up in the plan")],
   ];
-  const rowS = { display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: `1px solid #EEF2F5`, minWidth: 0 };
+  const rowS = { display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: `1px solid #EAF0F6`, minWidth: 0 };
   const attnCard = (
     <MgCard title={_t("Needs attention")} right={periodTxt}>
       {attn.map(([key, l, x, dot, hint]) => (
@@ -5595,7 +5600,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
             tint={X.amberSoft}
             ink={X.amber}
           />
-          <Tile icon={TrendingUp} label={_t("Expected (open × % Win)")} value={moneyShort(weighted)} caption={_t("{0} open quotes · {1} without FUP", cands.length, noFup)} tint="#E6EEFB" ink="#2F6FDB" title={money(weighted)} />
+          <Tile icon={TrendingUp} label={_t("Expected (open × % Win)")} value={moneyShort(weighted)} caption={_t("{0} open quotes · {1} without FUP", cands.length, noFup)} tint="#E3EEFA" ink="#2B6CB8" title={money(weighted)} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderRadius: 9, background: tone[1], color: tone[0], fontSize: 13, fontWeight: 600 }}>
           {React.createElement(tone[2], { size: 16, style: { flexShrink: 0 } })}
@@ -5685,7 +5690,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
                   borderRadius: 8,
                   border: `1px solid ${isSel ? X.teal : X.line}`,
                   boxShadow: isSel ? `0 0 0 3px ${X.tealSoft}` : "none",
-                  background: isSel ? "#F4FBF9" : !inM ? "#FAFBFC" : we ? "#F8FAFB" : "#fff",
+                  background: isSel ? "#F2F6FC" : !inM ? "#F8FAFD" : we ? "#F8FAFB" : "#fff",
                   padding: mob ? 3 : 5,
                   cursor: "pointer",
                   display: "flex",
@@ -5747,7 +5752,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
                       minWidth: 0,
                     }}
                   >
-                    <span style={{ fontWeight: 800, color: e.fup ? FUP[e.fup].color : "#2F6FDB", flexShrink: 0 }}>{e.fup || "+"}</span>
+                    <span style={{ fontWeight: 800, color: e.fup ? FUP[e.fup].color : "#2B6CB8", flexShrink: 0 }}>{e.fup || "+"}</span>
                     {TEMP[e.temp] && <span style={{ width: 6, height: 6, borderRadius: 9, background: TEMP[e.temp].dot, flexShrink: 0 }} />}
                     {/* só o número da cotação; o cliente fica no balão ao passar o mouse */}
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.id}</span>
@@ -5766,7 +5771,7 @@ function CalendarView({ onAskClose, notesBy, thermo, quotes, sales, cls, line, m
                     </span>
                   )}
                   {inM && pd && (pd.goal > 0 || pd.planned > 0) && (
-                    <span title={_t("Planned {0} for {1} missing on this day", money(pd.planned), money(pd.need))} style={{ color: pd.planned >= pd.need ? "#2F6FDB" : X.redDk }}>{_t("plan")}{" "}{moneyShort(pd.planned)}
+                    <span title={_t("Planned {0} for {1} missing on this day", money(pd.planned), money(pd.need))} style={{ color: pd.planned >= pd.need ? "#2B6CB8" : X.redDk }}>{_t("plan")}{" "}{moneyShort(pd.planned)}
                       {pd.need > 0 && <span style={{ fontWeight: 500, color: X.sub }}> / {moneyShort(pd.need)}</span>}
                     </span>
                   )}
@@ -5977,8 +5982,8 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
 
   const scoreCol = (s) => (s >= 65 ? X.teal : s >= 40 ? "#F2B04C" : "#CBD5E1");
   return (
-    <div style={{ ...card, overflow: "hidden", borderColor: "#BFE3D9" }}>
-      <div style={{ padding: mob ? "12px 12px 10px" : "16px 16px 14px", display: "flex", flexDirection: "column", gap: mob ? 10 : 14, background: "linear-gradient(180deg, #F4FBF9, #fff)" }}>
+    <div style={{ ...card, overflow: "hidden", borderColor: "#C3D9F2" }}>
+      <div style={{ padding: mob ? "12px 12px 10px" : "16px 16px 14px", display: "flex", flexDirection: "column", gap: mob ? 10 : 14, background: "linear-gradient(180deg, #F2F6FC, #fff)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: mob ? "nowrap" : "wrap" }}>
           {!mob && (
           <span style={{ width: 38, height: 38, borderRadius: 10, background: X.teal, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
@@ -6044,7 +6049,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
           <Tile icon={Wallet} label={_t("Booked on the day")} value={partial ? "—" : day > today ? "—" : moneyShort(bookedOn.v)} caption={partial ? _t("import the Sales Report again") : day > today ? _t("day still ahead") : _t("Sales Report")} color={X.green} tint={X.greenSoft} ink={X.green} title={money(bookedOn.v)} />
           <Tile icon={Crosshair} label={_t("Missing on the day")} value={pd ? moneyShort(pd.need) : past ? moneyShort(Math.max(0, target - bookedOn.v)) : "—"} caption={pd ? (pd.need ? _t("to close in quotes") : _t("covered")) : past ? _t("day is over") : "—"} color={X.redDk} tint={X.redSoft} ink={X.redDk} />
           <Tile icon={ListChecks} label={_t("Planned")} value={pd ? moneyShort(pd.planned) : "—"} caption={pd ? (AUTO_FILL ? _t("{0} {1} · {2} FUP + {3} pulled in", list.length, list.length === 1 ? _t("quote") : _t("quotes"), nDue, nFill) : _t("{0} {1} with FUP", list.length, list.length === 1 ? _t("quote") : _t("quotes"))) : _t("plan starts today")} color={X.amber} tint={X.amberSoft} ink={X.amber} title={pd ? money(pd.planned) : ""} />
-          <Tile icon={TrendingUp} label={_t("Expected (× % Win)")} value={pd ? moneyShort(pd.expected) : "—"} caption={_t("planned × chance")} tint="#E6EEFB" ink="#2F6FDB" title={pd ? money(pd.expected) : ""} />
+          <Tile icon={TrendingUp} label={_t("Expected (× % Win)")} value={pd ? moneyShort(pd.expected) : "—"} caption={_t("planned × chance")} tint="#E3EEFA" ink="#2B6CB8" title={pd ? money(pd.expected) : ""} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 12px", borderRadius: 9, background: tone[1], color: tone[0], fontSize: 13, fontWeight: 600 }}>
           {React.createElement(tone[2], { size: 16, style: { flexShrink: 0 } })}
@@ -6156,7 +6161,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
                       <th
                         key={c.id}
                         title={c.tip}
-                        style={{ ...th, width: c.w, color: sOn || fOn ? X.tealDk : th.color, ...(c.right ? { textAlign: "right" } : null), ...(c.manual ? { background: "#EEF7F4" } : null) }}
+                        style={{ ...th, width: c.w, color: sOn || fOn ? X.tealDk : th.color, ...(c.right ? { textAlign: "right" } : null), ...(c.manual ? { background: "#EDF3FB" } : null) }}
                       >
                         {c.sort ? (
                           <span
@@ -6180,7 +6185,7 @@ function DayPlan({ onAskClose, notesBy, thermo, day, today, dailyGoal, quotes, s
               <tbody>
                 {shownRows.map((r, i) => {
                   const other = r.kind === "other";
-                  const bg = r.kind === "overdue" ? "#FFF6F6" : r.kind === "deadline" ? "#F4FBF9" : r.kind === "fill" ? "#F6F9FE" : "#fff";
+                  const bg = r.kind === "overdue" ? "#FFF6F6" : r.kind === "deadline" ? "#F2F6FC" : r.kind === "fill" ? "#F6F9FE" : "#fff";
                   const c = { ...td, background: bg, opacity: r.off ? 0.45 : 1, padding: "8px 8px" };
                   const cN = { ...tdN, background: bg, opacity: r.off ? 0.45 : 1, padding: "8px 8px" };
                   const bar = { overdue: X.redDk, deadline: X.teal, fill: "#7DA2E8" }[r.kind];
@@ -6509,14 +6514,15 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
   const field = { ...inp, height: 42, fontSize: 14, width: "100%", borderRadius: 10 };
   const lbl = { fontSize: 12, fontWeight: 700, color: X.sub, marginBottom: 6, display: "block" };
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 14, background: `radial-gradient(1200px 600px at 20% 0%, #DDF1EC 0%, transparent 60%), radial-gradient(900px 500px at 100% 100%, #E6EEFB 0%, transparent 55%), ${X.bg}` }}>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 14, background: `linear-gradient(180deg, ${X.navy} 0, ${X.navy} 34vh, ${X.bg} 34vh)` }}>
       <form onSubmit={submit} style={{ ...card, width: "min(420px, 100%)", borderRadius: 18, padding: "24px 20px 20px", display: "flex", flexDirection: "column", gap: 16, boxShadow: "0 24px 60px rgba(16,24,40,.12)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span onDoubleClick={toggleAdmin} style={{ width: 44, height: 44, borderRadius: 12, background: X.teal, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", userSelect: "none" }}>
-            <TrendingUp size={24} />
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <span onDoubleClick={toggleAdmin} style={{ userSelect: "none", display: "inline-flex" }}>
+            <MartinLogo h={44} />
           </span>
+          <span style={{ width: 1, height: 38, background: X.line }} />
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.4 }}>{_t("Quote Follow Up")}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: -0.4, color: X.navy }}>{_t("Quote Follow Up")}</div>
             <div style={{ fontSize: 12.5, color: X.sub }}>{_t("Sign in to continue")}</div>
           </div>
         </div>
@@ -6666,7 +6672,7 @@ function LegacyImport({ onDone }) {
   const slot = (k, title, hint) => {
     const f = files[k];
     return (
-      <div style={{ flex: "1 1 240px", minWidth: 0, border: `1px dashed ${f ? X.teal : X.line}`, background: f ? X.tealSoft : "#FBFCFD", borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ flex: "1 1 240px", minWidth: 0, border: `1px dashed ${f ? X.teal : X.line}`, background: f ? X.tealSoft : "#F9FBFE", borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
         <FileSpreadsheet size={18} color={f ? X.tealDk : X.sub} style={{ flexShrink: 0 }} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 12.5, fontWeight: 700 }}>{title}</div>
@@ -6681,7 +6687,7 @@ function LegacyImport({ onDone }) {
     );
   };
   const radio = (k, title, text) => (
-    <label style={{ flex: "1 1 260px", display: "flex", gap: 9, alignItems: "flex-start", border: `1px solid ${mode === k ? X.teal : X.line}`, borderRadius: 10, padding: "9px 11px", cursor: busy ? "default" : "pointer", background: mode === k ? "#F3FBF8" : "#fff" }}>
+    <label style={{ flex: "1 1 260px", display: "flex", gap: 9, alignItems: "flex-start", border: `1px solid ${mode === k ? X.teal : X.line}`, borderRadius: 10, padding: "9px 11px", cursor: busy ? "default" : "pointer", background: mode === k ? "#F2F6FC" : "#fff" }}>
       <input type="radio" name="qfu-legacy-mode" checked={mode === k} disabled={busy} onChange={() => setMode(k)} style={{ marginTop: 2, accentColor: X.teal }} />
       <span>
         <span style={{ display: "block", fontSize: 12.5, fontWeight: 700 }}>{title}</span>
@@ -6753,7 +6759,7 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
   const chip = (k, l, fg) => {
     const on = nf === k;
     return (
-      <button key={k || "all"} onClick={() => setNf(k)} style={{ ...btn, height: 30, padding: "0 10px", fontSize: 12, borderRadius: 999, background: on ? X.tealSoft : "#fff", color: on ? X.tealDk : fg || X.ink, borderColor: on ? "#9FD6C9" : X.line, fontWeight: on ? 700 : 600 }}>
+      <button key={k || "all"} onClick={() => setNf(k)} style={{ ...btn, height: 30, padding: "0 10px", fontSize: 12, borderRadius: 999, background: on ? X.tealSoft : "#fff", color: on ? X.tealDk : fg || X.ink, borderColor: on ? "#A9C8EC" : X.line, fontWeight: on ? 700 : 600 }}>
         {l} <span style={{ opacity: 0.7 }}>{cnt[k] || 0}</span>
       </button>
     );
@@ -6836,7 +6842,7 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
             </span>
           );
           return mob ? (
-            <div key={n} style={{ padding: "11px 12px", borderBottom: `1px solid #F0F3F6`, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div key={n} style={{ padding: "11px 12px", borderBottom: `1px solid #EEF2F8`, display: "flex", flexDirection: "column", gap: 8 }}>
               {who}
               {roleSel}
               <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
@@ -6845,7 +6851,7 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
               </div>
             </div>
           ) : (
-            <div key={n} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 200px 120px 130px", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: `1px solid #F0F3F6` }}>
+            <div key={n} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 200px 120px 130px", alignItems: "center", gap: 12, padding: "9px 18px", borderBottom: `1px solid #EEF2F8` }}>
               {who}
               {roleSel}
               {pwd}
@@ -6855,7 +6861,7 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
         })}
         {!list.length && <div style={{ padding: 20, textAlign: "center", color: X.sub, fontSize: 12.5 }}>{_t("Nobody found.")}</div>}
       </div>
-      <div style={{ padding: mob ? "12px 12px" : "12px 18px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", background: "#FAFBFC" }}>
+      <div style={{ padding: mob ? "12px 12px" : "12px 18px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", background: "#F8FAFD" }}>
         <UserPlus size={16} color={X.sub} />
         <span style={{ fontSize: 12.5, fontWeight: 600, color: X.ink }}>{_t("Someone who is not in the reports?")}</span>
         <input value={add} onChange={(e) => setAdd(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doAdd()} placeholder={_t("Full name")} style={{ ...inp, height: 36, flex: "1 1 180px", minWidth: 0 }} />
@@ -6868,7 +6874,7 @@ function UsersPanel({ names, colOf, users, onRole, onAdd, onReset }) {
 /* Sem acesso: a pessoa entrou, mas o Admin ainda não escolheu a tela dela */
 function NoAccessScreen({ name, connected, checking, onCheck, onLogout }) {
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: `radial-gradient(1200px 600px at 20% 0%, #DDF1EC 0%, transparent 60%), ${X.bg}` }}>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: `radial-gradient(1200px 600px at 20% 0%, #E3EEFA 0%, transparent 60%), ${X.bg}` }}>
       <div style={{ ...card, width: "min(420px, 100%)", borderRadius: 18, padding: "26px 22px 20px", display: "flex", flexDirection: "column", gap: 14, textAlign: "center", alignItems: "center" }}>
         <span style={{ width: 52, height: 52, borderRadius: 14, background: X.amberSoft, color: X.amber, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
           <Ban size={26} />
@@ -8536,7 +8542,7 @@ export default function App() {
       document.head.appendChild(e);
     };
     add("meta", { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" });
-    add("meta", { name: "theme-color", content: X.bg });
+    add("meta", { name: "theme-color", content: X.navy });
     add("meta", { name: "apple-mobile-web-app-capable", content: "yes" });
     add("meta", { name: "mobile-web-app-capable", content: "yes" });
     add("meta", { name: "apple-mobile-web-app-title", content: _t("Quote Follow Up") });
@@ -8575,7 +8581,7 @@ export default function App() {
       );
     if (df.st === "saving")
       return (
-        <button disabled title={df.part === "rep" ? _t("Writing {0} (quotes and sales). It is big: on the network drive this can take a while.", REP_FILE) : _t("Writing {0}.", DATA_FILE)} style={{ ...base, cursor: "wait", color: X.sub, background: "#EEF2F5" }}>
+        <button disabled title={df.part === "rep" ? _t("Writing {0} (quotes and sales). It is big: on the network drive this can take a while.", REP_FILE) : _t("Writing {0}.", DATA_FILE)} style={{ ...base, cursor: "wait", color: X.sub, background: "#EAF0F6" }}>
           <Save size={16} /> {df.part === "rep" ? _t("Saving quotes…") : _t("Saving…")} {saveSecs}s
         </button>
       );
@@ -8584,7 +8590,7 @@ export default function App() {
       <button
         onClick={() => saveNow(!hot)}
         title={hot ? _t("Write the changes (Ctrl+S){0}", dirtyR ? _t(" · the quotes and sales changed too ({0}, bigger: takes longer)", REP_FILE) : "") : _t("Everything is saved in the folder {0} · click (or Ctrl+S) to save again", df.name)}
-        style={hot ? { ...base, background: X.teal, borderColor: X.teal, color: "#fff", boxShadow: "0 2px 6px rgba(31,154,132,.3)" } : { ...base, color: X.tealDk, borderColor: "#BFE3D9" }}
+        style={hot ? { ...base, background: X.teal, borderColor: X.teal, color: "#fff", boxShadow: "0 2px 6px rgba(31,154,132,.3)" } : { ...base, color: X.tealDk, borderColor: "#C3D9F2" }}
       >
         <Save size={16} /> {hot ? _t("Save") : _t("Saved")}
         {unsavedN > 0 && <span style={{ fontSize: 11, fontWeight: 800, background: "#fff", color: X.tealDk, padding: "1px 7px", borderRadius: 999 }}>{unsavedN.toLocaleString("pt-BR")}</span>}
@@ -8597,7 +8603,7 @@ export default function App() {
     if (srv) {
       if (df.st === "opening")
         return (
-          <span style={{ ...base, cursor: "wait", background: "#EEF2F5", borderColor: X.line, color: X.sub }}>
+          <span style={{ ...base, cursor: "wait", background: "#EAF0F6", borderColor: X.line, color: X.sub }}>
             <Cloud size={15} />{" "}{_t("Loading from the server…")}</span>
         );
       if (df.st === "err")
@@ -8612,25 +8618,25 @@ export default function App() {
         );
       if (df.st === "saving" || unsaved)
         return (
-          <span title={df.part === "rep" ? _t("Sending the imported reports to the server…") : _t("Sending the changes to the server…")} style={{ ...base, cursor: "default", background: "#EEF2F5", borderColor: X.line, color: X.sub }}>
+          <span title={df.part === "rep" ? _t("Sending the imported reports to the server…") : _t("Sending the changes to the server…")} style={{ ...base, cursor: "default", background: "#EAF0F6", borderColor: X.line, color: X.sub }}>
             <RefreshCw size={14} className="qp-spin" /> {df.part === "rep" ? _t("Saving the reports… {0}s", saveSecs) : _t("Saving…")}
           </span>
         );
       return (
-        <span title={_t("Everything is saved on the server. What the other people change shows up here by itself.")} style={{ ...base, cursor: "default", background: X.tealSoft, borderColor: "#BFE3D9", color: X.tealDk }}>
+        <span title={_t("Everything is saved on the server. What the other people change shows up here by itself.")} style={{ ...base, cursor: "default", background: X.tealSoft, borderColor: "#C3D9F2", color: X.tealDk }}>
           <Cloud size={15} />{" "}{_t("Saved")}{" "}<span style={{ fontWeight: 500, color: X.sub }}>{df.savedAt ? `· ${df.savedAt.slice(11, 16)}` : _t("· online")}</span>
         </span>
       );
     }
     if (df.st === "opening")
       return (
-        <span title={_t("Reading the data file and joining it with this browser. A big file (or a network drive) can take a few seconds.")} style={{ ...base, cursor: "wait", background: "#EEF2F5", borderColor: X.line, color: X.sub }}>
+        <span title={_t("Reading the data file and joining it with this browser. A big file (or a network drive) can take a few seconds.")} style={{ ...base, cursor: "wait", background: "#EAF0F6", borderColor: X.line, color: X.sub }}>
           <Database size={15} />{" "}{_t("Opening")}{" "}{df.name}…
         </span>
       );
     if (df.st === "saving")
       return (
-        <span title={_t("Writing the data files. On a network drive this can take a while.")} style={{ ...base, cursor: "wait", background: "#EEF2F5", borderColor: X.line, color: X.sub }}>
+        <span title={_t("Writing the data files. On a network drive this can take a while.")} style={{ ...base, cursor: "wait", background: "#EAF0F6", borderColor: X.line, color: X.sub }}>
           <Database size={15} /> {df.name}{" "}{_t("· saving")}{" "}{df.part === "rep" ? _t("quotes and sales") : _t("follow-ups")}…
         </span>
       );
@@ -8646,7 +8652,7 @@ export default function App() {
       );
     if (df.st === "on")
       return (
-        <span title={_t("Data folder {0}: {1} and {2} · everything is saved", df.name, DATA_FILE, REP_FILE)} style={{ ...base, cursor: "default", background: X.tealSoft, borderColor: "#BFE3D9", color: X.tealDk }}>
+        <span title={_t("Data folder {0}: {1} and {2} · everything is saved", df.name, DATA_FILE, REP_FILE)} style={{ ...base, cursor: "default", background: X.tealSoft, borderColor: "#C3D9F2", color: X.tealDk }}>
           <Database size={15} /> {df.name} <span style={{ fontWeight: 500, color: X.sub }}>{df.savedAt ? _t("· saved {0}", df.savedAt.slice(11, 16)) : df.openedAt ? _t("· opened {0}", df.openedAt.slice(11, 16)) : ""}</span>
         </span>
       );
@@ -8849,7 +8855,7 @@ export default function App() {
     <label style={{ display: "flex", flexDirection: mob ? "column" : "row", alignItems: mob ? "stretch" : "center", gap: mob ? 5 : 8, fontSize: 12.5, fontWeight: 600, color: X.ink }}>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 7, ...(mob ? fLbl : null) }}>
         <UserRound size={15} color={X.sub} />{" "}{_t("Salesperson")}</span>
-      <select value={seller} onChange={(e) => setPref("seller", e.target.value)} title={_t("Outside = Sales Person column · Inside = Quoted By column")} style={{ ...selS, maxWidth: "none", minWidth: mob ? 0 : 230, width: mob ? "100%" : undefined, height: mob ? 40 : 36, ...(seller ? { background: X.tealSoft, borderColor: "#9FD6C9", color: X.tealDk } : null) }}>
+      <select value={seller} onChange={(e) => setPref("seller", e.target.value)} title={_t("Outside = Sales Person column · Inside = Quoted By column")} style={{ ...selS, maxWidth: "none", minWidth: mob ? 0 : 230, width: mob ? "100%" : undefined, height: mob ? 40 : 36, ...(seller ? { background: X.tealSoft, borderColor: "#A9C8EC", color: X.tealDk } : null) }}>
         {sellerOpts}
       </select>
     </label>
@@ -8955,7 +8961,7 @@ export default function App() {
   /* ---------- abas: no computador no topo; no celular, fixas embaixo ---------- */
   const tabBadge = (k) => (k === "portfolio" ? rows.length : null);
   const tabsTop = !mob && tabs.length > 1 && (
-    <div style={{ display: "inline-flex", gap: 4, background: "#fff", border: `1px solid ${X.line}`, borderRadius: 12, padding: 4, boxShadow: "0 1px 3px rgba(16,24,40,.05)" }}>
+    <div style={{ display: "flex", gap: 2, background: "#fff", borderBottom: `1px solid ${X.line}`, margin: "-14px -24px 0", padding: "0 18px", boxShadow: "0 1px 2px rgba(16,24,40,.04)" }}>
       {tabs.map(([k, l, Ico]) => {
         const on = tab === k;
         const n = tabBadge(k);
@@ -8963,7 +8969,7 @@ export default function App() {
           <button
             key={k}
             onClick={() => setTab(k)}
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "none", borderRadius: 9, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 500, background: on ? X.tealSoft : "transparent", color: on ? X.tealDk : X.ink }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "none", borderBottom: `2.5px solid ${on ? X.teal : "transparent"}`, borderRadius: 0, padding: "12px 14px 10px", cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 500, background: "transparent", color: on ? X.navy : X.sub }}
           >
             <Ico size={16} /> {l}
             {n != null && <span style={{ fontSize: 11, fontWeight: 700, background: on ? "#fff" : X.head, color: on ? X.tealDk : X.sub, padding: "1px 8px", borderRadius: 999 }}>{n.toLocaleString("pt-BR")}</span>}
@@ -9028,7 +9034,7 @@ export default function App() {
         <RefreshCw size={17} className="qp-spin" />
       </button>
     ) : (
-      <button onClick={() => pullIfChanged(true)} title={_t("Everything is saved · tap to bring the changes of the other people")} style={iconBtn({ color: X.tealDk, borderColor: "#BFE3D9" })}>
+      <button onClick={() => pullIfChanged(true)} title={_t("Everything is saved · tap to bring the changes of the other people")} style={iconBtn({ color: X.tealDk, borderColor: "#C3D9F2" })}>
         {checkSt.busy ? <RefreshCw size={17} className="qp-spin" /> : <CheckCircle2 size={18} />}
       </button>
     )
@@ -9060,7 +9066,7 @@ export default function App() {
         )}
       </button>
     ) : (
-      <button onClick={() => pullIfChanged(true)} title={_t("Everything is saved · tap to bring the changes of the other people")} style={iconBtn({ color: X.tealDk, borderColor: "#BFE3D9" })}>
+      <button onClick={() => pullIfChanged(true)} title={_t("Everything is saved · tap to bring the changes of the other people")} style={iconBtn({ color: X.tealDk, borderColor: "#C3D9F2" })}>
         {checkSt.busy ? <RefreshCw size={17} className="qp-spin" /> : <CheckCircle2 size={18} />}
       </button>
     );
@@ -9306,23 +9312,25 @@ export default function App() {
       <div
         style={
           mob
-            ? { position: "sticky", top: 0, zIndex: 1100, margin: "-10px -12px 0", padding: "10px 12px 8px", background: "rgba(244,247,249,.96)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", borderBottom: `1px solid ${X.line}`, display: "flex", flexDirection: "column", gap: 8 }
-            : { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }
+            ? { position: "sticky", top: 0, zIndex: 1100, margin: "-10px -12px 0", padding: "calc(9px + env(safe-area-inset-top)) 12px 9px", background: X.navy, display: "flex", flexDirection: "column", gap: 8 }
+            : { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: X.navy, margin: "-18px -24px 0", padding: "10px 24px" }
         }
       >
         {mob ? (
           /* celular: o nome da aba, e só três botões (filtro, salvamento, menu) */
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <MartinLogo h={24} light />
+            <span style={{ width: 1, height: 26, background: "rgba(255,255,255,.22)", flexShrink: 0 }} />
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: -0.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.15 }}>{(tabs.find((t) => t[0] === tab) || [, _t("Quote Follow Up")])[1]}</div>
-              <div style={{ fontSize: 12, color: R ? R.fg : X.sub, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.15, color: "#fff" }}>{(tabs.find((t) => t[0] === tab) || [, _t("Quote Follow Up")])[1]}</div>
+              <div style={{ fontSize: 11.5, color: "#A9C4E2", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {lockSeller ? String(session).split(" ")[0] + " · " : ""}
                 {R ? R.label : ""}
               </div>
             </div>
             <span className="no-print" style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
               {hasTopFilter && (
-                <button onClick={() => setShowFilters(true)} title={_t("Filters")} style={iconBtn(nSheet ? { background: X.tealSoft, borderColor: "#9FD6C9", color: X.tealDk } : null)}>
+                <button onClick={() => setShowFilters(true)} title={_t("Filters")} style={iconBtn(nSheet ? { background: X.tealSoft, borderColor: "#A9C8EC", color: X.tealDk } : null)}>
                   <SlidersHorizontal size={18} />
                   {dotBadge(nSheet)}
                 </button>
@@ -9332,16 +9340,15 @@ export default function App() {
             </span>
           </div>
         ) : (
-        <div style={{ display: "flex", alignItems: "center", gap: mob ? 8 : 12, minWidth: 0 }}>
-          <span style={{ width: mob ? 34 : 40, height: mob ? 34 : 40, borderRadius: 11, background: X.teal, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <TrendingUp size={mob ? 18 : 21} />
-          </span>
-          <div style={{ minWidth: 0, flex: mob ? 1 : "none" }}>
-            <div style={{ fontSize: mob ? 16 : 20, fontWeight: 800, letterSpacing: -0.4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{_t("Quote Follow Up")}</div>
-            <div style={{ fontSize: 12, color: R ? R.fg : X.sub, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+          <MartinLogo h={32} light />
+          <span style={{ width: 1, height: 30, background: "rgba(255,255,255,.22)", flexShrink: 0 }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: -0.3, whiteSpace: "nowrap", color: "#fff" }}>{_t("Quote Follow Up")}</div>
+            <div style={{ fontSize: 12, color: "#A9C4E2", fontWeight: 600, display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}>
               {R && React.createElement(R.icon, { size: 12 })}
               {R ? R.label : ""}
-              {!mob && <span style={{ color: X.sub, fontWeight: 400 }}>· {role === "manager" ? _t("overview, quotes, team, goal and analysis") : _t("today's follow-ups, quotes and calendar")}</span>}
+              <span style={{ fontWeight: 400 }}>· {role === "manager" ? _t("overview, quotes, team, goal and analysis") : _t("today's follow-ups, quotes and calendar")}</span>
             </div>
           </div>
         </div>
@@ -9351,7 +9358,7 @@ export default function App() {
             {dfChip}
             {ROLES[role] && (
               <>
-                <div style={{ width: 1, height: 26, background: X.line, margin: "0 2px" }} />
+                <div style={{ width: 1, height: 26, background: "rgba(255,255,255,.22)", margin: "0 2px" }} />
                 {imports}
               </>
             )}

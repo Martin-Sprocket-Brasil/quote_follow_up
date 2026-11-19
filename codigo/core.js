@@ -712,9 +712,9 @@ export const FUP_KEYS = ["A", "B", "C", "D", "E"]; // todas as letras (filtros, 
 export const FUP_PICK = ["A", "B", "C", "D"]; // letras que se escolhem à mão (o E vem do Done)
 export const WIN_VALS = [25, 50, 75, 99];
 export const WIN_META = {
-  25: { color: "#64748B", bg: "#EEF2F5" },
+  25: { color: "#64748B", bg: "#EAF0F6" },
   50: { color: "#B7791F", bg: "#FDF0D9" },
-  75: { color: "#2F6FDB", bg: "#E6EEFB" },
+  75: { color: "#2B6CB8", bg: "#E3EEFA" },
   99: { color: "#1F8A5B", bg: "#DDF3E8" },
 };
 export const TEMP_KEYS = ["HOT", "WARM", "COOL", "COLD"];

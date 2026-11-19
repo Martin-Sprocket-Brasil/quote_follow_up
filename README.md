@@ -354,9 +354,10 @@ quote-follow-up/
 │  ├─ app.jsx             interface: telas, tabelas, calendário, importação
 │  ├─ core.js             regras: leitura dos relatórios, carteira, agenda de FUP, meta, prioridade
 │  ├─ dcs.js              formulário DCS / Value Added (itens, obrigatórios, preenchimento do PDF)
+│  ├─ logo.jsx            logo da Martin (branco no topo, original no login)
 │  ├─ i18n.js · i18n-pt.js  idioma (inglês / português) e as traduções
 │  ├─ entry.jsx · styles.css · build.js   ponto de entrada, estilo base e o compilador
-│  └─ modelos/dcs-va-template.pdf        o formulário oficial, vazio (vai dentro da página)
+│  └─ modelos/            dcs-va-template.pdf (formulário oficial, vazio) e martin-logo.svg
 ├─ servidor/              o servidor (Node) e a configuração
 │  ├─ server.mjs          entrega a página, faz o login e grava no banco
 │  ├─ server.config.example.json  modelo; o seu é o server.config.json (senha do banco — fica fora do GitHub)
@@ -371,6 +372,14 @@ quote-follow-up/
 ```
 
 Criados enquanto o programa roda (e fora do GitHub): `servidor\server.config.json`, `servidor\servidor.log` (no modo serviço) e `banco\import.sql` (pelo importar-banco.bat).
+
+## Tema (cores e logo)
+
+Tema azul da Martin: faixa **marinho** (#0D3D6E) no topo com o logo em branco, **azul principal** (#1A5FA8) em botões, abas e seleções, **azul claro** (#E3EEFA) em chips e destaques, fundo levemente azulado (#F3F6FA). Verde, âmbar e vermelho ficam só para situação (ganha, hoje, atrasada/perdida).
+
+- As cores ficam no bloco `const X = {` no início do `codigo\app.jsx` (mude ali e rode o `build.bat`).
+- O logo fica em `codigo\logo.jsx` (o original em `codigo\modelos\martin-logo.svg`).
+- Ícones do celular: `pagina\icones\`.
 
 ## Stack
 
