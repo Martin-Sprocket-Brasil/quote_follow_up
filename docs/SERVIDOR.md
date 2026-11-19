@@ -1,10 +1,10 @@
 # Quote Follow Up com servidor (MariaDB + túnel Cloudflare)
 
 ```
-celular / computador  ──►  túnel Cloudflare (https)  ──►  servidor  (node server.mjs, porta 8080)  ──►  MariaDB
+celular / computador  ──►  túnel Cloudflare (https)  ──►  servidor  (node servidor/server.mjs, porta 8080)  ──►  MariaDB
 ```
 
-O servidor (`server.mjs`) entrega a página e a API, faz o login e é o único que fala com o banco. O MariaDB nunca fica exposto na internet.
+O servidor (`servidor\server.mjs`) entrega a página e a API, faz o login e é o único que fala com o banco. O MariaDB nunca fica exposto na internet.
 
 **O que muda para quem usa**
 
@@ -14,7 +14,7 @@ O servidor (`server.mjs`) entrega a página e a API, faz o login e é o único q
 - As senhas continuam as mesmas.
 - Sem internet, a mudança fica guardada na página (ícone de nuvem vermelha) e vai sozinha quando a conexão volta.
 
-**A versão antiga continua funcionando:** aberto como arquivo (ou pelo Live Server), o `QuoteFollowUp.html` usa a pasta dos arquivos Excel, como antes.
+**A versão antiga continua funcionando:** aberto como arquivo (ou pelo Live Server), o `pagina\QuoteFollowUp.html` usa a pasta dos arquivos Excel, como antes.
 
 ---
 
@@ -28,14 +28,14 @@ Fora do OneDrive: o "&" do nome da pasta da empresa atrapalha os comandos do Win
 
 ### 2. Bibliotecas e página
 
-Dê dois cliques em `build.bat`. Ele instala as bibliotecas que faltarem (express, mariadb, compression e, para o formulário DCS / Value Added, pdf-lib) e gera o `QuoteFollowUp.html`.
+Dê dois cliques em `build.bat`. Ele instala as bibliotecas que faltarem (express, mariadb, compression e, para o formulário DCS / Value Added, pdf-lib) e gera o `pagina\QuoteFollowUp.html`.
 
 ### 3. Atualizar o banco
 
-O `schema.sql` novo acrescenta a tabela `sessions` (logins), os contadores de versão e libera o tipo `dcs` no histórico (o formulário DCS / Value Added). Não apaga nada e pode ser rodado de novo quantas vezes quiser.
+O `banco\schema.sql` novo acrescenta a tabela `sessions` (logins), os contadores de versão e libera o tipo `dcs` no histórico (o formulário DCS / Value Added). Não apaga nada e pode ser rodado de novo quantas vezes quiser.
 
 ```
-mariadb -u root -p < schema.sql
+mariadb -u root -p < banco\schema.sql
 ```
 
 Para trazer os dados mais recentes das planilhas antes de trocar de vez, entre como **Admin** → aba **Dados** → **Importar da versão anterior** e escolha os dois arquivos (ou repita o `importar-banco.bat` e o `mariadb -u root -p < import.sql`). Veja `BANCO-DE-DADOS.md`.
@@ -51,7 +51,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE, CREATE ON quote_follow_up.* TO 'qfu_app'@'
 
 ### 5. Configuração
 
-Dê dois cliques em `iniciar-servidor.bat`. Na primeira vez, ele cria o `server.config.json` e abre o arquivo no Bloco de Notas. Coloque a senha do passo 4 em `"password"` e salve.
+Dê dois cliques em `iniciar-servidor.bat`. Na primeira vez, ele cria o `servidor\server.config.json` e abre o arquivo no Bloco de Notas. Coloque a senha do passo 4 em `"password"` e salve.
 
 | Campo | O que é |
 |---|---|
@@ -60,7 +60,7 @@ Dê dois cliques em `iniciar-servidor.bat`. Na primeira vez, ele cria o `server.
 | `sessionDays` | Por quantos dias o login dura sem uso (cada uso estende). |
 | `db` | Endereço, usuário, senha e nome do banco. |
 
-> O `server.config.json` tem a senha do banco. Ele já está no `.gitignore`: não mande para o GitHub.
+> O `servidor\server.config.json` tem a senha do banco. Ele já está no `.gitignore`: não mande para o GitHub.
 
 ### 6. Ligar e testar
 
@@ -81,7 +81,7 @@ schtasks /Create /TN "Quote Follow Up" /TR "C:\QuoteFollowUp\iniciar-servidor.ba
 schtasks /Run /TN "Quote Follow Up"
 ```
 
-- Nesse modo não tem janela. O registro fica em `C:\QuoteFollowUp\servidor.log`, e se o servidor cair ele religa sozinho em 10 segundos.
+- Nesse modo não tem janela. O registro fica em `C:\QuoteFollowUp\servidor\servidor.log`, e se o servidor cair ele religa sozinho em 10 segundos.
 - Para parar: `schtasks /End /TN "Quote Follow Up"`.
 - Para tirar do início do Windows: `schtasks /Delete /TN "Quote Follow Up" /F`.
 - O MariaDB também precisa iniciar com o Windows. O instalador dele já faz isso.
@@ -143,11 +143,11 @@ Todo mundo que entra recebe **todas** as cotações, porque o Thermometer de cad
 
 | Mensagem | O que fazer |
 |---|---|
-| `Não foi possível falar com o banco de dados` | Confira o MariaDB ligado e o usuário e a senha no `server.config.json`. |
-| `a tabela sessions não existe…` | Rode o `schema.sql` novo como root (passo 3). |
-| `[AVISO] O banco ainda não aceita o formulário DCS / Value Added` ou, na página, *The database needs an update…* | Rode o `schema.sql` novo como root (passo 3). Não precisa reiniciar: em até 1 minuto o servidor percebe e a página reenvia o formulário sozinha. |
+| `Não foi possível falar com o banco de dados` | Confira o MariaDB ligado e o usuário e a senha no `servidor\server.config.json`. |
+| `a tabela sessions não existe…` | Rode o `banco\schema.sql` novo como root (passo 3). |
+| `[AVISO] O banco ainda não aceita o formulário DCS / Value Added` ou, na página, *The database needs an update…* | Rode o `banco\schema.sql` novo como root (passo 3). Não precisa reiniciar: em até 1 minuto o servidor percebe e a página reenvia o formulário sozinha. |
 | `EADDRINUSE` | A porta 8080 já está em uso, talvez por outro servidor aberto. Feche o outro ou troque o `port`. |
 | Página abre, mas pede a pasta de dados | Ela foi aberta como arquivo, não pelo servidor. Use http://localhost:8080 ou o endereço do túnel. |
 | Túnel mostra erro 502 | O servidor não está rodando nesta máquina (passo 6 ou 7). |
 
-Depois de mudar o `app.jsx`, rode o `build.bat`. Não precisa reiniciar o servidor: ele sempre entrega o `QuoteFollowUp.html` mais novo. Depois de mudar o `core.js` ou o `server.mjs`, reinicie o servidor.
+Depois de mudar o `codigo\app.jsx`, rode o `build.bat`. Não precisa reiniciar o servidor: ele sempre entrega o `pagina\QuoteFollowUp.html` mais novo. Depois de mudar o `codigo\core.js` ou o `servidor\server.mjs`, reinicie o servidor.

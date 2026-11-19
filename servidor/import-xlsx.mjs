@@ -3,9 +3,9 @@
    Lê "Quote Follow Up data.xlsx" e "Quote Follow Up reports.xlsx" com o PRÓPRIO core.js do programa
    (mesmas regras de leitura, inclusive a aba Config cifrada dos usuários) e gera o arquivo import.sql.
 
-   Como usar (na pasta do programa, onde estão core.js e node_modules — rode o build.bat uma vez antes):
-     node import-xlsx.mjs "Quote Follow Up data.xlsx" "Quote Follow Up reports.xlsx"
-     mariadb -u root -p < import.sql
+   Como usar (na pasta do programa — rode o build.bat uma vez antes; ou dê dois cliques no importar-banco.bat):
+     node servidor/import-xlsx.mjs "Quote Follow Up data.xlsx" "Quote Follow Up reports.xlsx"
+     mariadb -u root -p < banco/import.sql
 
    Pode rodar quantas vezes quiser: o import.sql atualiza o que já existe e não duplica nada.
    O histórico (activities) só ganha os registros que ainda não estão no banco.
@@ -18,15 +18,15 @@ import * as XLSX from "xlsx";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const [dataPath, repPath, outArg] = process.argv.slice(2);
 if (!dataPath || !repPath) {
-  console.error('Uso: node import-xlsx.mjs "Quote Follow Up data.xlsx" "Quote Follow Up reports.xlsx" [import.sql]');
+  console.error('Uso: node servidor/import-xlsx.mjs "Quote Follow Up data.xlsx" "Quote Follow Up reports.xlsx" [import.sql]');
   process.exit(1);
 }
-const OUT = outArg || path.join(here, "import.sql");
+const OUT = outArg || path.join(here, "..", "banco", "import.sql");
 
 /* core.js é ESM com extensão .js: uma cópia temporária .mjs garante que o Node o carregue como módulo
    em qualquer versão (a cópia fica na mesma pasta para achar o node_modules/xlsx). */
 const tmpCore = path.join(here, ".core-import.tmp.mjs");
-fs.copyFileSync(path.join(here, "core.js"), tmpCore);
+fs.copyFileSync(path.join(here, "..", "codigo", "core.js"), tmpCore);
 let core;
 try {
   core = await import(pathToFileURL(tmpCore).href);
@@ -51,7 +51,7 @@ const out = [
 ];
 fs.writeFileSync(OUT, out.join("\n\n") + "\n");
 
-console.log(`Pronto! ${OUT} (${(fs.statSync(OUT).size / 1024 / 1024).toFixed(1)} MB)`);
+console.log(`Pronto! ${path.relative(process.cwd(), OUT) || OUT} (${(fs.statSync(OUT).size / 1024 / 1024).toFixed(1)} MB)`);
 console.log(`  cotações ${counts.quotes} · pedidos ${counts.orders} · product groups ${counts.pgs} · vendas ${counts.sales}`);
 console.log(`  follow-ups ${counts.followups} · dias com Done ${counts.done} · histórico ${counts.acts} · metas por dia ${counts.goals}`);
 console.log(`  usuários ${counts.users} (${Object.entries(counts.roles).map(([k, v]) => `${k === "none" ? "sem acesso" : k}: ${v}`).join(", ")})`);

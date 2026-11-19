@@ -983,7 +983,7 @@ export const PT = {
   "Edit": "Editar",
   "New version": "Nova versão",
   "Fill in": "Preencher",
-  "The database needs an update to save the DCS / Value Added form: run the new schema.sql (see SERVIDOR.md). Nothing was lost: the page sends it again by itself.": "O banco precisa de uma atualização para salvar o formulário DCS / Value Added: rode o schema.sql novo (veja SERVIDOR.md). Nada se perdeu: a página manda de novo sozinha.",
+  "The database needs an update to save the DCS / Value Added form: run the new banco/schema.sql (see docs/SERVIDOR.md). Nothing was lost: the page sends it again by itself.": "O banco precisa de uma atualização para salvar o formulário DCS / Value Added: rode o banco\\schema.sql novo (veja docs\\SERVIDOR.md). Nada se perdeu: a página manda de novo sozinha.",
   "Forms": "Formulários",
   "Last 90 days": "Últimos 90 dias",
   "all types": "todos os tipos",
@@ -1154,4 +1154,9 @@ export const PT = {
   "Only the Admin can do this.": "Só o Admin pode fazer isso.",
   "Import the files": "Importar os arquivos",
   "Sort by": "Ordenar por",
+  "{0} hit": "{0} conv.",
+  "{0} lost/canc.": "{0} perd./canc.",
+  "{0} QTs of the group": "{0} QTs do grupo",
+  "won": "ganho",
+  "Conversion": "Conversão",
 };

@@ -1,15 +1,18 @@
-/* Compila app.jsx -> QuoteFollowUp.html (arquivo unico, offline). */
+/* Compila codigo/app.jsx -> pagina/QuoteFollowUp.html (arquivo unico, offline). Rode pelo build.bat. */
 const esbuild = require("esbuild");
 const fs = require("fs");
+const path = require("path");
 
-const OUT = "QuoteFollowUp.html";
-const style = fs.existsSync("styles.css")
-  ? fs.readFileSync("styles.css", "utf8")
+const SRC = __dirname; // pasta codigo/
+const OUT = path.join(SRC, "..", "pagina", "QuoteFollowUp.html");
+const CSS = path.join(SRC, "styles.css");
+const style = fs.existsSync(CSS)
+  ? fs.readFileSync(CSS, "utf8")
   : "html,body,#root{margin:0;height:100%}";
 
 console.log("Empacotando o codigo (esbuild)...");
 const res = esbuild.buildSync({
-  entryPoints: ["entry.jsx"],
+  entryPoints: [path.join(SRC, "entry.jsx")],
   bundle: true,
   minify: true,
   format: "iife",
@@ -36,5 +39,6 @@ const html =
   </body>
 </html>`;
 
+fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, html);
-console.log("Pronto! Gerado " + OUT + " (" + (Buffer.byteLength(html) / 1024 / 1024).toFixed(2) + " MB)");
+console.log("Pronto! Gerado pagina/QuoteFollowUp.html (" + (Buffer.byteLength(html) / 1024 / 1024).toFixed(2) + " MB)");

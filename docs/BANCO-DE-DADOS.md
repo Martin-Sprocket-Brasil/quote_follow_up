@@ -4,10 +4,10 @@ Arquivos:
 
 | Arquivo | Para que serve |
 |---|---|
-| `schema.sql` | Cria o banco `quote_follow_up` com as tabelas, os índices, as regras e a visão `v_quote_state`. Pode rodar de novo sem apagar nada. |
-| `import-xlsx.mjs` | Lê as duas planilhas da pasta de dados **com o próprio `core.js`**, inclusive a aba Config cifrada dos usuários, e gera o `import.sql`. |
+| `banco\schema.sql` | Cria o banco `quote_follow_up` com as tabelas, os índices, as regras e a visão `v_quote_state`. Pode rodar de novo sem apagar nada. |
+| `servidor\import-xlsx.mjs` | Lê as duas planilhas da pasta de dados **com o próprio `codigo\core.js`**, inclusive a aba Config cifrada dos usuários, e gera o `banco\import.sql`. |
 | `importar-banco.bat` | Roda o `import-xlsx.mjs` com dois cliques. |
-| `legacy-import.mjs` | As regras da importação das planilhas, usadas pelo `import-xlsx.mjs` e pela página (aba Dados → Importar da versão anterior). |
+| `servidor\legacy-import.mjs` | As regras da importação das planilhas, usadas pelo `import-xlsx.mjs` e pela página (aba Dados → Importar da versão anterior). |
 | `.gitignore` | Impede que planilhas, `import.sql` e `node_modules` subam para o GitHub. |
 
 ## Passo a passo
@@ -22,15 +22,15 @@ Arquivos:
 
 1. **Criar o banco** (uma vez):
    ```
-   mariadb -u root -p < schema.sql
+   mariadb -u root -p < banco\schema.sql
    ```
-2. **Gerar o `import.sql`**: copie os dois arquivos da pasta de dados para a pasta do programa e dê dois cliques em `importar-banco.bat`. Ou rode:
+2. **Gerar o `banco\import.sql`**: copie os dois arquivos da pasta de dados para a pasta do programa e dê dois cliques em `importar-banco.bat`. Ou rode:
    ```
-   node import-xlsx.mjs "Quote Follow Up data.xlsx" "Quote Follow Up reports.xlsx"
+   node servidor\import-xlsx.mjs "Quote Follow Up data.xlsx" "Quote Follow Up reports.xlsx"
    ```
 3. **Carregar no banco**:
    ```
-   mariadb -u root -p < import.sql
+   mariadb -u root -p < banco\import.sql
    ```
 
 Pode repetir os passos 2 e 3 sempre que quiser, por exemplo para trazer os dados mais novos antes de trocar de vez. Vendas e follow-ups são atualizados, uma cotação só muda se o arquivo for mais novo, e o histórico só ganha os registros que ainda não estavam no banco. Nada é duplicado.
@@ -72,7 +72,7 @@ Pode repetir os passos 2 e 3 sempre que quiser, por exemplo para trazer os dados
 
 ## Servidor
 
-O banco é usado pelo servidor do programa (`server.mjs`). Veja `SERVIDOR.md` para ligar o servidor e o túnel Cloudflare.
+O banco é usado pelo servidor do programa (`servidor\server.mjs`). Veja `docs\SERVIDOR.md` para ligar o servidor e o túnel Cloudflare.
 
 O servidor usa duas coisas a mais no banco, que o `schema.sql` cria e que ele mesmo cria se faltarem:
 

@@ -93,7 +93,7 @@ Calculado para cada **cliente** e mostrado em todas as cotações dele:
 
 Exemplo: um cliente cotou todo dia útil até 19/10, parou e só voltou em 30/10. Pela janela longa ele é Cool, mas nos últimos 10 dias úteis (19 a 30/10) cotou só em 2 dias, então cai para Cold.
 
-**Para alterar os números**, edite o bloco `CONFIGURAÇÃO DO THERMOMETER` nas regras (`core.js`, ou no início do `app.jsx` único):
+**Para alterar os números**, edite o bloco `CONFIGURAÇÃO DO THERMOMETER` nas regras (`codigo\core.js`):
 
 | Constante | Padrão | O que faz |
 |---|---|---|
@@ -204,7 +204,7 @@ O cabeçalho pode estar em qualquer uma das 30 primeiras linhas. Datas em texto 
 
 ## Com o servidor (MariaDB): celular e várias pessoas ao mesmo tempo
 
-Aberto pelo servidor (`node server.mjs`, direto ou pelo túnel Cloudflare), o programa usa o banco MariaDB em vez da pasta. Não tem botão Save: cada mudança vai sozinha em cerca de 1 segundo, e o que os outros mudam aparece em até 20 segundos. O login é conferido pelo servidor, com as mesmas senhas. Como instalar: `SERVIDOR.md`.
+Aberto pelo servidor (`iniciar-servidor.bat` ou `node servidor/server.mjs`, direto ou pelo túnel Cloudflare), o programa usa o banco MariaDB em vez da pasta. Não tem botão Save: cada mudança vai sozinha em cerca de 1 segundo, e o que os outros mudam aparece em até 20 segundos. O login é conferido pelo servidor, com as mesmas senhas. Como instalar: `docs/SERVIDOR.md`.
 
 Aberto como arquivo, o programa continua usando a pasta, como descrito abaixo.
 
@@ -332,23 +332,45 @@ Observação sobre o modelo: no PDF original, as listas *Economia (monetizado ou
 
 ```bash
 npm install
-npm run build   # executa: node build.js
+npm run build   # executa: node codigo/build.js
 ```
 
-No Windows, basta dar dois cliques em `build.bat`, como no pulz. O resultado é **`QuoteFollowUp.html`**, um arquivo único (~1,5 MB, por causa do gerador de PDF e do modelo do formulário DCS / VA; pelo servidor ele vai compactado) que funciona sozinho no Chrome ou Edge.
+No Windows, basta dar dois cliques em `build.bat`, como no pulz. O resultado é **`pagina\QuoteFollowUp.html`**, um arquivo único (~1,5 MB, por causa do gerador de PDF e do modelo do formulário DCS / VA; pelo servidor ele vai compactado) que funciona sozinho no Chrome ou Edge.
 
 ## Estrutura
 
-| Arquivo | Função |
-|---|---|
-| `core.js` | Regras sem interface: leitura dos relatórios, carteira por cotação, agenda de FUP, meta diária e prioridade |
-| `app.jsx` | Interface: tabela, aba Calendar, importação, backup |
-| `entry.jsx` | Ponto de entrada (monta `<App />`) |
-| `styles.css` | CSS global, embutido no HTML final |
-| `legacy-import.mjs` / `import-xlsx.mjs` / `importar-banco.bat` | Planilhas da versão anterior para o banco. Pela página: Admin → aba Dados → **Importar da versão anterior** (veja `BANCO-DE-DADOS.md`) |
-| `dcs.js` | Formulário DCS / Value Added: tipos, itens, campos obrigatórios e preenchimento do PDF (pdf-lib) |
-| `dcs-va-template.pdf` | Modelo oficial do formulário, vazio, embutido no HTML |
-| `build.js` / `build.bat` | Empacota tudo em `QuoteFollowUp.html` (esbuild) |
+```
+quote-follow-up/
+├─ build.bat              ← dois cliques: compila a página
+├─ iniciar-servidor.bat   ← dois cliques: liga o servidor
+├─ importar-banco.bat     ← (opcional) planilhas da versão anterior → banco\import.sql
+├─ LEIA-ME.txt · README.md
+├─ package.json · package-lock.json · .gitignore
+│
+├─ pagina/                o programa pronto (é o que o servidor entrega)
+│  ├─ QuoteFollowUp.html  gerado pelo build.bat — não edite
+│  └─ icones/             ícones do "Adicionar à tela inicial" no celular
+├─ codigo/                o código-fonte da página (é aqui que se edita)
+│  ├─ app.jsx             interface: telas, tabelas, calendário, importação
+│  ├─ core.js             regras: leitura dos relatórios, carteira, agenda de FUP, meta, prioridade
+│  ├─ dcs.js              formulário DCS / Value Added (itens, obrigatórios, preenchimento do PDF)
+│  ├─ i18n.js · i18n-pt.js  idioma (inglês / português) e as traduções
+│  ├─ entry.jsx · styles.css · build.js   ponto de entrada, estilo base e o compilador
+│  └─ modelos/dcs-va-template.pdf        o formulário oficial, vazio (vai dentro da página)
+├─ servidor/              o servidor (Node) e a configuração
+│  ├─ server.mjs          entrega a página, faz o login e grava no banco
+│  ├─ server.config.example.json  modelo; o seu é o server.config.json (senha do banco — fica fora do GitHub)
+│  ├─ legacy-import.mjs   regras da importação das planilhas antigas (página e .bat)
+│  └─ import-xlsx.mjs     usado pelo importar-banco.bat
+├─ banco/                 o banco de dados (MariaDB)
+│  ├─ schema.sql          cria / atualiza o banco: mariadb -u root -p < banco\schema.sql
+│  └─ banco-de-dados-MER-DER.html  desenho do banco (abra no navegador)
+└─ docs/
+   ├─ SERVIDOR.md         instalar o servidor, túnel, atualizações
+   └─ BANCO-DE-DADOS.md   o banco e a importação das planilhas
+```
+
+Criados enquanto o programa roda (e fora do GitHub): `servidor\server.config.json`, `servidor\servidor.log` (no modo serviço) e `banco\import.sql` (pelo importar-banco.bat).
 
 ## Stack
 
@@ -381,7 +403,7 @@ Uma linha por **Responsável** (coluna *Sales Person* do Quote Report; grafias d
 |---|---|
 | Qtd Cotações | Atualizadas + para atualizar (cada cotação conta uma vez) |
 | Qtd Atualizada | Cotações com **Done** no período |
-| Qtd Atualizada após 11h | O 1º Done da cotação no período foi às **11:00 ou depois** (`LATE_HOUR` em core.js) |
+| Qtd Atualizada após 11h | O 1º Done da cotação no período foi às **11:00 ou depois** (`LATE_HOUR` em codigo\core.js) |
 | % Atualizada | Atualizada ÷ Qtd Cotações |
 | Qtd para atualizar | Cotações **em aberto**, com FUP, **sem Done no período** e com o follow-up vencendo até o fim do período (as atrasadas de antes também entram, marcadas *Overdue*) |
 | % Faltou atualizar | Para atualizar ÷ Qtd Cotações |

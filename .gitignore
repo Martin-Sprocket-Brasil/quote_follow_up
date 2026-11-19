@@ -3,13 +3,18 @@ node_modules/
 
 # dados da empresa: nunca no GitHub
 *.xlsx
+banco/import.sql
 import.sql
 *.crswap
 
 # gerado pelo build.bat
+pagina/QuoteFollowUp.html
 QuoteFollowUp.html
 
-# servidor: senha do banco e registro
+# servidor: senha do banco, registro e cópias temporárias
+servidor/server.config.json
 server.config.json
+servidor/servidor.log
 servidor.log
-.core-server.tmp.mjs
+servidor/.core-*.tmp.mjs
+.core-*.tmp.mjs

@@ -112,7 +112,7 @@ import {
 } from "./core.js";
 import { _t, whyTxt, LANG, setLang } from "./i18n.js";
 import { DCS_KINDS, DCS_ITEMS, DCS_ITEM, DCS_MAIL, UFS, dcsMissing, fillDcsPdf, dcsFileName } from "./dcs.js";
-import DCS_TEMPLATE from "./dcs-va-template.pdf"; // o formulário oficial (entra no QuoteFollowUp.html)
+import DCS_TEMPLATE from "./modelos/dcs-va-template.pdf"; // o formulário oficial (entra no QuoteFollowUp.html)
 const periodLabelOf = (p) => _t(corePeriodLabelOf(p)); // "All periods" no idioma da tela
 
 import {
@@ -4602,18 +4602,25 @@ function MgBar({ v, max, color = MG_Q, w = 90 }) {
   );
 }
 /* faixa de números: um cartão só, com divisórias (sem fundos coloridos) · items: [rótulo, valor, legenda, tom] */
-function MgStrip({ items }) {
+function MgStrip({ items, mobCols }) {
   const mob = useMobile();
+  const cols = mob ? mobCols || (items.length >= 5 ? 3 : 2) : items.length;
   return (
-    <div style={{ ...MG.card, display: "grid", gridTemplateColumns: mob ? "repeat(2, minmax(0, 1fr))" : `repeat(${items.length}, minmax(0, 1fr))` }}>
-      {items.map(([l, v, sub, tone, extra], i) => (
-        <div key={i} style={{ padding: mob ? "11px 12px" : "13px 16px", minWidth: 0, borderLeft: !mob && i ? `1px solid ${X.line}` : "none", borderTop: mob && i > 1 ? `1px solid ${X.line}` : "none", ...(mob && i % 2 ? { borderLeft: `1px solid ${X.line}` } : null), ...(mob && i === items.length - 1 && items.length % 2 ? { gridColumn: "1 / -1", borderLeft: "none" } : null) }}>
-          <div style={{ fontSize: 11.5, color: X.sub, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l}</div>
-          <div style={{ fontSize: mob ? 18 : 21, fontWeight: 800, letterSpacing: -0.4, marginTop: 2, color: tone === "bad" ? X.redDk : X.ink, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</div>
-          {sub ? <div style={{ fontSize: 11.5, color: X.sub, marginTop: 1, lineHeight: 1.35 }}>{sub}</div> : null}
-          {extra || null}
-        </div>
-      ))}
+    <div style={{ ...MG.card, display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+      {items.map(([l, v, sub, tone, extra], i) => {
+        const col = i % cols,
+          row = Math.floor(i / cols);
+        const last = i === items.length - 1;
+        const span = mob && last && items.length % cols ? cols - (items.length % cols) + 1 : 1;
+        return (
+          <div key={i} style={{ padding: mob ? "9px 10px" : "13px 16px", minWidth: 0, borderLeft: col ? `1px solid ${X.line}` : "none", borderTop: row ? `1px solid ${X.line}` : "none", ...(span > 1 ? { gridColumn: `span ${span}` } : null) }}>
+            <div style={{ fontSize: mob ? 10.5 : 11.5, color: X.sub, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l}</div>
+            <div style={{ fontSize: mob ? 15.5 : 21, fontWeight: 800, letterSpacing: -0.3, marginTop: 2, color: tone === "bad" ? X.redDk : X.ink, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v}</div>
+            {sub ? <div style={{ fontSize: mob ? 10.5 : 11.5, color: X.sub, marginTop: 1, lineHeight: 1.3, ...(mob && cols > 2 ? { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } : null) }}>{sub}</div> : null}
+            {extra || null}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -4628,7 +4635,7 @@ const MgCard = ({ title, right, children, pad = true, style }) => (
   </div>
 );
 /* tabela que ordena ao clicar no cabeçalho · cols: [{k, l, v: (r) => número | texto, f: (r) => conteúdo, left, w}] */
-function MgTable({ cols, rows, sort0, total, onRow, max = 0, empty }) {
+function MgTable({ cols, rows, sort0, total, onRow, max = 0, empty, mobSub, mobVal }) {
   const [sort, setSort] = useState(sort0 || { k: cols[1].k, dir: -1 });
   const col = cols.find((c) => c.k === sort.k) || cols[1];
   const sorted = useMemo(() => {
@@ -4641,6 +4648,7 @@ function MgTable({ cols, rows, sort0, total, onRow, max = 0, empty }) {
     });
   }, [rows, sort, col]);
   const [all, setAll] = useState(false);
+  const [openRow, setOpenRow] = useState(null);
   const mob = useMobile();
   const vis = max && !all ? sorted.slice(0, max) : sorted;
   if (!rows.length) return <div style={{ padding: "10px 14px 14px", fontSize: 12.5, color: X.sub }}>{empty || _t("Nothing in this period.")}</div>;
@@ -4651,47 +4659,65 @@ function MgTable({ cols, rows, sort0, total, onRow, max = 0, empty }) {
     </button>
   );
   const cell = (c, r) => (c.f ? c.f(r) : c.v ? c.v(r) : r[c.k]);
-  /* celular: um cartão por linha (nome em cima, números embaixo, sem rolar para o lado) e a ordem num seletor */
+  /* celular: lista em ranking — nome, o número escolhido em destaque com uma barra fina e uma linha de contexto.
+     Os chips no topo escolhem o número (e a ordem). Tocar abre a QT (onRow) ou mostra os outros números. */
   if (mob) {
-    const rest = cols.slice(1);
-    const stats = (r, isTot) => (
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "6px 10px", marginTop: 6 }}>
-        {rest.map((c) => (
-          <div key={c.k} style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 10.5, color: sort.k === c.k ? X.ink : X.sub, fontWeight: sort.k === c.k ? 700 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.l}</div>
-            <div style={{ fontSize: 13, fontWeight: sort.k === c.k || isTot ? 800 : 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{isTot ? (total[c.k] != null ? total[c.k] : "") : cell(c, r)}</div>
+    const valOf = (c, r) => (c.v ? c.v(r) : r[c.k]);
+    const textSort = typeof valOf(col, rows[0]) !== "number";
+    const mainCol = textSort ? cols.find((c) => c.k === (mobVal || (sort0 && sort0.k))) || cols[1] : col;
+    const nums = vis.map((r) => valOf(mainCol, r)).filter((v) => typeof v === "number");
+    const mx = Math.max(0, ...nums);
+    const pickChip = (c) => {
+      if (sort.k === c.k) setSort({ ...sort, dir: -sort.dir });
+      else setSort({ k: c.k, dir: c.left ? 1 : -1 });
+    };
+    const others = (r) => (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "6px 12px", marginTop: 8, padding: "8px 10px", background: "#F7F9FB", borderRadius: 8 }}>
+        {cols.slice(1).map((c) => (
+          <div key={c.k} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, minWidth: 0 }}>
+            <span style={{ color: X.sub, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.ls || c.l}</span>
+            <b style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{cell(c, r)}</b>
           </div>
         ))}
       </div>
     );
     return (
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px 8px" }}>
-          <span style={{ fontSize: 11.5, color: X.sub }}>{_t("Sort by")}</span>
-          <select value={sort.k} onChange={(e) => setSort({ k: e.target.value, dir: (cols.find((c) => c.k === e.target.value) || {}).left ? 1 : -1 })} style={{ ...inp, height: 34, flex: 1, minWidth: 0, fontSize: 13, borderRadius: 9 }}>
-            {cols.map((c) => (
-              <option key={c.k} value={c.k}>
-                {c.l}
-              </option>
-            ))}
-          </select>
-          <button onClick={() => setSort({ ...sort, dir: -sort.dir })} title={_t("Sort")} style={{ ...btn, height: 34, width: 40, padding: 0, justifyContent: "center", borderRadius: 9 }}>
-            {sort.dir < 0 ? "↓" : "↑"}
-          </button>
+        <div className="qp-hscroll" style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 14px 10px" }}>
+          {cols.map((c) => {
+            const on = sort.k === c.k;
+            return (
+              <button key={c.k} onClick={() => pickChip(c)} style={{ flexShrink: 0, border: `1px solid ${on ? X.ink : X.line}`, background: on ? X.ink : "#fff", color: on ? "#fff" : X.ink, borderRadius: 999, padding: "6px 12px", fontSize: 12.5, fontWeight: on ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap" }}>
+                {c.ls || c.l}
+                {on ? (sort.dir < 0 ? " ↓" : " ↑") : ""}
+              </button>
+            );
+          })}
         </div>
-        {vis.map((r, k) => (
-          <div key={r.key || k} className={onRow ? "qp-card-btn" : undefined} onClick={onRow ? () => onRow(r) : undefined} style={{ padding: "10px 14px", borderTop: `1px solid #EEF2F5`, cursor: onRow ? "pointer" : "default" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-              <span style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{cell(cols[0], r)}</span>
-              {onRow && <ChevronRight size={15} color="#A0AEC0" />}
+        {vis.map((r, k) => {
+          const key = r.key || k;
+          const v = valOf(mainCol, r);
+          const isOpen = !onRow && openRow === key;
+          return (
+            <div key={key} className="qp-card-btn" onClick={() => (onRow ? onRow(r) : setOpenRow(isOpen ? null : key))} style={{ padding: "11px 14px", borderTop: `1px solid #EEF2F5`, cursor: "pointer" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: X.sub, minWidth: 16, fontVariantNumeric: "tabular-nums" }}>{k + 1}</span>
+                <span style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{cell(cols[0], r)}</span>
+                <span style={{ fontSize: 14, fontWeight: 800, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{cell(mainCol, r)}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 5, paddingLeft: 26, minWidth: 0 }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: X.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mobSub ? mobSub(r) : ""}</span>
+                {typeof v === "number" && mx > 0 && <MgBar v={v} max={mx} w={72} />}
+                {!onRow && <ChevronDown size={14} color="#A0AEC0" style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }} />}
+              </div>
+              {isOpen && <div style={{ paddingLeft: 26 }}>{others(r)}</div>}
             </div>
-            {stats(r)}
-          </div>
-        ))}
+          );
+        })}
         {total && (
-          <div style={{ padding: "10px 14px", borderTop: `1px solid ${X.line}`, background: "#F7F9FB" }}>
-            <div style={{ fontSize: 13.5, fontWeight: 800 }}>{total[cols[0].k]}</div>
-            {stats(null, true)}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "11px 14px", borderTop: `1px solid ${X.line}`, background: "#F7F9FB" }}>
+            <span style={{ fontSize: 13.5, fontWeight: 800, flex: 1, paddingLeft: 26 }}>{total[cols[0].k]}</span>
+            <span style={{ fontSize: 14, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{total[mainCol.k]}</span>
           </div>
         )}
         {moreBtn}
@@ -4845,7 +4871,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
     { k: "n", l: "QTs", tip: _t("Quotes of the period (cancelled not counted)") },
     moneyCol("q", _t("Quoted")),
     moneyCol("won", _t("Won"), _t("Sold value of the won quotes")),
-    { k: "hit", l: _t("Hit rate"), tip: _t("Won QTs ÷ quoted QTs"), f: (r) => (
+    { k: "hit", l: _t("Hit rate"), ls: _t("Conversion"), tip: _t("Won QTs ÷ quoted QTs"), f: (r) => (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           {!mob && <MgBar v={r.hit || 0} max={maxHit} w={70} />}
           <b style={{ minWidth: 34, display: "inline-block" }}>{pctS(r.hit)}</b>
@@ -4921,7 +4947,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
     { k: "n", l: "QTs" },
     moneyCol("q", _t("Quoted")),
     moneyCol("won", _t("Won")),
-    { k: "hit", l: _t("Hit rate"), f: (r) => <b>{pctS(r.hit)}</b> },
+    { k: "hit", l: _t("Hit rate"), ls: _t("Conversion"), f: (r) => <b>{pctS(r.hit)}</b> },
     moneyCol("open", _t("Still open")),
     { k: "lostN", l: _t("Lost") },
     { k: "cancN", l: _t("Cancelled") },
@@ -4994,7 +5020,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
     { k: "n", l: "QTs" },
     moneyCol("q", _t("Quoted")),
     moneyCol("won", _t("Won")),
-    { k: "hit", l: _t("Hit rate"), f: (r) => <b>{pctS(r.hit)}</b> },
+    { k: "hit", l: _t("Hit rate"), ls: _t("Conversion"), f: (r) => <b>{pctS(r.hit)}</b> },
     moneyCol("open", _t("Open")),
     { k: "lc", l: _t("Lost + canc."), tip: _t("Lost and cancelled quotes"), f: (r) => <span style={{ color: r.lc ? X.redDk : X.sub, fontWeight: r.lc ? 700 : 400 }}>{nS(r.lc)}</span> },
     { k: "topWhy", l: _t("Main reason"), left: true, f: (r) => <span style={{ color: X.sub }}>{r.topWhy || "—"}</span> },
@@ -5072,11 +5098,11 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
   };
 
   const segBar = (
-    <div className="qp-hscroll" style={{ display: "flex", gap: 3, background: "#EEF2F5", borderRadius: 10, padding: 3, overflowX: "auto", maxWidth: "100%" }}>
+    <div style={{ display: "flex", flexWrap: mob ? "wrap" : "nowrap", gap: 3, background: "#EEF2F5", borderRadius: 10, padding: 3, maxWidth: "100%", ...(mob ? { width: "100%" } : null) }}>
       {MGA_SECS.map(([k, l]) => {
         const on = sec === k;
         return (
-          <button key={k} onClick={() => setSec(k)} style={{ flexShrink: 0, border: "none", borderRadius: 8, padding: mob ? "7px 11px" : "6px 13px", fontSize: 12.5, fontWeight: on ? 700 : 500, cursor: "pointer", background: on ? "#fff" : "transparent", color: on ? X.ink : X.sub, boxShadow: on ? "0 1px 2px rgba(16,24,40,.08)" : "none", whiteSpace: "nowrap" }}>
+          <button key={k} onClick={() => setSec(k)} style={{ flex: mob ? "1 1 auto" : "0 0 auto", border: "none", borderRadius: 8, padding: mob ? "8px 10px" : "6px 13px", fontSize: 12.5, fontWeight: on ? 700 : 500, cursor: "pointer", background: on ? "#fff" : "transparent", color: on ? X.ink : X.sub, boxShadow: on ? "0 1px 2px rgba(16,24,40,.08)" : "none", whiteSpace: "nowrap" }}>
             {l}
           </button>
         );
@@ -5121,7 +5147,12 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
             </span>
           }
         >
-          <MgTable key={who} cols={sellerCols} rows={sellers} sort0={{ k: "q", dir: -1 }} total={sellerTot} max={mob ? 12 : 0} />
+          <MgTable key={who} cols={sellerCols} rows={sellers} sort0={{ k: "q", dir: -1 }} total={sellerTot} max={mob ? 12 : 0} mobSub={(r) => (
+            <>
+              {_t("{0} QTs", nS(r.n))} · {_t("{0} hit", pctS(r.hit))}
+              {r.late ? <span style={{ color: X.redDk, fontWeight: 700 }}> · {r.late === 1 ? _t("1 overdue") : _t("{0} overdue", r.late)}</span> : null}
+            </>
+          )} />
         </MgCard>
       )}
       {sec === "months" && (
@@ -5130,7 +5161,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
             {months.length ? monthChart : <div style={{ padding: "4px 14px 14px", fontSize: 12.5, color: X.sub }}>{_t("Nothing in this period.")}</div>}
           </MgCard>
           <MgCard title={_t("Table")} pad={false}>
-            <MgTable cols={monthCols} rows={months} sort0={{ k: "key", dir: 1 }} />
+            <MgTable cols={monthCols} rows={months} sort0={{ k: "key", dir: 1 }} mobVal="q" mobSub={(r) => `${_t("{0} QTs", nS(r.n))} · ${_t("won")} ${moneyShort(r.won)} · ${_t("{0} hit", pctS(r.hit))}`} />
           </MgCard>
         </>
       )}
@@ -5159,12 +5190,12 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
                 cols={[
                   { k: "c", l: _t("Customer"), left: true },
                   { k: "seller", l: _t("Salesperson"), left: true, v: (r) => groupOf(r.sp) || "—" },
-                  { k: "age", l: _t("Age"), v: (r) => daysBetween(r.d, today), f: (r) => _t("{0} d", daysBetween(r.d, today)) },
-                  { k: "next", l: _t("Next FUP"), v: (r) => r.next || "", f: (r) => (!r.fup ? <span style={{ color: X.sub }}>{_t("No FUP")}</span> : r.next && r.next < today ? <span style={{ color: X.redDk, fontWeight: 700 }}>{fmtDay(r.next)}</span> : r.next ? fmtDay(r.next) : "—") },
                   { k: "quoted", l: _t("Value"), f: (r) => <b>{moneyShort(r.quoted)}</b> },
                 ]}
                 rows={bigOpen}
                 sort0={{ k: "quoted", dir: -1 }}
+                mobVal="quoted"
+                mobSub={(r) => `${groupOf(r.sp) || "—"} · ${r.id}`}
                 onRow={goQ(bigOpen)}
               />
             </MgCard>
@@ -5182,7 +5213,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
             </span>
           }
         >
-          <MgTable cols={custCols} rows={custShown} sort0={{ k: "q", dir: -1 }} max={25} empty={_t("No customer found.")} />
+          <MgTable cols={custCols} rows={custShown} sort0={{ k: "q", dir: -1 }} max={25} empty={_t("No customer found.")} mobSub={(r) => `${_t("{0} QTs", nS(r.n))} · ${_t("{0} hit", pctS(r.hit))}${r.lc ? " · " + _t("{0} lost/canc.", nS(r.lc)) : ""}`} />
         </MgCard>
       )}
       {sec === "reasons" && (
@@ -5199,6 +5230,7 @@ function MgrAnalysis({ rows, cancelRows, meta, qIndex, groupOf, today, periodTxt
               ]}
               rows={pgLoss}
               sort0={{ k: "lc", dir: -1 }}
+              mobSub={(r) => `${_t("{0} QTs of the group", nS(r.n))} · ${pctS(r.rate)}`}
               max={10}
             />
           </MgCard>
@@ -5277,6 +5309,7 @@ function ManagerOverview({ rows, quotes, meta, thermo, acts, sales, cls, line, d
     );
   const strip = (
     <MgStrip
+      mobCols={2}
       items={[
         [_t("Booked · {0}", monthName), moneyShort(bookedM.v), monthGoal > 0 ? `${_t("{0}% of {1}", Math.round(pctM * 100), moneyShort(monthGoal))} · ${pace >= 0 ? _t("{0} ahead", moneyShort(pace)) : _t("{0} behind", moneyShort(-pace))}` : _t("no goal yet"), "", goalExtra],
         [_t("Open"), moneyShort(k.open.v), _t("{0} quotes", nS(k.open.n))],

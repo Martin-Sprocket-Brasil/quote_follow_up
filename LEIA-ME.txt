@@ -1,54 +1,64 @@
-QUOTE FOLLOW UP — como editar e compilar (Windows)
-===================================================
+QUOTE FOLLOW UP — comece por aqui (Windows)
+============================================
 
-O QUE TEM NESTA PASTA
-  app.jsx      -> a interface (voce edita aqui)
-  core.js      -> as regras: leitura dos relatorios, calculos, agenda
-  i18n.js      -> troca de idioma (ingles / portugues)
-  i18n-pt.js   -> as traducoes para o portugues (texto em ingles -> texto em portugues)
-  dcs.js       -> o formulario DCS / Value Added (itens, campos obrigatorios, preenchimento do PDF)
-  dcs-va-template.pdf -> o modelo oficial do formulario, vazio (vai embutido no programa)
-  entry.jsx    -> ponto de entrada (nao precisa mexer)
-  styles.css   -> estilo base da pagina (nao precisa mexer)
-  package.json -> lista das bibliotecas (nao precisa mexer)
-  build.js     -> script que compila (nao precisa mexer)
-  build.bat    -> CLIQUE AQUI para compilar
-  LEIA-ME.txt  -> este arquivo
-  README.md    -> manual completo do programa
-  QuoteFollowUp.html / index.html -> o programa ja compilado (abrir no Chrome/Edge)
+COMO A PASTA ESTA ORGANIZADA
 
-  BANCO DE DADOS (MariaDB) - veja BANCO-DE-DADOS.md
-  schema.sql          -> cria o banco e as tabelas (mariadb -u root -p < schema.sql)
-  import-xlsx.mjs     -> le as planilhas da pasta de dados e gera o import.sql
-  importar-banco.bat  -> CLIQUE AQUI para gerar o import.sql (ou importe pela pagina: Admin -> aba Dados -> Importar da versao anterior)
-  legacy-import.mjs   -> as regras da importacao das planilhas (usado pelo .bat e pela pagina)
-  .gitignore          -> impede que planilhas, import.sql e a senha do banco subam para o GitHub
+  quote-follow-up\
+    build.bat              -> DOIS CLIQUES: compila a pagina (rode depois de qualquer mudanca)
+    iniciar-servidor.bat   -> DOIS CLIQUES: liga o servidor (depois: http://localhost:8080)
+    importar-banco.bat     -> (opcional) planilhas da versao anterior -> banco\import.sql
+                              (mais facil: Admin -> aba Dados -> Importar da versao anterior)
+    LEIA-ME.txt            -> este arquivo
+    README.md              -> manual completo do programa
+    package.json, package-lock.json, .gitignore -> nao precisa mexer
 
-  SERVIDOR (celular, varias pessoas ao mesmo tempo) - veja SERVIDOR.md
-  server.mjs                  -> o servidor: entrega a pagina, faz o login e grava no banco
-  server.config.example.json  -> modelo da configuracao (o iniciar-servidor.bat cria o server.config.json)
-  iniciar-servidor.bat        -> CLIQUE AQUI para ligar o servidor (depois: http://localhost:8080)
-  icon-192.png, icon-512.png, apple-touch-icon.png -> icone do "Adicionar a tela inicial" no celular
+    pagina\                -> O PROGRAMA PRONTO
+      QuoteFollowUp.html   -> gerado pelo build.bat (nao edite; sem servidor, abra no Chrome/Edge)
+      icones\              -> icones do "Adicionar a tela inicial" no celular
+
+    codigo\                -> O CODIGO-FONTE (e aqui que se edita)
+      app.jsx              -> a interface: telas, tabelas, calendario
+      core.js              -> as regras: relatorios, calculos, agenda de FUP, meta, prioridade
+      dcs.js               -> o formulario DCS / Value Added
+      i18n.js, i18n-pt.js  -> idioma e as traducoes para o portugues
+      entry.jsx, styles.css, build.js -> nao precisa mexer
+      modelos\dcs-va-template.pdf     -> o formulario oficial, vazio
+
+    servidor\              -> O SERVIDOR
+      server.mjs                 -> entrega a pagina, faz o login e grava no banco
+      server.config.example.json -> modelo da configuracao
+      server.config.json         -> a SUA configuracao, com a senha do banco (o iniciar-servidor.bat cria)
+      legacy-import.mjs, import-xlsx.mjs -> importacao das planilhas da versao anterior
+
+    banco\                 -> O BANCO DE DADOS (MariaDB)
+      schema.sql                   -> cria / atualiza o banco:  mariadb -u root -p < banco\schema.sql
+      banco-de-dados-MER-DER.html  -> o desenho do banco (abra no navegador)
+
+    docs\
+      SERVIDOR.md          -> instalar o servidor, o tunel e como atualizar
+      BANCO-DE-DADOS.md    -> o banco e a importacao das planilhas
+
+  Nunca mande para o GitHub nem por e-mail: servidor\server.config.json (senha do banco),
+  banco\import.sql e as planilhas .xlsx (dados da empresa). O .gitignore ja deixa eles de fora.
 
 PASSO 1 — Instalar o Node.js (so na primeira vez)
   - Entre em  https://nodejs.org
   - Baixe a versao "LTS" e instale (Next, Next, Finish).
 
 PASSO 2 — Compilar
-  - Coloque TODOS os arquivos desta pasta juntos (a mesma pasta).
   - De dois cliques em  build.bat
   - Na primeira vez ele instala as bibliotecas (demora 1-2 min).
-  - No final aparece "Tudo certo!" e o arquivo QuoteFollowUp.html
-    e criado nesta mesma pasta.
-  - Abra o QuoteFollowUp.html no Chrome ou Edge.
+  - No final aparece "Tudo certo!" e o programa fica em pagina\QuoteFollowUp.html
+
+PASSO 3 — Ligar o servidor
+  - De dois cliques em  iniciar-servidor.bat  (veja docs\SERVIDOR.md para o tunel e o modo servico).
 
 EDITANDO
-  - Abra o app.jsx num editor (recomendo o VS Code, gratis).
+  - Abra o codigo\app.jsx num editor (recomendo o VS Code, gratis).
   - Procure pelos comentarios com "====" para achar cada parte.
   - Faca suas mudancas, salve, e rode o build.bat de novo.
+  - Mudou o codigo\core.js ou algo na pasta servidor? Reinicie o servidor tambem.
 
 SE DER ERRO
   - O build.bat mostra a linha do erro. Geralmente e uma chave { } ou
-    parentese ( ) que ficou aberto. Desfaça a ultima mudanca e tente de novo.
-  - Qualquer coisa, me manda o app.jsx que eu arrumo/compilo.
-
+    parentese ( ) que ficou aberto. Desfaca a ultima mudanca e tente de novo.

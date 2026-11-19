@@ -5,7 +5,7 @@ rem ============================================================
 rem  Quote Follow Up - servidor (API + pagina)
 rem  Dois cliques: liga o servidor nesta janela (fechar a janela = desligar).
 rem  Como servico (tarefa agendada): iniciar-servidor.bat /servico
-rem    -> sem janela, grava em servidor.log e religa sozinho se cair.
+rem    -> sem janela, grava em servidor\servidor.log e religa sozinho se cair.
 rem ============================================================
 where node >nul 2>nul
 if errorlevel 1 (
@@ -13,7 +13,10 @@ if errorlevel 1 (
   if not "%1"=="/servico" pause
   exit /b 1
 )
-if not exist node_modules\express (
+set FALTA=
+if not exist node_modules\express set FALTA=1
+if not exist node_modules\pdf-lib set FALTA=1
+if defined FALTA (
   echo Instalando as bibliotecas do servidor ^(so na primeira vez, 1-2 min^)...
   call npm install
   if errorlevel 1 (
@@ -22,30 +25,35 @@ if not exist node_modules\express (
     exit /b 1
   )
 )
-if not exist QuoteFollowUp.html (
+if not exist pagina\QuoteFollowUp.html (
   echo Compilando a pagina...
-  node build.js
+  node codigo\build.js
 )
-if not exist server.config.json (
-  copy server.config.example.json server.config.json >nul
+rem versoes antigas guardavam a configuracao na pasta do programa: passa para a pasta servidor
+if not exist servidor\server.config.json if exist server.config.json (
+  move server.config.json servidor\server.config.json >nul
+  echo Movi o server.config.json para a pasta servidor.
+)
+if not exist servidor\server.config.json (
+  copy servidor\server.config.example.json servidor\server.config.json >nul
   echo.
-  echo Criei o arquivo server.config.json. Coloque nele o usuario e a senha do banco
+  echo Criei o arquivo servidor\server.config.json. Coloque nele o usuario e a senha do banco
   echo ^(parte "db"^), salve e rode este arquivo de novo.
   echo.
-  notepad server.config.json
+  notepad servidor\server.config.json
   if not "%1"=="/servico" pause
   exit /b 1
 )
 if "%1"=="/servico" goto servico
-node server.mjs
+node servidor\server.mjs
 echo.
 echo O servidor parou ^(veja a mensagem acima^).
 pause
 exit /b
 
 :servico
-echo %date% %time% - iniciando >> servidor.log
-node server.mjs >> servidor.log 2>&1
-echo %date% %time% - o servidor parou; religando em 10 s >> servidor.log
+echo %date% %time% - iniciando >> servidor\servidor.log
+node servidor\server.mjs >> servidor\servidor.log 2>&1
+echo %date% %time% - o servidor parou; religando em 10 s >> servidor\servidor.log
 timeout /t 10 /nobreak >nul
 goto servico

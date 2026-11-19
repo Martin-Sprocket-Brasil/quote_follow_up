@@ -7,9 +7,10 @@
    • lê e grava os dados no banco. O banco NUNCA fica exposto: só este servidor fala com ele.
 
    Como rodar (na pasta do programa, depois do build.bat):
-     1. copie server.config.example.json para server.config.json e preencha a senha do banco;
-     2. node server.mjs        (ou o iniciar-servidor.bat)
-   Veja SERVIDOR.md para deixar como serviço do Windows e ligar o túnel.
+     1. copie servidor\server.config.example.json para servidor\server.config.json e preencha a senha do banco;
+     2. node servidor/server.mjs        (ou o iniciar-servidor.bat)
+   Veja docs/SERVIDOR.md para deixar como serviço do Windows e ligar o túnel.
+   Pastas: codigo/ (core.js) · pagina/ (QuoteFollowUp.html e ícones) · servidor/ (este arquivo e a configuração).
    ===================================================================================== */
 import fs from "fs";
 import path from "path";
@@ -22,23 +23,26 @@ import * as mariadb from "mariadb";
 import * as XLSX from "xlsx";
 import { buildLegacyImport } from "./legacy-import.mjs";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+const here = path.dirname(fileURLToPath(import.meta.url)); // pasta servidor/
+const ROOT = path.join(here, ".."); // pasta do programa
 
-/* ---------- configuração ---------- */
-const CFG_FILE = process.env.QFU_CONFIG || path.join(here, "server.config.json");
+/* ---------- configuração: servidor/server.config.json (ou, de versões antigas, na pasta do programa) ---------- */
+const CFG_FILE = process.env.QFU_CONFIG || [path.join(here, "server.config.json"), path.join(ROOT, "server.config.json")].find((f) => fs.existsSync(f)) || path.join(here, "server.config.json");
 if (!fs.existsSync(CFG_FILE)) {
-  console.error(`Falta o arquivo ${path.basename(CFG_FILE)}.\nCopie server.config.example.json para server.config.json e preencha a senha do banco.`);
+  console.error(`Falta o arquivo servidor\\server.config.json.\nCopie servidor\\server.config.example.json para servidor\\server.config.json e preencha a senha do banco.`);
   process.exit(1);
 }
+if (path.dirname(CFG_FILE) === ROOT) console.warn("[aviso] O server.config.json está na pasta do programa: mova para a pasta servidor (funciona dos dois jeitos).");
 const cfg = JSON.parse(fs.readFileSync(CFG_FILE, "utf8"));
 const PORT = +cfg.port || 8080;
 const HOST = cfg.host || "127.0.0.1"; // só a própria máquina (o túnel roda nela); "0.0.0.0" = toda a rede
 const SESSION_DAYS = Math.max(1, +cfg.sessionDays || 30);
-const PAGE = path.join(here, cfg.page || "QuoteFollowUp.html");
+const PAGE = [cfg.page && path.join(ROOT, cfg.page), path.join(ROOT, "pagina", "QuoteFollowUp.html")].find((f) => f && fs.existsSync(f)) || path.join(ROOT, "pagina", "QuoteFollowUp.html");
+const ICONS = path.join(ROOT, "pagina", "icones");
 
 /* ---------- core.js: as MESMAS regras do programa (vendedores, chaves do histórico, senhas) ---------- */
 const tmpCore = path.join(here, ".core-server.tmp.mjs");
-fs.copyFileSync(path.join(here, "core.js"), tmpCore);
+fs.copyFileSync(path.join(ROOT, "codigo", "core.js"), tmpCore);
 let core;
 try {
   core = await import(pathToFileURL(tmpCore).href);
@@ -450,7 +454,7 @@ async function dcsAllowed() {
 async function applyActs(conn, me, b, okId, skipped) {
   const mgr = MGR.has(me.role);
   if (arr(b.acts).some((a) => isObj(a) && a.k === "dcs") && !(await dcsAllowed()))
-    throw httpErr(503, "db-old", "The database needs an update to save the DCS / Value Added form: run the new schema.sql (see SERVIDOR.md). Nothing was lost: the page sends it again by itself.");
+    throw httpErr(503, "db-old", "The database needs an update to save the DCS / Value Added form: run the new banco/schema.sql (see docs/SERVIDOR.md). Nothing was lost: the page sends it again by itself.");
   const rows = [];
   let bad = 0;
   for (const a of arr(b.acts)) {
@@ -560,7 +564,7 @@ app.use("/api", (req, res, next) => {
 app.use("/api", express.json({ limit: "80mb" }));
 
 const sendPage = (req, res) => {
-  if (!fs.existsSync(PAGE)) return res.status(500).type("text").send(`Falta ${path.basename(PAGE)}: rode o build.bat na pasta do programa.`);
+  if (!fs.existsSync(PAGE)) return res.status(500).type("text").send(`Falta pagina\\QuoteFollowUp.html: rode o build.bat na pasta do programa.`);
   res.set("Cache-Control", "no-cache");
   res.sendFile(PAGE);
 };
@@ -587,7 +591,7 @@ app.get("/manifest.webmanifest", (req, res) => {
 });
 for (const f of ["icon-192.png", "icon-512.png", "apple-touch-icon.png"])
   app.get("/" + f, (req, res) => {
-    const file = path.join(here, f);
+    const file = path.join(ICONS, f);
     if (!fs.existsSync(file)) return res.status(404).end();
     res.set("Cache-Control", "public, max-age=86400");
     res.sendFile(file);
@@ -904,7 +908,7 @@ async function prepareDb() {
     ) ENGINE=InnoDB`);
   } catch (e) {
     const has = await pool.query("SHOW TABLES LIKE 'sessions'");
-    if (!has.length) throw new Error("a tabela sessions não existe e o usuário do banco não pode criá-la: rode o schema.sql novo (mariadb -u root -p < schema.sql)");
+    if (!has.length) throw new Error("a tabela sessions não existe e o usuário do banco não pode criá-la: rode o schema.sql novo (mariadb -u root -p < banco\\schema.sql)");
   }
   await pool.query("INSERT IGNORE INTO settings (name, value) VALUES ('data_version', '1'), ('rep_version', '1'), ('quote_fill_at', '')");
   // formulário DCS / Value Added: tenta liberar o tipo "dcs" no histórico (precisa de permissão ALTER; senão, avisa)
@@ -915,7 +919,7 @@ async function prepareDb() {
       dcsOk = true;
       console.info("[banco] histórico liberado para o formulário DCS / Value Added");
     } catch {
-      console.warn("\n[AVISO] O banco ainda não aceita o formulário DCS / Value Added. Rode o schema.sql novo como root:\n        mariadb -u root -p < schema.sql\n");
+      console.warn("\n[AVISO] O banco ainda não aceita o formulário DCS / Value Added. Rode o schema.sql novo como root:\n        mariadb -u root -p < banco\\schema.sql\n");
     }
   }
   await pool.query("DELETE FROM sessions WHERE expires_at < NOW()");

@@ -24,10 +24,10 @@ if defined FALTA (
 )
 echo.
 echo Compilando...
-node build.js
+node codigo\build.js
 if errorlevel 1 ( echo. & echo [ERRO] Falha na compilacao ^(veja a mensagem acima^). & pause & exit /b )
 echo.
-echo Tudo certo! O arquivo QuoteFollowUp.html foi gerado nesta pasta.
-echo Abra ele no Chrome/Edge.
+echo Tudo certo! O programa foi gerado em pagina\QuoteFollowUp.html
+echo Com o servidor: reinicie o iniciar-servidor.bat. Sem servidor: abra esse arquivo no Chrome/Edge.
 echo.
 pause
