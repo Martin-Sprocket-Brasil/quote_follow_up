@@ -1129,7 +1129,6 @@ export const PT = {
   "{0} change(s) not saved: the management only views the quotes (the follow-up is done by the salesperson).": "{0} alteração(ões) não salva(s): a gerência só visualiza as cotações (o follow-up é feito pelo vendedor).",
   "Import the Quote Report": "Importar o Quote Report",
   "Import the Sales Report": "Importar o Sales Report",
-  "1 overdue": "1 atrasado",
   "No connection with the server. Nothing was changed: try again.": "Sem conexão com o servidor. Nada foi alterado: tente de novo.",
   "The server took too long. Check the server window before trying again.": "O servidor demorou demais. Veja a janela do servidor antes de tentar de novo.",
   "Remove": "Tirar",
@@ -1154,4 +1153,5 @@ export const PT = {
   "The reports file is not a Quote Follow Up reports file of the previous version.": "O arquivo de relatórios não é um Quote Follow Up reports.xlsx da versão anterior.",
   "Only the Admin can do this.": "Só o Admin pode fazer isso.",
   "Import the files": "Importar os arquivos",
+  "Sort by": "Ordenar por",
 };

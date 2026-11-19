@@ -4641,9 +4641,65 @@ function MgTable({ cols, rows, sort0, total, onRow, max = 0, empty }) {
     });
   }, [rows, sort, col]);
   const [all, setAll] = useState(false);
+  const mob = useMobile();
   const vis = max && !all ? sorted.slice(0, max) : sorted;
   if (!rows.length) return <div style={{ padding: "10px 14px 14px", fontSize: 12.5, color: X.sub }}>{empty || _t("Nothing in this period.")}</div>;
+  // fora da área que rola: no celular o botão não some para a esquerda
+  const moreBtn = max > 0 && sorted.length > max && (
+    <button onClick={() => setAll((v) => !v)} style={{ border: "none", background: "none", color: X.tealDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", padding: "10px 14px" }}>
+      {all ? _t("Show fewer") : _t("Show all {0}", nS(sorted.length))}
+    </button>
+  );
+  const cell = (c, r) => (c.f ? c.f(r) : c.v ? c.v(r) : r[c.k]);
+  /* celular: um cartão por linha (nome em cima, números embaixo, sem rolar para o lado) e a ordem num seletor */
+  if (mob) {
+    const rest = cols.slice(1);
+    const stats = (r, isTot) => (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "6px 10px", marginTop: 6 }}>
+        {rest.map((c) => (
+          <div key={c.k} style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10.5, color: sort.k === c.k ? X.ink : X.sub, fontWeight: sort.k === c.k ? 700 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.l}</div>
+            <div style={{ fontSize: 13, fontWeight: sort.k === c.k || isTot ? 800 : 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{isTot ? (total[c.k] != null ? total[c.k] : "") : cell(c, r)}</div>
+          </div>
+        ))}
+      </div>
+    );
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 14px 8px" }}>
+          <span style={{ fontSize: 11.5, color: X.sub }}>{_t("Sort by")}</span>
+          <select value={sort.k} onChange={(e) => setSort({ k: e.target.value, dir: (cols.find((c) => c.k === e.target.value) || {}).left ? 1 : -1 })} style={{ ...inp, height: 34, flex: 1, minWidth: 0, fontSize: 13, borderRadius: 9 }}>
+            {cols.map((c) => (
+              <option key={c.k} value={c.k}>
+                {c.l}
+              </option>
+            ))}
+          </select>
+          <button onClick={() => setSort({ ...sort, dir: -sort.dir })} title={_t("Sort")} style={{ ...btn, height: 34, width: 40, padding: 0, justifyContent: "center", borderRadius: 9 }}>
+            {sort.dir < 0 ? "↓" : "↑"}
+          </button>
+        </div>
+        {vis.map((r, k) => (
+          <div key={r.key || k} className={onRow ? "qp-card-btn" : undefined} onClick={onRow ? () => onRow(r) : undefined} style={{ padding: "10px 14px", borderTop: `1px solid #EEF2F5`, cursor: onRow ? "pointer" : "default" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{cell(cols[0], r)}</span>
+              {onRow && <ChevronRight size={15} color="#A0AEC0" />}
+            </div>
+            {stats(r)}
+          </div>
+        ))}
+        {total && (
+          <div style={{ padding: "10px 14px", borderTop: `1px solid ${X.line}`, background: "#F7F9FB" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800 }}>{total[cols[0].k]}</div>
+            {stats(null, true)}
+          </div>
+        )}
+        {moreBtn}
+      </div>
+    );
+  }
   return (
+    <div>
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
@@ -4687,11 +4743,8 @@ function MgTable({ cols, rows, sort0, total, onRow, max = 0, empty }) {
           </tfoot>
         )}
       </table>
-      {max > 0 && sorted.length > max && (
-        <button onClick={() => setAll((v) => !v)} style={{ border: "none", background: "none", color: X.tealDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", padding: "10px 14px" }}>
-          {all ? _t("Show fewer") : _t("Show all {0}", nS(sorted.length))}
-        </button>
-      )}
+    </div>
+      {moreBtn}
     </div>
   );
 }
