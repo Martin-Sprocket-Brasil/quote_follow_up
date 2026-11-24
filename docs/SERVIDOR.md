@@ -135,7 +135,7 @@ O servidor manda os avisos pelo serviço de notificação do próprio navegador:
 
 ## O que o servidor garante
 
-- **Vendedor só grava nas próprias cotações:** externo pelo Sales Person, interno pelo Quoted By, com o mesmo agrupamento de nomes da tela. Tentativas fora da carteira são ignoradas.
+- **Vendedor só grava nas próprias cotações:** externo e interno pelo Sales Person (o Quoted By não conta), com o mesmo agrupamento de nomes da tela. Tentativas fora da carteira são ignoradas.
 - **Os três perfis** (vendedor externo, interno e gerência) importam o Quote Report e o Sales Report. **Só a gerência** muda as metas. **Só o Admin** escolhe a tela de cada pessoa e zera senhas.
 - **Gerência só visualiza as cotações:** follow-up, % Win, notas, fechamento, plano do dia e formulário DCS vindos da gerência são recusados (só os vendedores gravam).
 - O **histórico** continua só crescendo: o banco recusa alteração e exclusão, e o mesmo registro mandado duas vezes não entra de novo.

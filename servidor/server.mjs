@@ -204,8 +204,9 @@ async function loginNames() {
    grafias da tela; na dúvida, a mesma regra de nomes do programa) */
 function scopeOf(me, rep) {
   if (MGR.has(me.role)) return () => true;
-  const field = me.role === "inside" ? "qb" : "sp";
-  const g = (field === "qb" ? rep.qbGroups : rep.spGroups).find((x) => x.name === me.name);
+  // externo e interno: a carteira é sempre a do Sales Person (o Quoted By não define o que a pessoa vê)
+  const field = "sp";
+  const g = rep.spGroups.find((x) => x.name === me.name);
   const raw = new Set(g ? g.raw : []);
   const memo = new Map();
   return (id) => {

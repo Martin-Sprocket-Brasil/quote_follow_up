@@ -283,13 +283,14 @@ input:not([type="checkbox"]):not([type="radio"]), textarea, select { box-sizing:
 
 /* ---------- papéis ----------
    O Admin escolhe o papel de cada usuário (aba Data da gerência). Cada papel tem a sua tela:
-   • outside = vendedor externo (coluna Sales Person) e inside = vendedor interno (coluna Quoted By):
+   • outside = vendedor externo e inside = vendedor interno: os dois veem as cotações em que são o Sales Person
+     (o Quoted By não define a carteira de ninguém);
      por enquanto as mesmas telas — Today, Quotes e Calendar (cada um vê as cotações da própria coluna);
    • manager = gerência: Overview, Quotes, Team (FUP por vendedor), Goal, Analysis, Forms (DCS / VA) e Data (todos os vendedores).
    Sem papel (usuário novo ou o antigo "seller"), a pessoa entra mas só vê o aviso para pedir o acesso. */
 const ROLES = {
   outside: { label: _t("Outside sales"), icon: MapPin, fg: X.violet, bg: X.violetSoft, col: "sp", colTxt: "Sales Person" },
-  inside: { label: _t("Inside sales"), icon: Headphones, fg: X.tealDk, bg: X.tealSoft, col: "qb", colTxt: "Quoted By" },
+  inside: { label: _t("Inside sales"), icon: Headphones, fg: X.tealDk, bg: X.tealSoft, col: "sp", colTxt: "Sales Person" },
   manager: { label: _t("Management"), icon: ShieldCheck, fg: "#0D3D6E", bg: "#E2E9F3", col: "", colTxt: "" },
 };
 const ROLE_KEYS = ["outside", "inside", "manager"];
@@ -6958,7 +6959,7 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
               <FolderOpen size={13} />{" "}{_t("Open the data folder…")}</button>
           )}
         </div>
-        <div style={{ fontSize: 11, color: X.sub, lineHeight: 1.45 }}>{_t(". Forgot it? Ask the admin to reset it.")}</div>
+        <div style={{ fontSize: 11, color: X.sub, lineHeight: 1.45 }}>{_t("The password is saved only as an encrypted code (hash)")}{" "}{srv ? _t("on the server") : _t("in the data file")}{_t(". Forgot it? Ask the admin to reset it.")}</div>
         <LangSwitch />
       </form>
     </div>
@@ -8452,7 +8453,7 @@ export default function App() {
   /* ---------- login e papel ----------
      Quem pode entrar: os nomes das colunas Sales Person e Quoted By do Quote Report, mais as pessoas que o
      Admin acrescentou à mão (gerência). A tela depende do papel que o Admin escolheu (users[nome].role):
-     externo = só as cotações em que ele é o Sales Person · interno = só as que ele cotou (Quoted By) ·
+     externo e interno = só as cotações em que ele é o Sales Person ·
      gerência (e o Admin) = todas, com o filtro de vendedor livre.
      Filtro de vendedor da gerência: "sp:Nome" (Sales Person) ou "qb:Nome" (Quoted By). A escolha antiga
      "ext:Nome" continua valendo como "sp:Nome". */
@@ -8496,7 +8497,7 @@ export default function App() {
     : "";
   const lockSeller = role === "outside" || role === "inside" ? session : "";
   const seller = lockSeller
-    ? (role === "inside" ? "qb:" : "sp:") + lockSeller
+    ? "sp:" + lockSeller // externo e interno: a carteira é sempre a do Sales Person
     : /^sp:./.test(prefs.seller || "")
     ? prefs.seller
     : /^(ext|qb):./.test(prefs.seller || "") // escolhas antigas (interno / "ext:") passam a valer pelo Sales Person

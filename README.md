@@ -18,7 +18,7 @@ Tudo roda no navegador, sem servidor. Os arquivos não saem do computador.
 
 | Papel | Abas |
 |---|---|
-| Vendedor externo (Sales Person) e vendedor interno (Quoted By) | **Today** (follow-ups do dia, da maior prioridade para a menor) · **Quotes** (as cotações dele) · **Calendar** (o plano dos dias e a meta) |
+| Vendedor externo e vendedor interno (os dois pelas cotações em que são o **Sales Person**; o Quoted By não define a carteira) | **Today** (follow-ups do dia, da maior prioridade para a menor) · **Quotes** (as cotações dele) · **Calendar** (o plano dos dias e a meta) |
 | Gerência | **Overview** · **Quotes** · **Team** (FUP por vendedor) · **Goal** · **Analysis** · **Forms** · **Data** (no celular, Forms e Data ficam no menu do usuário) |
 
 **Importar relatórios:** os três perfis (vendedor externo, interno e gerência) importam o Quote Report e o Sales Report: no computador pelos botões do topo; no celular pelo menu do usuário (*Importar o Quote Report* / *Importar o Sales Report*). Cada importação vale para todo mundo. Um relatório filtrado (só as cotações de um vendedor, por exemplo) não apaga as outras: só entram as cotações do arquivo.
