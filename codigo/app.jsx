@@ -161,6 +161,12 @@ import {
   CalendarCheck,
   Database,
   MessageSquare,
+  Bell,
+  BellRing,
+  BellOff,
+  Smartphone,
+  AlarmClock,
+  ShoppingCart,
   Lock,
   History,
   StickyNote,
@@ -6407,6 +6413,272 @@ function DataMenu({ items }) {
   );
 }
 
+/* ===== Notificações (sino no topo) =====
+   O que mudou para a pessoa desde a última vez que ela abriu o sino: cotações novas e mudanças vindas do Quote
+   Report (situação, valor, pedidos), anotações de outras pessoas nas cotações dela, meta alterada e, para a
+   gerência, formulários DCS / VA novos. Mais o lembrete do dia: follow-ups atrasados, de hoje e do próximo dia
+   útil (prestes a atrasar). Nada disso é gravado à parte: sai dos dados que já existem. O "lido até" de cada
+   pessoa fica no servidor (settings "notif:<nome>") ou, sem servidor, neste navegador. */
+const nextBizDay = (d) => {
+  let x = addDays(d, 1);
+  for (let i = 0; i < 10 && isOffDay(x); i++) x = addDays(x, 1);
+  return x;
+};
+const goalVecOf = (dailyGoal, dayGoals) => {
+  const G = goalRules(dailyGoal, dayGoals, "");
+  return [Math.round(G.total), ...GOAL_LINES.map((k) => Math.round(G.lines[k] || 0))];
+};
+const NOTIF_REP_KINDS = new Set(["status", "order", "amount"]);
+function buildNotifs({ quotes, acts, ids, me, mgr, cursor, today, dailyGoal, dayGoals, meta, quotesRep, salesInfo }) {
+  const at = (cursor && cursor.at) || "";
+  const inScope = (id) => !ids || ids.has(id);
+  const qById = new Map(quotes.map((q) => [q.id, q]));
+  const items = [];
+  const after = (t) => !!at && String(t || "") > at;
+  // cada notificação some sozinha quando é clicada: cursor.k[tipo] = até quando aquele tipo já foi visto
+  const afterK = (k, t) => {
+    const s = cursor && cursor.k && cursor.k[k];
+    return after(t) && (!s || String(t || "") > s);
+  };
+  const listTxt = (list) => {
+    const names = [...new Set(list.map((id) => (qById.get(id) || {}).c).filter(Boolean))];
+    return names.slice(0, 3).join(" · ") + (names.length > 3 ? ` +${names.length - 3}` : "");
+  };
+  const repBy = quotesRep && quotesRep.by ? _t(" · imported by {0}", quotesRep.by) : "";
+  // a importação que a própria pessoa fez não vira notificação para ela (ela já viu o aviso na hora)
+  const norm = (t) => String(t || "").replace("T", " ").slice(0, 19);
+  // (as importações feitas aqui ficam em cursor.mine; a última, vinda de outro aparelho, pelo "by" do relatório)
+  const mineSet = new Set([...((cursor && cursor.mine) || []), quotesRep && quotesRep.by === me ? quotesRep.at : "", salesInfo && salesInfo.by === me ? salesInfo.at : ""].filter(Boolean).map(norm));
+  const mine = (t) => mineSet.has(norm(t));
+  if (at) {
+    // cotações novas (primeira vez no Quote Report)
+    const fresh = quotes.filter((q) => afterK("new", q.fs) && !mine(q.fs) && inScope(q.id) && !quoteCancelled(q)).sort((a, b) => (b.a || 0) - (a.a || 0));
+    if (fresh.length)
+      items.push({ k: "new", icon: FileSpreadsheet, tone: X.teal, title: fresh.length === 1 ? _t("1 new quote") : _t("{0} new quotes", fresh.length), sub: `${listTxt(fresh.map((q) => q.id))}${repBy}`, t: fresh.reduce((m, q) => (q.fs > m ? q.fs : m), ""), ids: fresh.map((q) => q.id) });
+    const since = (acts || []).filter((a) => after(a.t) && inScope(a.id) && !(NOTIF_REP_KINDS.has(a.k) && mine(a.t)));
+    // situação mudou no Quote Report
+    const st = since.filter((a) => a.k === "status" && afterK("status", a.t));
+    if (st.length) {
+      const c = { won: 0, lost: 0, cancelled: 0, open: 0 };
+      st.forEach((a) => {
+        const v = String(a.n || "").toLowerCase();
+        c[/won|ganh/.test(v) ? "won" : /cancel/.test(v) ? "cancelled" : /lost|perd/.test(v) ? "lost" : "open"]++;
+      });
+      const parts = [c.won && _t("{0} won", c.won), c.lost && _t("{0} lost", c.lost), c.cancelled && _t("{0} cancelled", c.cancelled), c.open && _t("{0} reopened", c.open)].filter(Boolean);
+      const qs = [...new Set(st.map((a) => a.id))];
+      items.push({ k: "status", icon: RefreshCw, tone: c.won ? X.green : X.sub, title: qs.length === 1 ? _t("1 quote changed status") : _t("{0} quotes changed status", qs.length), sub: parts.join(" · "), t: st[st.length - 1].t, ids: qs });
+    }
+    const group = (k, icon, one, many, tone) => {
+      const l = since.filter((a) => a.k === k && afterK(k, a.t));
+      if (!l.length) return;
+      const qs = [...new Set(l.map((a) => a.id))];
+      items.push({ k, icon, tone, title: qs.length === 1 ? one : _t(many, qs.length), sub: listTxt(qs), t: l[l.length - 1].t, ids: qs });
+    };
+    group("order", ShoppingCart, _t("1 quote with a new order (SO)"), "{0} quotes with a new order (SO)", X.green);
+    group("amount", TrendingUp, _t("1 quote with a new value"), "{0} quotes with a new value", X.sub);
+    // anotações de outras pessoas nas cotações da pessoa
+    if (!mgr) {
+      const notes = since.filter((a) => a.k === "note" && a.by && a.by !== me && afterK("note", a.t));
+      if (notes.length) {
+        const who = [...new Set(notes.map((a) => a.by))];
+        const qs = [...new Set(notes.map((a) => a.id))];
+        items.push({ k: "note", icon: MessageSquare, tone: X.violet, title: notes.length === 1 ? _t("1 new note from {0}", who[0]) : _t("{0} new notes from other people", notes.length), sub: notes.length === 1 ? `${notes[0].id} · ${String(notes[0].txt || "").slice(0, 80)}` : `${who.slice(0, 3).join(", ")} · ${listTxt(qs)}`, t: notes[notes.length - 1].t, ids: qs });
+      }
+    }
+    // gerência: formulários DCS / VA novos
+    if (mgr) {
+      const dcs = since.filter((a) => a.k === "dcs" && afterK("dcs", a.t));
+      if (dcs.length) {
+        const qs = [...new Set(dcs.map((a) => a.id))];
+        items.push({ k: "dcs", icon: FileText, tone: "#0E7490", title: qs.length === 1 ? _t("1 new DCS / VA form") : _t("{0} new DCS / VA forms", qs.length), sub: listTxt(qs), t: dcs[dcs.length - 1].t, tab: "forms" });
+      }
+    }
+    // Sales Report novo
+    if (salesInfo && afterK("sales", salesInfo.at) && !mine(salesInfo.at)) items.push({ k: "sales", icon: Upload, tone: X.sub, title: _t("Sales Report updated"), sub: [salesInfo.fileName, salesInfo.by && _t("by {0}", salesInfo.by)].filter(Boolean).join(" · "), t: salesInfo.at, tab: "goal" });
+    // meta alterada
+    const g = goalVecOf(dailyGoal, dayGoals);
+    const g0 = cursor && cursor.g;
+    if (Array.isArray(g0) && g.join() !== g0.join()) {
+      const lines = g.slice(1).some((v) => v > 0) ? GOAL_LINES.map((k, i) => `${k} ${moneyShort(g[i + 1])}`).join(" · ") : "";
+      items.push({ k: "goal", icon: Target, tone: X.amber, title: _t("New daily goal: {0}", money(g[0])), sub: [g0[0] !== g[0] && _t("was {0}", money(g0[0] || 0)), lines].filter(Boolean).join(" · ") || _t("goal per line changed"), t: "", tab: "goal" });
+    }
+  }
+  items.sort((a, b) => String(b.t || "9").localeCompare(String(a.t || "9")));
+  // lembrete do dia (não "lê": vale enquanto for verdade)
+  const tom = nextBizDay(today);
+  let late = 0,
+    due = 0,
+    soon = 0;
+  const lateIds = [],
+    dueIds = [];
+  quotes.forEach((q) => {
+    if (!inScope(q.id)) return;
+    const m = (meta || {})[q.id];
+    if (!m || !m.fup || quoteStateM(q, m.close) !== "open") return;
+    const n = fupPending(m)[0];
+    if (!n) return;
+    if (n < today) {
+      late++;
+      lateIds.push(q.id);
+    } else if (n === today) {
+      due++;
+      dueIds.push(q.id);
+    } else if (n === tom) soon++;
+  });
+  const reminder =
+    late || due || soon
+      ? {
+          k: "fup",
+          icon: AlarmClock,
+          tone: late ? X.redDk : X.amber,
+          title: mgr ? _t("Team: {0} overdue follow-ups", late) : late ? _t("{0} overdue follow-ups", late) : _t("{0} follow-ups due today", due),
+          sub: [mgr || late ? due && _t("{0} due today", due) : "", soon && _t("{0} due {1} (about to be late)", soon, tom === addDays(today, 1) ? _t("tomorrow") : fmtDay(tom))].filter(Boolean).join(" · ") || _t("open the plan of the day"),
+          ids: [...lateIds, ...dueIds],
+          tab: mgr ? "portfolio" : "today",
+          chips: mgr ? ["late"] : null,
+        }
+      : null;
+  return { items, reminder };
+}
+/* ===== Avisos no celular / PC (Web Push: chegam com a tela apagada; o servidor manda, servidor/push.mjs) ===== */
+const pushSupported = () => typeof window !== "undefined" && window.isSecureContext && "serviceWorker" in navigator && !!window.PushManager && !!window.Notification;
+const isIOS = () => typeof navigator !== "undefined" && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+const isStandaloneApp = () => (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || (typeof navigator !== "undefined" && navigator.standalone === true);
+const b64ToU8 = (s) => {
+  const raw = atob((s + "=".repeat((4 - (s.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+};
+const pushSubNow = async () => {
+  if (!pushSupported()) return null;
+  const reg = await navigator.serviceWorker.getRegistration("/");
+  return reg ? reg.pushManager.getSubscription() : null;
+};
+const PUSH_HOURS = ["07:00", "07:30", "08:00", "08:30", "09:00", "09:30", "10:00"];
+function PushBox({ st, mgr, onEnable, onDisable, onTest, onHour }) {
+  if (!st) return null;
+  const line = (icon, color, text) => (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: X.sub, lineHeight: 1.4 }}>
+      {React.createElement(icon, { size: 15, color, style: { flexShrink: 0, marginTop: 1 } })}
+      <span>{text}</span>
+    </div>
+  );
+  const link = { border: "none", background: "none", color: X.tealDk, fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0 };
+  let body;
+  if (!st.on) body = line(BellOff, X.sub, _t("Phone notifications are off on the server (see LEIA-ME)."));
+  else if (!pushSupported())
+    body = isIOS() && !isStandaloneApp() && window.isSecureContext
+      ? line(Smartphone, X.tealDk, _t("On the iPhone: tap Share → Add to Home Screen, open the program by the new icon and turn the notifications on there."))
+      : line(BellOff, X.sub, window.isSecureContext ? _t("This browser does not receive notifications.") : _t("Notifications need the https address (the tunnel one)."));
+  else if (st.perm === "denied") body = line(BellOff, X.redDk, _t("Notifications are blocked in this browser: allow them in the site settings (the padlock next to the address)."));
+  else if (!st.sub)
+    body = (
+      <button onClick={onEnable} disabled={st.busy} style={{ ...btn, width: "100%", justifyContent: "center", height: 36, fontWeight: 700, background: X.teal, borderColor: X.teal, color: "#fff" }}>
+        <BellRing size={15} /> {st.busy ? _t("Turning on…") : _t("Turn on notifications on this device")}
+      </button>
+    );
+  else
+    body = (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+        <CheckCircle2 size={15} color={X.green} style={{ flexShrink: 0 }} />
+        <span style={{ flex: 1, color: X.ink, fontWeight: 600 }}>{_t("Notifications on for this device")}</span>
+        <button onClick={onTest} style={link}>{_t("Test")}</button>
+        <button onClick={onDisable} style={{ ...link, color: X.sub }}>{_t("Turn off")}</button>
+      </div>
+    );
+  return (
+    <div style={{ borderTop: `1px solid ${X.line}`, marginTop: 4, padding: "9px 10px 4px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 800, color: X.sub, textTransform: "uppercase", letterSpacing: 0.4 }}>{_t("Phone / PC notifications")}</div>
+      {body}
+      {st.on && !st.sub && pushSupported() && st.perm !== "denied" && <div style={{ fontSize: 11, color: X.sub }}>{_t("They arrive even with the screen off: new quotes, new goal, notes and the morning reminder.")}</div>}
+      {st.on && mgr && (
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: X.sub }}>
+          <AlarmClock size={14} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>{_t("Morning reminder (business days, for everyone)")}</span>
+          <select value={st.hour} onChange={(e) => onHour(e.target.value)} style={{ height: 28, borderRadius: 7, border: `1px solid ${X.line}`, fontSize: 12, padding: "0 6px", background: "#fff", color: X.ink }}>
+            {[...new Set([...PUSH_HOURS, st.hour].filter((h) => h && h !== "off"))].sort().map((h) => (
+              <option key={h} value={h}>
+                {h}
+              </option>
+            ))}
+            <option value="off">{_t("off")}</option>
+          </select>
+        </label>
+      )}
+    </div>
+  );
+}
+function NotifBell({ items, reminder, unread, onOpenChange, onPick, onReadAll, pushBox }) {
+  const mob = useMobile();
+  const p = usePop(360, 460);
+  const open = !!p.pos;
+  const was = useRef(false);
+  useEffect(() => {
+    if (open !== was.current) onOpenChange(open);
+    was.current = open;
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ago = (t) => {
+    if (!t) return "";
+    const d = String(t).slice(0, 10);
+    return d === todayISO() ? String(t).slice(11, 16) : fmtDay(d);
+  };
+  const row = (n, isNew) => (
+    <button
+      key={n.k}
+      onClick={() => {
+        p.setPos(null);
+        onPick(n);
+      }}
+      className="qp-opt"
+      style={{ display: "flex", gap: 10, width: "100%", textAlign: "left", border: "none", background: isNew ? "#F2F6FC" : "transparent", borderRadius: 8, padding: "9px 10px", cursor: "pointer", alignItems: "flex-start" }}
+    >
+      <span style={{ width: 30, height: 30, borderRadius: 8, background: X.head, color: n.tone || X.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{React.createElement(n.icon, { size: 15 })}</span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
+          <b style={{ fontSize: 13, color: X.ink, flex: 1, minWidth: 0 }}>{n.title}</b>
+          {n.t ? <span style={{ fontSize: 11, color: X.sub, whiteSpace: "nowrap" }}>{ago(n.t)}</span> : null}
+        </span>
+        {n.sub ? <span style={{ fontSize: 12, color: X.sub, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{n.sub}</span> : null}
+      </span>
+      {isNew && <span style={{ width: 7, height: 7, borderRadius: 99, background: X.teal, marginTop: 6, flexShrink: 0 }} />}
+    </button>
+  );
+  return (
+    <>
+      <button
+        ref={p.anchor}
+        onClick={p.toggle}
+        title={unread ? _t("{0} new notifications", unread) : _t("Notifications")}
+        aria-label={_t("Notifications")}
+        style={{ ...btn, position: "relative", width: 40, height: mob ? 40 : 38, padding: 0, justifyContent: "center", borderRadius: 10 }}
+      >
+        <Bell size={17} />
+        {unread > 0 && <span style={{ position: "absolute", top: -5, right: -5, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 99, background: X.redDk, color: "#fff", fontSize: 10.5, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid #fff" }}>{unread > 9 ? "9+" : unread}</span>}
+      </button>
+      {p.render(
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px 8px" }}>
+            <b style={{ fontSize: 14, flex: 1 }}>{_t("Notifications")}</b>
+            {items.length > 0 && (
+              <button onClick={onReadAll} style={{ border: "none", background: "none", color: X.tealDk, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                {_t("Mark as read")}
+              </button>
+            )}
+          </div>
+          {reminder && row(reminder, false)}
+          {items.map((n) => row(n, true))}
+          {!items.length && (
+            <div style={{ fontSize: 12.5, color: X.sub, padding: "10px 10px 12px", display: "flex", gap: 8, alignItems: "center" }}>
+              <CheckCircle2 size={15} color={X.green} /> {_t("Nothing new since you last looked.")}
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: X.sub, padding: "6px 10px 4px", borderTop: `1px solid ${X.line}`, marginTop: 4 }}>{_t("Each notification stays here until you click it (or Mark as read). Closing the bell does not erase anything.")}</div>
+          {pushBox}
+        </div>,
+      )}
+    </>
+  );
+}
+
 /* ===== Lista do que ainda não foi salvo (abre ao clicar no aviso amarelo do arquivo de dados) =====
    detail = { quotes: [{ id, c, items: [registro do histórico | { k: "_meta" }] }], goals: [{ d, o, n }], report: [...] } */
 const goalTxt = (v, isDay) => (v == null ? (isDay ? _t("daily goal") : "—") : v < 0 ? _t("no goal") : money(v));
@@ -6666,7 +6938,7 @@ function LoginScreen({ names, users, connected, dfName, dfSt, onOpen, onReconnec
               <FolderOpen size={13} />{" "}{_t("Open the data folder…")}</button>
           )}
         </div>
-        <div style={{ fontSize: 11, color: X.sub, lineHeight: 1.45 }}>{_t("The password is saved only as an encrypted code (hash)")}{" "}{srv ? _t("on the server") : _t("in the data file")}{_t(". Forgot it? Ask the admin to reset it.")}</div>
+        <div style={{ fontSize: 11, color: X.sub, lineHeight: 1.45 }}>{_t(". Forgot it? Ask the admin to reset it.")}</div>
         <LangSwitch />
       </form>
     </div>
@@ -7171,7 +7443,7 @@ function hydrateRep(r) {
     return q;
   });
   const info = r.quotesRep || {};
-  const quotesRep = quotes.length ? { v: 2, quotes, minD, maxD, fileName: info.fileName || "", at: info.at || "", ...(info.fillAt ? { fillAt: info.fillAt } : null), hasClass, hasLine } : null;
+  const quotesRep = quotes.length ? { v: 2, quotes, minD, maxD, fileName: info.fileName || "", at: info.at || "", ...(info.by ? { by: info.by } : null), ...(info.fillAt ? { fillAt: info.fillAt } : null), hasClass, hasLine } : null;
   const rows = r.salesRows || [];
   return { ver: r.ver, quotesRep, salesRep: rows.length ? buildSalesIndex(rows, r.salesInfo || {}) : null };
 }
@@ -8205,10 +8477,10 @@ export default function App() {
   const lockSeller = role === "outside" || role === "inside" ? session : "";
   const seller = lockSeller
     ? (role === "inside" ? "qb:" : "sp:") + lockSeller
-    : /^(sp|qb):./.test(prefs.seller || "")
+    : /^sp:./.test(prefs.seller || "")
     ? prefs.seller
-    : /^ext:./.test(prefs.seller || "")
-    ? "sp:" + prefs.seller.slice(4)
+    : /^(ext|qb):./.test(prefs.seller || "") // escolhas antigas (interno / "ext:") passam a valer pelo Sales Person
+    ? "sp:" + prefs.seller.replace(/^(ext|qb):/, "")
     : "";
   const inCls = useMemo(() => scopeQuotes(quotes, { cls }), [quotes, cls]);
   /* vendedores da coluna Sales Person, agrupados como no pulz (sem o código SP; a mesma pessoa com grafias
@@ -8428,9 +8700,10 @@ export default function App() {
           return;
         }
         const m = mergeQuotes(quotes, r.quotes, at, r.dropped);
-        const rep = { v: 2, quotes: m.quotes, minD: m.minD, maxD: m.maxD, fileName: file.name, at, hasClass: r.hasClass || (quotesRep && quotesRep.hasClass), hasLine: r.hasLine || (quotesRep && quotesRep.hasLine) };
+        const rep = { v: 2, quotes: m.quotes, minD: m.minD, maxD: m.maxD, fileName: file.name, at, by: session, hasClass: r.hasClass || (quotesRep && quotesRep.hasClass), hasLine: r.hasLine || (quotesRep && quotesRep.hasLine) };
         setQuotesRep(rep);
         if (m.acts.length) setActs((x) => [...x, ...m.acts]);
+        markOwnImport(at);
         await kv.set(K.quotes, rep);
         say(
           r.hasLine ? "ok" : "warn",
@@ -8451,8 +8724,9 @@ export default function App() {
           r = { ...r, rows: before, minD: ds[0], maxD: ds[ds.length - 1], booked: before.length };
         }
         const rowsAll = mergeSalesRows(salesRep && salesRep.rows, r);
-        const rep = buildSalesIndex(rowsAll, { fileName: file.name, at });
+        const rep = buildSalesIndex(rowsAll, { fileName: file.name, at, by: session });
         setSalesRep(rep);
+        markOwnImport(at);
         await kv.set(K.sales, rep);
         say(
           r.hasSO ? "ok" : "warn",
@@ -8506,6 +8780,7 @@ export default function App() {
         srvLoaded.current = "";
         setSrvData(false);
       }
+      await disablePush(true); // este aparelho para de receber os avisos de quem saiu
       api("/api/logout", { body: {} }).catch(() => {});
       sessRef.current = "";
       setSrvMe(null);
@@ -8763,6 +9038,163 @@ export default function App() {
       </button>
     </div>
   );
+  /* ---------- notificações ---------- */
+  const notifKey = "qp_notif:" + (session || "");
+  const [notifCur, setNotifCur] = useState(null); // { at: "lido até", g: meta vista, r: dia do lembrete visto }
+  const saveNotifCur = (c0) => {
+    const c = { ...c0, u: nowStamp() }; // u = quando mudou (o mais novo vale, entre o banco e este aparelho)
+    if (c.k) c.k = Object.fromEntries(Object.entries(c.k).filter(([, t]) => String(t) > String(c.at)));
+    setNotifCur(c);
+    try {
+      localStorage.setItem(notifKey, JSON.stringify(c));
+    } catch {}
+    if (srv) api("/api/notif", { method: "POST", body: { seen: c } }).catch(() => {});
+    return c;
+  };
+  useEffect(() => {
+    if (!session || !ROLES[role]) return;
+    let local = null;
+    try {
+      local = JSON.parse(localStorage.getItem(notifKey) || "null");
+    } catch {}
+    const start = (c) => setNotifCur(c && c.at ? c : null);
+    if (srv)
+      api("/api/notif")
+        .then((r) => start(r && r.seen && (!local || String(r.seen.u || r.seen.at) >= String(local.u || local.at)) ? r.seen : local))
+        .catch(() => start(local));
+    else start(local);
+  }, [session, role, srv]); // eslint-disable-line react-hooks/exhaustive-deps
+  const notifs = useMemo(
+    () => (ROLES[role] && notifCur ? buildNotifs({ quotes, acts, ids: role === "manager" ? null : myIds, me: session, mgr: role === "manager", cursor: notifCur, today, dailyGoal, dayGoals, meta, quotesRep, salesInfo: salesRep || null }) : { items: [], reminder: null }),
+    [role, notifCur, quotes, acts, myIds, session, today, dailyGoal, dayGoals, meta, quotesRep, salesRep],
+  );
+  // primeira vez: começa a contar de agora (não mostra o histórico inteiro como novidade)
+  const notifCurRef = useRef(null);
+  notifCurRef.current = notifCur;
+  const markOwnImport = (t) => {
+    const c = notifCurRef.current;
+    if (c) saveNotifCur({ ...c, mine: [...(c.mine || []), t].slice(-4) });
+  };
+  const goalNow = useRef(null);
+  goalNow.current = goalVecOf(dailyGoal, dayGoals);
+  // meta alterada aqui mesmo (gerência): quem mudou não recebe aviso da própria mudança
+  const ownGoalEdit = useRef(false);
+  useEffect(() => {
+    if (!ownGoalEdit.current || !notifCur) return;
+    ownGoalEdit.current = false;
+    if (String(notifCur.g) !== String(goalNow.current)) saveNotifCur({ ...notifCur, g: goalNow.current });
+  }, [dailyGoal, dayGoals]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (session && ROLES[role] && notifCur === null && quotesRep) {
+      const t = setTimeout(() => saveNotifCur({ at: nowStamp(), g: goalNow.current, r: "" }), 1500);
+      return () => clearTimeout(t);
+    }
+  }, [session, role, notifCur, quotesRep]); // eslint-disable-line react-hooks/exhaustive-deps
+  const notifUnread = notifs.items.length + (notifs.reminder && notifCur && notifCur.r !== today ? 1 : 0);
+  const readNotifs = () => saveNotifCur({ at: nowStamp(), g: goalVecOf(dailyGoal, dayGoals), r: today });
+  // uma notificação só: some ao ser clicada (fechar o sino não apaga nada)
+  const readOneNotif = (n) => {
+    const c = notifCurRef.current;
+    if (!c) return;
+    if (n.k === "fup") return c.r !== today && saveNotifCur({ ...c, r: today });
+    if (n.k === "goal") return saveNotifCur({ ...c, g: goalVecOf(dailyGoal, dayGoals) });
+    const now = nowStamp(),
+      t = String(n.t || "") > now ? String(n.t) : now;
+    saveNotifCur({ ...c, k: { ...(c.k || {}), [n.k]: t } });
+  };
+  // chegou novidade com o programa aberto (outra pessoa importou, mudou a meta…): avisa também
+  const notifSig = useRef(null); // null = ainda não viu a primeira lista (ao abrir o programa não dá aviso)
+  const notifArm = useRef(0);
+  useEffect(() => {
+    if (!notifCur) return;
+    if (!notifArm.current) notifArm.current = Date.now() + 6000; // os primeiros segundos são o carregamento: sem aviso
+    const keys = notifs.items.map((n) => n.k + "|" + n.title);
+    if (notifSig.current && Date.now() > notifArm.current) {
+      const fresh = notifs.items.find((n, i) => !notifSig.current.includes(keys[i]));
+      if (fresh) say("info", `${fresh.title}${fresh.sub ? " · " + fresh.sub : ""}`);
+    }
+    notifSig.current = keys;
+  }, [notifs.items]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* ---------- avisos no celular / PC ---------- */
+  const [pushSt, setPushSt] = useState(null); // { on, key, hour, devices, sub, perm, busy }
+  const refreshPush = async () => {
+    if (!srv || !session || !ROLES[role]) return setPushSt(null);
+    try {
+      const r = await api("/api/push");
+      let sub = null;
+      if (pushSupported() && window.Notification.permission === "granted") {
+        await navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {}); // mantém o arquivo atualizado
+        sub = await pushSubNow();
+      }
+      setPushSt({ ...r, sub: !!sub, perm: pushSupported() ? window.Notification.permission : "unsupported", busy: false });
+      // aparelho já autorizado: fica ligado a quem está logado agora
+      if (sub && r.on) api("/api/push/subscribe", { body: { sub: sub.toJSON() } }).catch(() => {});
+    } catch {
+      setPushSt(null);
+    }
+  };
+  useEffect(() => {
+    refreshPush();
+  }, [srv, session, role]); // eslint-disable-line react-hooks/exhaustive-deps
+  // chegou um aviso com o programa aberto (ou tocaram nele): busca as novidades na hora
+  useEffect(() => {
+    if (!srv || typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
+    const f = (e) => e.data && /^qfu-push/.test(e.data.type || "") && pullRef.current && pullRef.current(false);
+    navigator.serviceWorker.addEventListener("message", f);
+    return () => navigator.serviceWorker.removeEventListener("message", f);
+  }, [srv]);
+  const enablePush = async () => {
+    if (!pushSt || !pushSt.on) return;
+    setPushSt((x) => ({ ...x, busy: true }));
+    try {
+      const perm = await window.Notification.requestPermission();
+      if (perm !== "granted") {
+        setPushSt((x) => ({ ...x, perm, busy: false }));
+        say("warn", _t("Notifications are blocked in this browser: allow them in the site settings (the padlock next to the address)."));
+        return;
+      }
+      const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+      await navigator.serviceWorker.ready;
+      // o navegador fala com o serviço de avisos dele (Google, Apple…): sem resposta em 25 s, desiste com um aviso
+      const late = new Promise((_, no) => setTimeout(() => no(new Error(_t("the notification service of the browser did not answer (internet or company firewall)"))), 25000));
+      const sub = (await reg.pushManager.getSubscription()) || (await Promise.race([reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(pushSt.key) }), late]));
+      const r = await api("/api/push/subscribe", { body: { sub: sub.toJSON() } });
+      setPushSt((x) => ({ ...x, sub: true, perm, devices: r.devices, busy: false }));
+      const t = await api("/api/push/test", { body: {} }).catch(() => null);
+      say(t && t.sent ? "ok" : "warn", t && t.sent ? _t("Notifications on for this device: a test notification was sent.") : _t("Notifications on, but the test did not arrive yet. Check the server window for messages."));
+    } catch (e) {
+      setPushSt((x) => ({ ...x, busy: false }));
+      say("err", _t("Could not turn on the notifications: {0}", (e && e.message) || e));
+    }
+  };
+  const disablePush = async (quiet) => {
+    try {
+      const sub = await pushSubNow();
+      if (sub) {
+        await api("/api/push/unsubscribe", { body: { endpoint: sub.endpoint } }).catch(() => {});
+        await sub.unsubscribe();
+      }
+    } catch {}
+    if (quiet !== true) refreshPush();
+  };
+  const testPush = async () => {
+    try {
+      const t = await api("/api/push/test", { body: {} });
+      say(t.sent ? "ok" : "warn", t.sent ? _t("Test sent: it should appear in a few seconds.") : _t("No device of yours received it: turn the notifications on again."));
+    } catch (e) {
+      say("err", e.message || String(e));
+    }
+  };
+  const setPushHour = async (h) => {
+    try {
+      const r = await api("/api/push/hour", { body: { hour: h } });
+      setPushSt((x) => ({ ...x, hour: r.hour }));
+      say("ok", r.hour === "off" ? _t("Morning reminder turned off.") : _t("Morning reminder at {0} on business days.", r.hour));
+    } catch (e) {
+      say("err", e.message || String(e));
+    }
+  };
+
   const css = <style>{GLOBAL_CSS}</style>;
 
   if (!loaded)
@@ -8880,28 +9312,16 @@ export default function App() {
     >
       <AlertTriangle size={14} /> {noLine.toLocaleString("pt-BR")} {noLine === 1 ? _t("quote") : _t("quotes")}{" "}{_t("without product line · import the Quote Report again")}</span>
   );
-  // gerência: vendedor livre (externo = Sales Person, interno = Quoted By) · externo e interno: preso no próprio nome
+  /* gerência: uma lista só, cada vendedor uma vez, pela coluna Sales Person do Quote Report (o Quoted By não entra:
+     quem aparece nas duas colunas não fica duplicado) · externo e interno: preso no próprio nome */
   const sellerOpts = (
     <>
-    <option value="">{_t("All salespeople")}</option>
-    {spList.length > 0 && (
-      <optgroup label={_t("Outside sales · Sales Person")}>
-        {spList.map((o) => (
-          <option key={"sp" + o.v} value={`sp:${o.v}`} title={_t("Sales Person in the Quote Report as: ") + o.raw.join(" · ")}>
-            {o.v} ({o.n.toLocaleString("pt-BR")})
-          </option>
-        ))}
-      </optgroup>
-    )}
-    {qbList.length > 0 && (
-      <optgroup label={_t("Inside sales · Quoted By")}>
-        {qbList.map((o) => (
-          <option key={"qb" + o.v} value={`qb:${o.v}`} title={_t("Quoted By in the Quote Report as: ") + o.raw.join(" · ")}>
-            {o.v} ({o.n.toLocaleString("pt-BR")})
-          </option>
-        ))}
-      </optgroup>
-    )}
+      <option value="">{_t("All salespeople")}</option>
+      {spList.map((o) => (
+        <option key={"sp" + o.v} value={`sp:${o.v}`} title={_t("Sales Person in the Quote Report as: ") + o.raw.join(" · ")}>
+          {o.v} ({o.n.toLocaleString("pt-BR")})
+        </option>
+      ))}
     </>
   );
   const sellerSel = lockSeller ? (
@@ -9265,6 +9685,13 @@ export default function App() {
 
   /* ---------- conteúdo de cada aba ---------- */
   // Overview → abre outra aba; na lista de cotações, já com o filtro rápido ligado (atrasados, de hoje, sem FUP)
+  const pickNotif = (n) => {
+    readOneNotif(n);
+    if (n.tab) goTab(n.tab, n.chips || undefined);
+    if (n.ids && n.ids.length && !n.tab) openQuote(n.ids[0], false, n.ids);
+    else if (n.ids && n.ids.length && n.k === "fup" && role !== "manager") openQuote(n.ids[0], false, n.ids);
+  };
+  const bell = ROLES[role] && notifCur && <NotifBell items={notifs.items} reminder={notifs.reminder} unread={notifUnread} onOpenChange={() => {}} onPick={pickNotif} onReadAll={readNotifs} pushBox={<PushBox st={pushSt} mgr={role === "manager" || isAdmin} onEnable={enablePush} onDisable={disablePush} onTest={testPush} onHour={setPushHour} />} />;
   const goTab = (k, quick) => {
     if (quick)
       ["c", "t"].forEach((x) => {
@@ -9281,7 +9708,7 @@ export default function App() {
   const ro = role === "manager";
   const W = ro ? { onMeta: noop, onAskClose: noop, onNote: null, onDone: null, onResched: null, onReq: null, onReopen: null, onWhy: null, onDcs: null, onToggleExcl: null } : { onMeta, onAskClose: askClose, onNote, onDone, onResched, onReq, onReopen: doReopen, onWhy: doWhy, onDcs, onToggleExcl };
   const tableProps = { onAskClose: W.onAskClose, thermo, rows, cancelRows, meta, onMeta: W.onMeta, today, periodLabel: periodLabelOf(period), qIndex, sales: salesView, acts, onNote: W.onNote, onDone: W.onDone, onResched: W.onResched, onReq: W.onReq, user, onUser: setUser, notesBy, openQ, onOpenQuote: openQuote };
-  const calProps = { goalEdit: role === "manager", thermo, quotes: scoped, sales: salesView, cls, line, meta, onMeta: W.onMeta, onAskClose: W.onAskClose, onDone: W.onDone, onToggleExcl: W.onToggleExcl, onOpenQuote: openQuote, notesBy, dailyGoal, setDailyGoal, dayGoals, setDayGoals, excl, prefs, setPref, today };
+  const calProps = { goalEdit: role === "manager", thermo, quotes: scoped, sales: salesView, cls, line, meta, onMeta: W.onMeta, onAskClose: W.onAskClose, onDone: W.onDone, onToggleExcl: W.onToggleExcl, onOpenQuote: openQuote, notesBy, dailyGoal, setDailyGoal: (v) => ((ownGoalEdit.current = true), setDailyGoal(v)), dayGoals, setDayGoals: (v) => ((ownGoalEdit.current = true), setDayGoals(v)), excl, prefs, setPref, today };
   const content = !loaded || (srv && !srvData) ? (
     srv && df.st === "err" ? (
       <div style={{ ...card, padding: "32px 18px", textAlign: "center", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
@@ -9375,17 +9802,17 @@ export default function App() {
       >
         {mob ? (
           /* celular: o nome da aba, e só três botões (filtro, salvamento, menu) */
-          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <MartinLogo h={24} light />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <MartinLogo h={20} light />
             <span style={{ width: 1, height: 26, background: "rgba(255,255,255,.22)", flexShrink: 0 }} />
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.15, color: "#fff" }}>{(tabs.find((t) => t[0] === tab) || [, _t("Quote Follow Up")])[1]}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: -0.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.15, color: "#fff" }}>{(tabs.find((t) => t[0] === tab) || [, _t("Quote Follow Up")])[1]}</div>
               <div style={{ fontSize: 11.5, color: "#A9C4E2", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {lockSeller ? String(session).split(" ")[0] + " · " : ""}
                 {R ? R.label : ""}
               </div>
             </div>
-            <span className="no-print" style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+            <span className="no-print" style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
               {hasTopFilter && (
                 <button onClick={() => setShowFilters(true)} title={_t("Filters")} style={iconBtn(nSheet ? { background: X.tealSoft, borderColor: "#A9C8EC", color: X.tealDk } : null)}>
                   <SlidersHorizontal size={18} />
@@ -9393,6 +9820,7 @@ export default function App() {
                 </button>
               )}
               {syncBtn}
+              {bell}
               <UserChip compact name={session} admin={isAdmin} role={role} onLogout={logout} onUsers={isAdmin ? () => setTab("data") : null} items={menuItems} status={dfStatusTxt} />
             </span>
           </div>
@@ -9421,6 +9849,7 @@ export default function App() {
             )}
             {refreshBtn}
             {saveBtn}
+            {bell}
             <UserChip name={session} admin={isAdmin} role={role} onLogout={logout} onUsers={isAdmin ? () => setTab("data") : null} />
             {dataMenu}
           </div>

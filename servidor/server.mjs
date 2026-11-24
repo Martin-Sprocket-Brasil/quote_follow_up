@@ -22,6 +22,7 @@ import compression from "compression";
 import * as mariadb from "mariadb";
 import * as XLSX from "xlsx";
 import { buildLegacyImport } from "./legacy-import.mjs";
+import { createPush } from "./push.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // pasta servidor/
 const ROOT = path.join(here, ".."); // pasta do programa
@@ -155,9 +156,9 @@ async function buildRep() {
     const salesRows = sales.map((r) => ({ so: r.sales_id, d: r.booked_date, c: r.customer, cls: r.classification, ln: r.line, v: r.booked, sp: r.salesperson }));
     const body = {
       ver,
-      quotesRep: { fileName: st.last_quote_report || "", at: st.quote_report_imported_at || "", fillAt: st.quote_fill_at || "", quotes },
+      quotesRep: { fileName: st.last_quote_report || "", at: st.quote_report_imported_at || "", by: st.quote_report_by || "", fillAt: st.quote_fill_at || "", quotes },
       salesRows,
-      salesInfo: { fileName: st.last_sales_report || "", at: st.sales_report_imported_at || "" },
+      salesInfo: { fileName: st.last_sales_report || "", at: st.sales_report_imported_at || "", by: st.sales_report_by || "" },
     };
     const json = JSON.stringify(body);
     const gz = zlib.gzipSync(json, { level: 6 });
@@ -215,6 +216,16 @@ function scopeOf(me, rep) {
     if (!memo.has(v)) memo.set(v, raw.has(v) || sellerSame(me.name, v));
     return memo.get(v);
   };
+}
+
+/* ---------- avisos no celular / PC (servidor/push.mjs) ---------- */
+const push = createPush({ pool, core, scopeOf, MGR, ADMIN_USER, proxy: str(cfg.proxy) }); // "proxy": só se a rede da empresa exigir (ex.: "http://proxy:3128")
+push.setRepGetter(() => getRep());
+// meta diária atual: [total, PT, CP, MH] (para saber se mudou de verdade numa gravação)
+async function goalVec(conn) {
+  const r = await conn.query("SELECT name, value FROM settings WHERE name IN ('daily_goal', 'daily_goal_pt', 'daily_goal_cp', 'daily_goal_mh')");
+  const m = Object.fromEntries(r.map((x) => [x.name, Math.round(num(x.value))]));
+  return [m.daily_goal || 0, m.daily_goal_pt || 0, m.daily_goal_cp || 0, m.daily_goal_mh || 0];
 }
 
 /* ---------- sessão (cookie) ---------- */
@@ -456,7 +467,7 @@ async function dcsAllowed() {
   }
   return dcsOk;
 }
-async function applyActs(conn, me, b, okId, skipped) {
+async function applyActs(conn, me, b, okId, skipped, fresh) {
   const mgr = MGR.has(me.role);
   if (arr(b.acts).some((a) => isObj(a) && a.k === "dcs") && !(await dcsAllowed()))
     throw httpErr(503, "db-old", "The database needs an update to save the DCS / Value Added form: run the new banco/schema.sql (see docs/SERVIDOR.md). Nothing was lost: the page sends it again by itself.");
@@ -479,6 +490,15 @@ async function applyActs(conn, me, b, okId, skipped) {
     const v = (x) => (x == null || x === "" ? null : String(x).slice(0, 255));
     // a chave é a do programa (actKey): o mesmo registro mandado duas vezes não entra de novo
     rows.push([sha256(actKey(a)), t, id, cut(a.c, 150), k, v(a.o), v(a.n), a.txt ? String(a.txt) : null, rk ? cut(a.by, 100) : me.name]);
+    if (fresh) fresh.push([rows[rows.length - 1][0], a]);
+  }
+  // avisos: só o que entra agora (o mesmo registro mandado de novo não avisa duas vezes)
+  if (fresh && fresh.length) {
+    const had = new Set();
+    for (const part of chunks(fresh.map((x) => x[0]), 1000)) (await conn.query("SELECT act_key FROM activities WHERE act_key IN (?)", [part])).forEach((r) => had.add(r.act_key));
+    const keep = fresh.filter((x) => !had.has(x[0])).map((x) => x[1]);
+    fresh.length = 0;
+    fresh.push(...keep);
   }
   let n = 0;
   for (const part of chunks(rows, 1000))
@@ -515,7 +535,7 @@ async function applyGoals(conn, b) {
 }
 
 // importação dos relatórios (gerência): cotações novas/alteradas, cotações que saíram e as vendas inteiras
-async function applyRep(conn, rep) {
+async function applyRep(conn, rep, byName = "") {
   const quotes = arr(rep.quotes).filter((q) => isObj(q) && RX_ID.test(qid(q.id)) && day(q.d));
   const qRows = quotes.map((q) => {
     const al = isObj(q.al) ? q.al : {};
@@ -548,9 +568,11 @@ async function applyRep(conn, rep) {
   const info = isObj(rep.info) ? rep.info : {};
   if ("quoteFile" in info) await setSetting(conn, "last_quote_report", cut(info.quoteFile, 255));
   if ("quoteAt" in info) await setSetting(conn, "quote_report_imported_at", cut(info.quoteAt, 255));
+  if ("quoteFile" in info && byName) await setSetting(conn, "quote_report_by", cut(byName, 255)); // quem importou (notificações)
   if ("fillAt" in info) await setSetting(conn, "quote_fill_at", cut(info.fillAt, 255));
   if ("salesFile" in info) await setSetting(conn, "last_sales_report", cut(info.salesFile, 255));
   if ("salesAt" in info) await setSetting(conn, "sales_report_imported_at", cut(info.salesAt, 255));
+  if ("salesFile" in info && byName) await setSetting(conn, "sales_report_by", cut(byName, 255));
   await setSetting(conn, "program_version", APP_VERSION);
   return { quotes: qRows.length, removed: removed.length, sales: nSales };
 }
@@ -583,6 +605,14 @@ const sendPage = (req, res) => {
   res.sendFile(PAGE);
 };
 app.get(["/", "/index.html", "/QuoteFollowUp.html"], sendPage);
+
+// avisos: o service worker precisa vir deste mesmo endereço, na raiz
+app.get("/sw.js", (req, res) => {
+  const file = path.join(ROOT, "pagina", "sw.js");
+  if (!fs.existsSync(file)) return res.status(404).end();
+  res.type("application/javascript").set({ "Cache-Control": "no-cache", "Service-Worker-Allowed": "/" });
+  res.sendFile(file);
+});
 
 // celular: "Adicionar à tela inicial" abre o programa em tela cheia, com ícone próprio
 app.get("/manifest.webmanifest", (req, res) => {
@@ -762,13 +792,22 @@ app.post(
     const skipped = new Set();
     let skippedGoals = false;
     const conn = await pool.getConnection();
-    let out;
+    let out, goalBefore, goalAfter, newIds;
+    const freshActs = [];
     const t0 = Date.now();
     try {
       await conn.beginTransaction();
       const prev = await lockVers(conn); // uma gravação por vez: a próxima espera esta terminar
       let repN = null;
-      if (b.rep) repN = await applyRep(conn, b.rep);
+      if (b.rep) {
+        // avisos: QTs que entram pela primeira vez nesta importação
+        const at = stamp(b.rep.info && b.rep.info.quoteAt);
+        const cand = at ? arr(b.rep.quotes).filter((q) => isObj(q) && q.fs === at).map((q) => qid(q.id)) : [];
+        const had = new Set();
+        for (const part of chunks(cand, 1000)) (await conn.query("SELECT quote_id FROM quotes WHERE quote_id IN (?)", [part])).forEach((r) => had.add(r.quote_id));
+        newIds = new Set(cand.filter((id) => !had.has(id)));
+        repN = await applyRep(conn, b.rep, me.name);
+      }
       if (repN && repN.quotes) {
         // cotações novas da importação: o vendedor delas também precisa ser conhecido na conferência abaixo
         rep = { ...rep, byId: new Map(rep.byId) };
@@ -777,11 +816,14 @@ app.post(
       // gerência só visualiza: follow-ups, notas e formulários de cotação vêm dos vendedores (o registro da importação continua)
       const okId = mgr ? () => false : scopeOf(me, rep);
       const nF = await applyFollowups(conn, me, b, okId, rep, skipped);
-      const nA = await applyActs(conn, me, b, okId, skipped);
+      const nA = await applyActs(conn, me, b, okId, skipped, freshActs);
       let nG = 0;
       if (b.dailyGoal !== undefined || isObj(b.dayGoals)) {
-        if (mgr) nG = await applyGoals(conn, b);
-        else skippedGoals = true;
+        if (mgr) {
+          goalBefore = await goalVec(conn);
+          nG = await applyGoals(conn, b);
+          goalAfter = await goalVec(conn);
+        } else skippedGoals = true;
       }
       const dataCh = nF + nA + nG > 0;
       const next = { data: prev.data + (dataCh ? 1 : 0), rep: prev.rep + (repN ? 1 : 0) };
@@ -801,6 +843,9 @@ app.post(
     }
     if (out.rep !== out.prevRep) getRep().catch((e) => console.error("[rep] erro ao montar", e)); // já deixa pronto para os outros
     res.json(out);
+    // avisos no celular / PC de quem foi afetado (depois da resposta: não atrasa a gravação)
+    if (push.ready && ((newIds && newIds.size) || goalAfter || freshActs.length))
+      push.afterSync({ me, rep, newIds, acts: freshActs, quotes: b.rep ? arr(b.rep.quotes) : [], goalBefore, goalAfter }).catch((e) => console.error("[avisos]", e.message || e));
   }),
 );
 
@@ -832,6 +877,95 @@ app.post(
     await pool.query("UPDATE settings SET value = value + 1 WHERE name = 'data_version'");
     console.info(`[admin] senha de ${name} zerada`);
     res.json({ ok: true, users: sanitizeUsers(await pool.query("SELECT name, role, pass_hash FROM users"), req.user) });
+  }),
+);
+
+/* avisos no celular / PC: estado, ativar / desativar um aparelho, teste e o horário do lembrete da manhã */
+app.get(
+  "/api/push",
+  auth,
+  needRole,
+  wrap(async (req, res) => {
+    res.json({ on: push.ready, key: push.publicKey, hour: push.hour, devices: push.ready ? await push.count(req.user.name) : 0 });
+  }),
+);
+app.post(
+  "/api/push/subscribe",
+  auth,
+  needRole,
+  wrap(async (req, res) => {
+    const origin = isHttps(req) ? "https://" + str(req.get("host")).toLowerCase() : "";
+    await push.subscribe(req.user.name, req.body && req.body.sub, req.headers["user-agent"], origin);
+    res.json({ ok: true, devices: await push.count(req.user.name) });
+  }),
+);
+app.post(
+  "/api/push/unsubscribe",
+  auth,
+  wrap(async (req, res) => {
+    if (push.ready) await push.unsubscribe(str(req.body && req.body.endpoint), req.user.name);
+    res.json({ ok: true, devices: push.ready ? await push.count(req.user.name) : 0 });
+  }),
+);
+app.post(
+  "/api/push/test",
+  auth,
+  needRole,
+  wrap(async (req, res) => {
+    if (!push.ready) throw httpErr(503, "push-off", "Push is off on the server.");
+    const n = process.env.QFU_PUSH_TEST === "1" && req.body && req.body.morning ? await push.morning(true, req.user.name) : await push.sendTo([req.user.name], { title: "Avisos ligados", body: "Este aparelho vai receber os avisos do Quote Follow Up.", tag: "test" });
+    res.json({ ok: true, sent: n });
+  }),
+);
+app.post(
+  "/api/push/hour",
+  auth,
+  needMgr,
+  wrap(async (req, res) => {
+    if (!push.ready) throw httpErr(503, "push-off", "Push is off on the server.");
+    await push.setHour(str(req.body && req.body.hour));
+    console.info(`[avisos] lembrete da manhã: ${push.hour} (${req.user.name})`);
+    res.json({ ok: true, hour: push.hour });
+  }),
+);
+
+/* notificações: "lido até" de cada pessoa (settings "notif:<nome>", até 255 caracteres: { at, g, r }) */
+const notifKey = (name) => "notif:" + String(name).slice(0, 54);
+const notifKindKey = (name) => "notifk:" + String(name).slice(0, 53); // o que já foi visto de cada tipo (clicado no sino)
+const NOTIF_KINDS = new Set(["new", "status", "order", "amount", "note", "dcs", "sales"]);
+app.get(
+  "/api/notif",
+  auth,
+  needRole,
+  wrap(async (req, res) => {
+    const r = await pool.query("SELECT name, value FROM settings WHERE name IN (?, ?)", [notifKey(req.user.name), notifKindKey(req.user.name)]);
+    const get = (n) => {
+      try {
+        const x = r.find((y) => y.name === n);
+        return x ? JSON.parse(x.value) : null;
+      } catch {
+        return null;
+      }
+    };
+    const seen = get(notifKey(req.user.name));
+    if (seen) seen.k = get(notifKindKey(req.user.name)) || {};
+    res.json({ seen });
+  }),
+);
+app.post(
+  "/api/notif",
+  auth,
+  needRole,
+  wrap(async (req, res) => {
+    const s = isObj(req.body && req.body.seen) ? req.body.seen : null;
+    if (!s || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(s.at || ""))) throw httpErr(400, "bad-request", "Invalid data.");
+    const TS = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+    const v = JSON.stringify({ at: s.at, g: Array.isArray(s.g) ? s.g.slice(0, 4).map((x) => Math.round(+x || 0)) : [], r: /^\d{4}-\d{2}-\d{2}$/.test(String(s.r || "")) ? s.r : "", mine: (Array.isArray(s.mine) ? s.mine : []).map(String).filter((t) => TS.test(t)).slice(-4), u: TS.test(String(s.u || "")) ? s.u : s.at });
+    const k = JSON.stringify(Object.fromEntries(Object.entries(isObj(s.k) ? s.k : {}).filter(([n, t]) => NOTIF_KINDS.has(n) && TS.test(String(t)) && String(t) > s.at)));
+    const up = "INSERT INTO settings (name, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)";
+    await pool.query(up, [notifKey(req.user.name), v.slice(0, 255)]);
+    await pool.query(up, [notifKindKey(req.user.name), k.slice(0, 255)]);
+    res.json({ ok: true });
   }),
 );
 
@@ -937,6 +1071,11 @@ async function prepareDb() {
     }
   }
   await pool.query("DELETE FROM sessions WHERE expires_at < NOW()");
+  try {
+    await push.init();
+  } catch (e) {
+    console.warn("[avisos] desligados:", e.message || e);
+  }
 }
 
 try {

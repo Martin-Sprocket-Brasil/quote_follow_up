@@ -16,6 +16,7 @@ if errorlevel 1 (
 set FALTA=
 if not exist node_modules\express set FALTA=1
 if not exist node_modules\pdf-lib set FALTA=1
+if not exist node_modules\web-push set FALTA=1
 if defined FALTA (
   echo Instalando as bibliotecas do servidor ^(so na primeira vez, 1-2 min^)...
   call npm install

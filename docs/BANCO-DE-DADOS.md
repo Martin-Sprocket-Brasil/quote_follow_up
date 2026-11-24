@@ -52,6 +52,7 @@ Pode repetir os passos 2 e 3 sempre que quiser, por exemplo para trazer os dados
 | data · Config (cifrada) | `users` | Nome, papel, sal e hash da senha. |
 | data/reports · Info | `settings` | Últimos relatórios importados e versão do programa. |
 | — | `sessions` | Logins do servidor (criada para o servidor; não vem das planilhas). |
+| — | `push_subs` | Aparelhos que ativaram os avisos no celular / PC (um por aparelho; não vem das planilhas). |
 
 ## Regras que o banco garante
 
@@ -77,4 +78,6 @@ O banco é usado pelo servidor do programa (`servidor\server.mjs`). Veja `docs\S
 O servidor usa duas coisas a mais no banco, que o `schema.sql` cria e que ele mesmo cria se faltarem:
 
 - **`sessions`**: quem está logado em cada navegador ou celular. Fica só o SHA-256 do código do cookie.
+- **`push_subs`**: um registro por aparelho com avisos ligados: o endereço do serviço de avisos do navegador e as chaves do aparelho. Sai sozinho quando o aparelho desativa. As chaves do servidor ficam em `settings` (`vapid_public` / `vapid_private`), e o horário do lembrete da manhã em `push_hour`.
+- **`settings.notif:<nome>`**: até quando a pessoa já viu as notificações do sino (JSON com a data/hora, a meta vista e as importações feitas por ela). **`quote_report_by` / `sales_report_by`**: quem importou o último relatório.
 - **`settings.data_version` / `rep_version`**: sobem 1 a cada gravação. É por eles que as páginas abertas sabem que precisam buscar as mudanças.

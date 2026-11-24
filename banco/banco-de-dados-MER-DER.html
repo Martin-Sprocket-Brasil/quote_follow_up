@@ -84,7 +84,7 @@
 <body>
 <header>
   <h1>Quote Follow Up · modelo do banco de dados</h1>
-  <div class="meta">MariaDB 10.11 · banco <code>quote_follow_up</code> · utf8mb4 · 11 tabelas, 1 visão e 2 gatilhos · gerado a partir do <code>schema.sql</code></div>
+  <div class="meta">MariaDB 10.11 · banco <code>quote_follow_up</code> · utf8mb4 · 12 tabelas, 1 visão e 2 gatilhos · gerado a partir do <code>schema.sql</code></div>
   <nav>
     <button data-tab="der" class="on">DER · tabelas</button>
     <button data-tab="mer">MER · conceitual</button>
@@ -888,6 +888,86 @@ const SCHEMA = {
   "fks": [],
   "checks": [],
   "idx": 2
+ },
+ "push_subs": {
+  "comment": "Aparelhos que recebem os avisos (Web Push)",
+  "cols": [
+   {
+    "name": "id",
+    "type": "INT UNSIGNED",
+    "null": false,
+    "auto": true,
+    "default": null,
+    "comment": ""
+   },
+   {
+    "name": "endpoint",
+    "type": "VARCHAR(700)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Endereço do serviço de avisos do navegador"
+   },
+   {
+    "name": "name",
+    "type": "VARCHAR(100)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Pessoa logada quando ativou"
+   },
+   {
+    "name": "p256dh",
+    "type": "VARCHAR(200)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Chave do aparelho"
+   },
+   {
+    "name": "auth",
+    "type": "VARCHAR(60)",
+    "null": false,
+    "auto": false,
+    "default": null,
+    "comment": "Segredo do aparelho"
+   },
+   {
+    "name": "user_agent",
+    "type": "VARCHAR(200)",
+    "null": false,
+    "auto": false,
+    "default": "''",
+    "comment": ""
+   },
+   {
+    "name": "created_at",
+    "type": "DATETIME",
+    "null": false,
+    "auto": false,
+    "default": "CURRENT_TIMESTAMP",
+    "comment": ""
+   },
+   {
+    "name": "last_ok",
+    "type": "DATETIME",
+    "null": true,
+    "auto": false,
+    "default": null,
+    "comment": "Último aviso entregue"
+   }
+  ],
+  "pk": [
+   "id"
+  ],
+  "uq": [
+   [
+    "endpoint"
+   ]
+  ],
+  "fks": [],
+  "checks": [],
+  "idx": 1
  }
 };
 const NS = "http://www.w3.org/2000/svg";
@@ -898,7 +978,7 @@ const GROUPS = {
   acesso: { color: "#B7791F", soft: "#FDF0D9", label: "Acesso" },
   conf: { color: "#52606D", soft: "#E9EEF2", label: "Configuração" },
 };
-const TBL_GROUP = { quotes: "rep", quote_orders: "rep", quote_product_groups: "rep", sales: "rep", followups: "acomp", followup_done_days: "acomp", activities: "acomp", users: "acesso", sessions: "acesso", settings: "conf", day_goals: "conf", v_quote_state: "rep" };
+const TBL_GROUP = { quotes: "rep", quote_orders: "rep", quote_product_groups: "rep", sales: "rep", followups: "acomp", followup_done_days: "acomp", activities: "acomp", users: "acesso", sessions: "acesso", push_subs: "acesso", settings: "conf", day_goals: "conf", v_quote_state: "rep" };
 
 // a visão entra no diagrama como uma "tabela" tracejada
 SCHEMA.v_quote_state = {
@@ -921,6 +1001,7 @@ const RELS = [
   ["quotes", "quote_id", "activities", "quote_id", "zone", "many", "lk", "histórico"],
   ["quote_orders", "sales_id", "sales", "sales_id", "many", "many", "lk", "mesmo Sales Id"],
   ["users", "name", "sessions", "name", "one", "many", "lk", "logins"],
+  ["users", "name", "push_subs", "name", "one", "many", "lk", "aparelhos com aviso"],
   ["users", "name", "activities", "created_by", "zone", "many", "lk", "quem registrou"],
 ];
 const FKCOLS = new Set(RELS.filter((r) => r[6] === "fk").map((r) => r[2] + "." + r[3]));
@@ -931,7 +1012,7 @@ const DEFAULT_POS = {
   quote_orders: [30, 30, 270], quote_product_groups: [30, 150, 270], sales: [30, 305, 270],
   quotes: [420, 30, 300], v_quote_state: [420, 520, 300],
   followups: [840, 30, 300], activities: [840, 400, 300],
-  followup_done_days: [1260, 30, 270], users: [1260, 170, 270], sessions: [1260, 375, 270],
+  followup_done_days: [1260, 30, 270], users: [1260, 170, 270], sessions: [1260, 375, 270], push_subs: [1260, 590, 270],
   day_goals: [30, 610, 270], settings: [30, 755, 270],
 };
 let pos = JSON.parse(JSON.stringify(DEFAULT_POS));
@@ -1180,13 +1261,14 @@ Object.entries(ENT).forEach(([k, e]) => {
 });
 
 /* ===================== Dicionário ===================== */
-const ORDER = ["quotes", "quote_orders", "quote_product_groups", "sales", "followups", "followup_done_days", "activities", "users", "sessions", "day_goals", "settings", "v_quote_state"];
+const ORDER = ["quotes", "quote_orders", "quote_product_groups", "sales", "followups", "followup_done_days", "activities", "users", "sessions", "push_subs", "day_goals", "settings", "v_quote_state"];
 const EXTRA = {
   activities: ["<b>Formulário DCS / Value Added</b>: é uma linha com <code>kind = 'dcs'</code>; o formulário inteiro fica em <code>note</code> (JSON). Veja a aba <b>Formulário DCS / VA</b>.", "Somente inclusão: os gatilhos <code>tr_activities_no_update</code> e <code>tr_activities_no_delete</code> recusam qualquer alteração ou exclusão.", "<code>act_key</code> = SHA-256 do actKey do programa: o mesmo registro mandado duas vezes não entra de novo."],
   followups: ["Sem FK para <code>quotes</code> de propósito: o follow-up continua mesmo se a cotação sair do Quote Report."],
   users: ["A senha nunca fica em texto: só o sal e o hash (SHA-256 repetido 5000 vezes, o mesmo cálculo do programa)."],
+  push_subs: ["Um registro por aparelho que tocou em “Ativar avisos”. O servidor manda os avisos pelo serviço do próprio navegador (Google, Apple, Microsoft, Mozilla); aparelho desativado sai sozinho no próximo envio. Sair do programa desliga os avisos daquele aparelho."],
   sessions: ["O cookie do navegador guarda um código aleatório; aqui fica só o SHA-256 dele. Zerar a senha de alguém apaga as sessões dessa pessoa."],
-  settings: ["Chaves usadas: <code>daily_goal</code>, <code>data_version</code>, <code>rep_version</code>, <code>last_quote_report</code>, <code>quote_report_imported_at</code>, <code>quote_fill_at</code>, <code>last_sales_report</code>, <code>sales_report_imported_at</code>, <code>program_version</code>."],
+  settings: ["Chaves usadas: <code>daily_goal</code>, <code>data_version</code>, <code>rep_version</code>, <code>last_quote_report</code>, <code>quote_report_imported_at</code>, <code>quote_fill_at</code>, <code>last_sales_report</code>, <code>sales_report_imported_at</code>, <code>quote_report_by</code> / <code>sales_report_by</code> (quem importou), <code>daily_goal_pt</code> / <code>_cp</code> / <code>_mh</code>, <code>program_version</code> e <code>notif:&lt;nome&gt;</code> (até quando cada pessoa já viu as notificações), <code>vapid_public</code> / <code>vapid_private</code> (chaves dos avisos no celular), <code>push_hour</code> (horário do lembrete da manhã), <code>push_morning_day</code> (último dia em que ele foi enviado) e <code>push_subject</code> (endereço do site)."],
   sales: ["Linhas Booked somadas por pedido, dia, classificação, linha, cliente e vendedor (a chave única). O valor pode ser negativo (devolução)."],
   v_quote_state: ["<code>report_state</code> = só pelo Quote Report; <code>state</code> = considerando também o fechamento à mão (<code>followups.closed_as</code>).", "Ganha (<code>won</code>) se o status tem “confirm” ou se a cotação tem pedido em <code>quote_orders</code>."],
 };

@@ -296,6 +296,59 @@ Clique na seta de uma QT no **Quote portfolio**, ou no número da QT no **plano 
 
 ---
 
+## Notificações (sino no topo)
+
+O sino fica ao lado de *Atualizar* (no celular, ao lado do botão de salvamento). O número vermelho mostra quantas novidades ainda não foram vistas. Cada pessoa vê apenas o que é da carteira dela; a gerência vê a equipe inteira.
+
+**O que aparece** (tudo o que mudou desde a última vez que a pessoa abriu o sino):
+
+- **N QTs novas**: cotações que entraram num Quote Report importado por outra pessoa, com o nome dos clientes e de quem importou;
+- **N cotações mudaram de situação**: ganhas, perdidas, canceladas ou reabertas pelo Quote Report;
+- **N cotações com pedido novo (SO)** e **N cotações com valor novo**;
+- **Nova meta diária**: o valor novo, o anterior e a divisão PT / CP / MH;
+- **Sales Report atualizado**;
+- **Anotações de outras pessoas** nas suas cotações (vendedores);
+- **Formulários DCS / VA novos** (gerência).
+
+**Lembrete do dia:** fica sempre no topo enquanto for verdade. Mostra os follow-ups atrasados, os que vencem hoje e os que vencem no próximo dia útil (*prestes a atrasar*). Na gerência aparece como *Equipe: N follow-ups atrasados*.
+
+**Como funciona:**
+
+- Clicar numa notificação abre o que ela fala. As QTs abrem uma depois da outra (setas *1 de N*); a meta abre a aba Meta e o lembrete abre o plano do dia.
+- Cada notificação só some quando você clica nela, ou em *Marcar como lidas* (aí somem todas). Fechar o sino não apaga nada. O lembrete de atrasos fica sempre na lista enquanto houver atraso: clicar nele só tira o número do sino até o dia seguinte.
+- Quem importou o relatório ou mudou a meta não recebe notificação da própria ação, porque já viu o aviso na hora.
+- Se outra pessoa importar ou mudar a meta com o programa aberto, a novidade aparece também num aviso no canto da tela (em até 20 s).
+- No primeiro acesso a contagem começa do zero, para o histórico antigo não aparecer como novidade.
+- Com o servidor, o "visto até" fica no banco (`settings`, chave `notif:<nome>`), por isso é o mesmo no PC e no celular. No modo pasta, fica no navegador.
+
+### Avisos no celular / PC (com a tela apagada)
+
+Com o servidor, os avisos também chegam como notificação do próprio celular ou do Windows. Chegam mesmo com a tela apagada e o navegador fechado.
+
+**Como ativar (uma vez em cada aparelho):** abra o sino → **Ativar avisos neste aparelho** → *Permitir*. Chega na hora um aviso de teste.
+
+- **Android (Chrome):** funciona direto.
+- **iPhone (iOS 16.4 ou mais novo):** abra o site no Safari → **Compartilhar → Adicionar à Tela de Início**. Abra o programa pelo ícone novo e ative os avisos por lá. No Safari comum, o iPhone não deixa.
+- **PC (Chrome / Edge):** aparece no canto da tela enquanto o navegador estiver aberto, mesmo minimizado.
+
+**O que chega:**
+
+| Aviso | Para quem |
+|---|---|
+| *N QTs novas* (com os clientes), cotações ganhas e pedidos novos, quando alguém importa o Quote Report | o vendedor de cada QT; a gerência recebe o total da equipe |
+| *Nova meta diária* (valor novo, anterior e PT / CP / MH) | todos |
+| *Anotação de fulano* numa QT sua | o vendedor externo e o interno da QT |
+| *Formulário DCS / VA novo* | gerência |
+| **Lembrete da manhã**, nos dias úteis: atrasados, os de hoje e os que vencem no próximo dia útil | cada vendedor (a gerência recebe o da equipe) |
+
+- Quem fez a ação não recebe aviso dela.
+- O **horário do lembrete** (padrão 8h) é escolhido pela gerência no próprio sino e vale para todos. Ele não sai em fins de semana e feriados, nem depois das 18h, se o servidor ficou desligado até lá.
+- Tocar no aviso abre o programa. O sino mostra os detalhes.
+- **Sair** do programa desliga os avisos daquele aparelho. Quem entrar depois ativa de novo, se quiser.
+- **Precisa:** o PC do servidor ligado, com internet (é ele quem manda), e o endereço do túnel sempre o mesmo.
+
+---
+
 ## Formulário DCS / Value Added
 
 No registro da QT (seta na lista ou número da QT no plano do dia) há o quadro **DCS / Value Added**. Ele aparece em qualquer situação da cotação, inclusive Won. Clique em **Preencher**:
@@ -351,6 +404,7 @@ quote-follow-up/
 │
 ├─ pagina/                o programa pronto (é o que o servidor entrega)
 │  ├─ QuoteFollowUp.html  gerado pelo build.bat — não edite
+│  ├─ sw.js               recebe os avisos no celular / PC (entregue em /sw.js)
 │  └─ icones/             ícones do "Adicionar à tela inicial" no celular
 ├─ codigo/                o código-fonte da página (é aqui que se edita)
 │  ├─ app.jsx             interface: telas, tabelas, calendário, importação
@@ -364,6 +418,7 @@ quote-follow-up/
 │  ├─ server.mjs          entrega a página, faz o login e grava no banco
 │  ├─ server.config.example.json  modelo; o seu é o server.config.json (senha do banco — fica fora do GitHub)
 │  ├─ legacy-import.mjs   regras da importação das planilhas antigas (página e .bat)
+│  ├─ push.mjs            avisos no celular / PC e o lembrete da manhã
 │  └─ import-xlsx.mjs     usado pelo importar-banco.bat
 ├─ banco/                 o banco de dados (MariaDB)
 │  ├─ schema.sql          cria / atualiza o banco: mariadb -u root -p < banco\schema.sql
@@ -400,6 +455,7 @@ Botão **FUP report** na barra de filtros, para os três perfis (vendedor extern
 - **PDF**: abre a página do relatório e o diálogo de impressão (*Salvar como PDF*), A4 deitada.
 
 - Entram as cotações que tiveram **Done** no período, **no recorte da tela** (Salesperson, Classification, Line). Uma linha por cotação (o último Done do período).
+- **Não entram** as cotações **canceladas ou perdidas**: nem as que o Quote Report marcou assim, nem as fechadas à mão no FUP (*Cancelled* / *Lost*). Vale também para o resumo por vendedor (*Atualizadas / Para atualizar*).
 - Colunas: **Quotation · New net amount · Name · Comentário antigo · Comentário novo · Requisição do cliente · Termômetro · Follow-up date · Quoted by · Vendedor**.
   - *Comentário novo* = a nota gravada com o Done; *Comentário antigo* = a nota anterior a ela (cada uma com a data);
   - *Termômetro* = o % Win da cotação;

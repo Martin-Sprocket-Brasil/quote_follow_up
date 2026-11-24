@@ -28,11 +28,11 @@ Fora do OneDrive: o "&" do nome da pasta da empresa atrapalha os comandos do Win
 
 ### 2. Bibliotecas e página
 
-Dê dois cliques em `build.bat`. Ele instala as bibliotecas que faltarem (express, mariadb, compression e, para o formulário DCS / Value Added, pdf-lib) e gera o `pagina\QuoteFollowUp.html`.
+Dê dois cliques em `build.bat`. Ele instala as bibliotecas que faltarem (express, mariadb, compression, pdf-lib para o formulário DCS / Value Added e web-push para os avisos no celular) e gera o `pagina\QuoteFollowUp.html`.
 
 ### 3. Atualizar o banco
 
-O `banco\schema.sql` novo acrescenta a tabela `sessions` (logins), os contadores de versão e libera o tipo `dcs` no histórico (o formulário DCS / Value Added). Não apaga nada e pode ser rodado de novo quantas vezes quiser.
+O `banco\schema.sql` novo acrescenta as tabelas `sessions` (logins) e `push_subs` (aparelhos com avisos), os contadores de versão e libera o tipo `dcs` no histórico (o formulário DCS / Value Added). Não apaga nada e pode ser rodado de novo quantas vezes quiser.
 
 ```
 mariadb -u root -p < banco\schema.sql
@@ -123,6 +123,16 @@ Sem o Access, qualquer pessoa com o link vê a tela de login, e nela a lista de 
   - o Admin zera a senha na aba Data, e a pessoa sai de todos os aparelhos na hora;
   - depois de 8 senhas erradas, o login fica bloqueado por 15 minutos.
 
+## Avisos no celular / PC
+
+O servidor manda os avisos pelo serviço de notificação do próprio navegador: Google no Android e no Chrome, Apple no iPhone, Microsoft no Edge. Por isso eles chegam com a tela apagada. Como ativar e o que chega: veja o README, seção *Notificações*.
+
+- **Não precisa de conta nem de chave paga.** Na primeira vez, o servidor cria as chaves dos avisos (VAPID) e guarda na tabela `settings` (`vapid_public` / `vapid_private`). Não apague essas chaves: sem elas, todos os aparelhos precisam ativar de novo.
+- **Rede:** o PC do servidor precisa sair para a internet na porta 443 (fcm.googleapis.com, *.push.apple.com, *.notify.windows.com). Se a empresa usa proxy, ponha no `servidor\server.config.json`: `"proxy": "http://endereco-do-proxy:porta"`.
+- **Endereço fixo:** o aparelho fica ligado ao endereço do túnel. Se o endereço mudar, cada pessoa ativa os avisos de novo.
+- **Lembrete da manhã:** o horário é escolhido pela gerência no sino. Sai uma vez por dia útil, nunca em fins de semana e feriados, e não sai depois das 18h. Usa o relógio do PC do servidor.
+- Na janela do servidor aparecem linhas `[avisos] …`, por exemplo o lembrete enviado e os aparelhos que não receberam.
+
 ## O que o servidor garante
 
 - **Vendedor só grava nas próprias cotações:** externo pelo Sales Person, interno pelo Quoted By, com o mesmo agrupamento de nomes da tela. Tentativas fora da carteira são ignoradas.
@@ -146,6 +156,9 @@ Todo mundo que entra recebe **todas** as cotações, porque o Thermometer de cad
 | `Não foi possível falar com o banco de dados` | Confira o MariaDB ligado e o usuário e a senha no `servidor\server.config.json`. |
 | `a tabela sessions não existe…` | Rode o `banco\schema.sql` novo como root (passo 3). |
 | `[AVISO] O banco ainda não aceita o formulário DCS / Value Added` ou, na página, *The database needs an update…* | Rode o `banco\schema.sql` novo como root (passo 3). Não precisa reiniciar: em até 1 minuto o servidor percebe e a página reenvia o formulário sozinha. |
+| `[AVISO] Avisos no celular desligados: a tabela push_subs não existe…` | Rode o `banco\schema.sql` novo como root (passo 3) e reinicie o servidor. |
+| *Não foi possível ativar os avisos: o serviço de avisos do navegador não respondeu* | O aparelho não alcançou o Google / Apple: teste em outra rede (4G) ou veja o firewall. |
+| Ativou, mas o teste não chega | Na janela do servidor, procure `[avisos] não foi para um aparelho`. Normalmente é firewall ou proxy no PC do servidor (veja *Avisos no celular / PC*). |
 | `EADDRINUSE` | A porta 8080 já está em uso, talvez por outro servidor aberto. Feche o outro ou troque o `port`. |
 | Página abre, mas pede a pasta de dados | Ela foi aberta como arquivo, não pelo servidor. Use http://localhost:8080 ou o endereço do túnel. |
 | Túnel mostra erro 502 | O servidor não está rodando nesta máquina (passo 6 ou 7). |

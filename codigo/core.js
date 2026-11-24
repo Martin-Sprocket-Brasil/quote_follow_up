@@ -1146,8 +1146,13 @@ export function planDays(cands, { today, horizon, goalOf, bookedToday, strategy,
    • Para atualizar  = cotação em aberto, com FUP, sem Done no período e com o follow-up vencido até o fim do
                        período (no período atual, também o que ainda vence até o fim dele);
    • Qtd Cotações    = atualizadas + para atualizar (cada cotação conta uma vez).
-   "groupOf" agrupa as grafias do Sales Person num nome só (como no filtro de vendedor). */
+   "groupOf" agrupa as grafias do Sales Person num nome só (como no filtro de vendedor).
+   Cotação cancelada ou perdida (pelo Quote Report ou fechada à mão no FUP) não entra no relatório. */
 export const LATE_HOUR = 11;
+const fupReportOff = (q, m) => {
+  const s = quoteStateM(q, m && m.close);
+  return s === "cancelled" || s === "lost";
+};
 export function sellerFupReport(quotes, meta, acts, from, to, groupOf) {
   const qmap = new Map((quotes || []).map((q) => [q.id, q]));
   const firstDone = {};
@@ -1162,6 +1167,7 @@ export function sellerFupReport(quotes, meta, acts, from, to, groupOf) {
   for (const q of quotes || []) {
     const dn = firstDone[q.id];
     const m = (meta && meta[q.id]) || {};
+    if (fupReportOff(q, m)) continue;
     let item = null;
     if (dn) {
       const hh = +String(dn.t).slice(11, 13);
@@ -1189,9 +1195,10 @@ export function sellerFupReport(quotes, meta, acts, from, to, groupOf) {
    • comentário novo = a nota gravada com esse Done (o Done sempre grava uma nota);
    • comentário antigo = a nota anterior a ela;
    • follow-up date = a data do próximo follow-up escolhida nesse Done.
-   "quotes" já vem no recorte da tela (classificação, linha, vendedor). */
+   "quotes" já vem no recorte da tela (classificação, linha, vendedor).
+   Cotação cancelada ou perdida (pelo Quote Report ou fechada à mão no FUP) não entra. */
 export function fupReportRows(acts, quotes, meta, thermo, from, to) {
-  const qmap = new Map((quotes || []).map((q) => [q.id, q]));
+  const qmap = new Map((quotes || []).filter((q) => !fupReportOff(q, meta && meta[q.id])).map((q) => [q.id, q]));
   const ord = (acts || []).map((a, i) => ({ ...a, _i: i })).sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : a._i - b._i));
   const notes = {},
     last = {};

@@ -213,6 +213,23 @@ CREATE TABLE IF NOT EXISTS sessions (
   KEY ix_sessions_expires (expires_at)
 ) ENGINE=InnoDB COMMENT='Sessões de login do servidor';
 
+-- Avisos no celular / PC (Web Push): um registro por aparelho que tocou em "Ativar avisos".
+-- endpoint = endereço do serviço de avisos do navegador (Google, Apple, Microsoft, Mozilla); p256dh / auth = chaves
+-- do aparelho para cifrar o aviso. O aparelho que desativa (ou troca de navegador) sai sozinho no próximo envio.
+CREATE TABLE IF NOT EXISTS push_subs (
+  id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  endpoint    VARCHAR(700) NOT NULL,
+  name        VARCHAR(100) NOT NULL COMMENT 'Pessoa logada quando ativou',
+  p256dh      VARCHAR(200) NOT NULL,
+  auth        VARCHAR(60)  NOT NULL,
+  user_agent  VARCHAR(200) NOT NULL DEFAULT '',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_ok     DATETIME     NULL COMMENT 'Último aviso entregue',
+  PRIMARY KEY (id),
+  UNIQUE KEY ux_push_endpoint (endpoint),
+  KEY ix_push_name (name)
+) ENGINE=InnoDB COMMENT='Aparelhos que recebem os avisos';
+
 -- -------------------------------------------------------------------------------------
 -- VISÃO: situação de cada cotação, com as mesmas regras do core.js (quoteState / quoteStateM)
 --   ganha     = status com "confirm" ou com pedido (Sales Id)

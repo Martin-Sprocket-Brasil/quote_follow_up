@@ -14,6 +14,7 @@ COMO A PASTA ESTA ORGANIZADA
 
     pagina\                -> O PROGRAMA PRONTO
       QuoteFollowUp.html   -> gerado pelo build.bat (nao edite; sem servidor, abra no Chrome/Edge)
+      sw.js                -> recebe os avisos no celular / PC (o servidor entrega em /sw.js)
       icones\              -> icones do "Adicionar a tela inicial" no celular
 
     codigo\                -> O CODIGO-FONTE (e aqui que se edita)
@@ -30,6 +31,7 @@ COMO A PASTA ESTA ORGANIZADA
       server.config.example.json -> modelo da configuracao
       server.config.json         -> a SUA configuracao, com a senha do banco (o iniciar-servidor.bat cria)
       legacy-import.mjs, import-xlsx.mjs -> importacao das planilhas da versao anterior
+      push.mjs                   -> avisos no celular / PC (chegam com a tela apagada)
 
     banco\                 -> O BANCO DE DADOS (MariaDB)
       schema.sql                   -> cria / atualiza o banco:  mariadb -u root -p < banco\schema.sql
