@@ -1224,4 +1224,5 @@ export const PT = {
   "Morning reminder at {0} on business days.": "Lembrete da manhã às {0} nos dias úteis.",
   "the notification service of the browser did not answer (internet or company firewall)": "o serviço de avisos do navegador não respondeu (internet ou firewall da empresa)",
   "Each notification stays here until you click it (or Mark as read). Closing the bell does not erase anything.": "Cada notificação fica aqui até você clicar nela (ou em Marcar como lidas). Fechar o sino não apaga nada.",
+  "FUP cadence": "Cadência do FUP",
 };

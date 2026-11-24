@@ -1392,7 +1392,7 @@ function DcsForm({ open, onClose, q, acts, onSave }) {
   );
 }
 
-function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq, onAskClose, onReopen, onWhy, focusDone, compact, m, user, onUser, headRight, onDcs }) {
+function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq, onAskClose, onReopen, onWhy, focusDone, compact, m, user, onUser, headRight, onDcs, onMeta }) {
   const mob = useMobile(); // celular: tudo numa coluna só, com uma rolagem para a tela inteira
   const [txt, setTxt] = useState("");
   // requisição do cliente (ex.: "RODRIGO - POLIAS"): campo da cotação, vai para o relatório de FUP
@@ -1810,6 +1810,19 @@ function QuoteRecord({ q, sales, acts, thermo, onNote, onDone, onResched, onReq,
               </div>
             </div>
           )}
+          {/* cadência de FUP e % Win direto aqui (no celular não há a tabela para escolher) */}
+          {open && onMeta && (
+            <div style={{ ...panelCard, padding: mob ? "12px 14px" : "12px 18px", display: "flex", alignItems: "center", gap: mob ? 12 : 22, flexWrap: "wrap" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: mob ? "1 1 100%" : "0 0 auto" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: X.sub, minWidth: mob ? 92 : 0 }}>{_t("FUP cadence")}</span>
+                <PickCell value={mm.fup} options={FUP_OPTS} render={fupOptRender} describe={fupOptDescribe} onChange={(v) => (CLOSE_LABEL[v] ? onAskClose && onAskClose(q.id, q.c, v) : onMeta(q.id, { fup: v }, q.c))} title={_t("Follow-up cadence · Lost / Cancelled closes the quote (with the reason)")} width={300} />
+              </span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: mob ? "1 1 100%" : "0 0 auto" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: X.sub, minWidth: mob ? 92 : 0 }}>% Win</span>
+                <PickCell value={curWin} options={WIN_VALS} render={(v) => <WinPill v={v} />} onChange={(v) => onMeta(q.id, { win: v || 0 }, q.c)} title={_t("Chance of winning this quote")} width={140} />
+              </span>
+            </div>
+          )}
           {!ro && (
           <div style={panelCard}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px" }}>
@@ -2182,7 +2195,7 @@ function CloseDialog({ ask, onConfirm, onReopen, onCancel }) {
 /* gaveta lateral com o registro da cotação (usada no plano do dia) */
 /* Painel lateral da cotação (abre por cima da tela, do lado direito). nav = { i, n, go(delta) } quando veio
    da tabela: setas para a cotação anterior / próxima da lista (também com Alt+↑ / Alt+↓). */
-function QuoteDrawer({ q, m, sales, acts, thermo, onNote, onDone, onResched, onReq, onAskClose, onReopen, onWhy, focusDone, onClose, user, onUser, nav, onDcs }) {
+function QuoteDrawer({ q, m, sales, acts, thermo, onNote, onDone, onResched, onReq, onAskClose, onReopen, onWhy, focusDone, onClose, user, onUser, nav, onDcs, onMeta }) {
   const mob = useMobile(); // celular: o painel ocupa a tela inteira
   useEffect(() => {
     const k = (e) => {
@@ -2213,6 +2226,7 @@ function QuoteDrawer({ q, m, sales, acts, thermo, onNote, onDone, onResched, onR
           onReopen={onReopen}
           onWhy={onWhy}
           onDcs={onDcs}
+          onMeta={onMeta}
           focusDone={focusDone}
           user={user}
           onUser={onUser}
@@ -2512,11 +2526,17 @@ function QuoteTable({ onAskClose, rows, cancelRows, meta, onMeta, today, periodL
                     {r.id} · {fmtDay(r.d)}
                     <NoteBadge info={notesBy[r.id]} />
                   </div>
-                  {(r.temp || r.prio >= 0) && (
+                  {(r.temp || r.prio >= 0 || r.st === "open") && (
                     <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
                       <PrioBadge v={r.prio} />
                       <TempPill v={r.temp} />
-                      {r.st === "open" && r.win > 0 && <WinPill v={r.win} />}
+                      {/* cadência do FUP e % Win direto no cartão (o toque aqui não abre a cotação) */}
+                      {r.st === "open" ? (
+                        <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                          <PickCell value={r.fup} options={FUP_OPTS} render={fupOptRender} describe={fupOptDescribe} placeholder="FUP" onChange={(v) => (CLOSE_LABEL[v] ? onAskClose(r.id, r.c, v) : onMeta(r.id, { fup: v }, r.c))} title={_t("Follow-up cadence · Lost / Cancelled closes the quote (with the reason)")} width={300} />
+                          <PickCell value={r.win} options={WIN_VALS} render={(v) => <WinPill v={v} />} placeholder="% Win" onChange={(v) => onMeta(r.id, { win: v || 0 }, r.c)} title={_t("Chance of winning this quote")} width={140} />
+                        </span>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -9959,6 +9979,7 @@ export default function App() {
           onReopen={W.onReopen}
           onWhy={W.onWhy}
           onDcs={W.onDcs}
+          onMeta={W.onMeta === noop ? null : W.onMeta}
           focusDone={!ro && openDone}
           user={user}
           onUser={setUser}

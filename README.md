@@ -31,6 +31,8 @@ Tudo roda no navegador, sem servidor. Os arquivos não saem do computador.
 
 **Filtros:** os rápidos ficam à vista (Atrasados, Para hoje, Prioridade alta, Quente ou Morno, Sem FUP; dá para ligar vários) e cada filtro ligado vira um chip com × em cima da lista. No celular, o botão ao lado da busca abre a folha com ordem, período (Este mês, Mês passado, Este ano fiscal…), classificação, linha, vendedor, FUP, % Win, Thermometer e cliente. Os filtros continuam ao trocar de aba.
 
+**Cadência do FUP e % Win no celular:** cada cartão de QT em aberto mostra, ao lado da prioridade e do termômetro, o FUP e o % Win; tocar neles escolhe na hora, sem abrir a cotação (sem valor, aparecem como *FUP* e *% Win* tracejados). Ao abrir uma QT em aberto, o topo também mostra *Cadência do FUP* (A, B, C, D, ou Perdida / Cancelada com o motivo) e *% Win*. É o mesmo que as colunas FUP e % Win da tabela do computador, e grava na hora.
+
 **Idioma:** English ou Português no menu do usuário (e na tela de entrada). Fica salvo no navegador; sem escolha, segue o idioma do aparelho. As traduções estão no `i18n-pt.js` (texto em inglês → texto em português): para mudar uma, troque só o lado direito e rode o `build.bat`. Os valores gravados (motivos de fechamento, status) continuam em inglês no banco; só a tela traduz.
 
 **Celular:** pelo servidor, dá para instalar na tela inicial (Chrome: menu ⋮ → *Adicionar à tela inicial*; iPhone/Safari: Compartilhar → *Adicionar à Tela de Início*). Abre em tela cheia, com ícone próprio.
